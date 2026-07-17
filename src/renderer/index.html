@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:">
+    <title>Codex 额度检测器</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="glass-card" id="app" aria-live="polite">
+      <div class="ambient-background"></div>
+      <div class="custom-background" id="customBackground"></div>
+      <div class="liquid liquid-one"></div>
+      <div class="liquid liquid-two"></div>
+      <div class="liquid liquid-three"></div>
+      <div class="glass-refraction"></div>
+      <div class="glass-noise"></div>
+
+      <header class="titlebar" id="titlebar">
+        <div class="brand">
+          <div>
+            <div class="eyebrow">CODEX PULSE</div>
+            <h1 data-i18n="title">额度检测器</h1>
+          </div>
+        </div>
+        <div class="window-actions no-drag">
+          <button class="icon-button" id="backgroundButton" type="button" aria-label="背景设置" title="背景设置">
+            <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"></rect><circle cx="9" cy="10" r="1.5"></circle><path d="m5 17 4.5-4 3 2.5 2.5-2 4 3.5"></path></svg>
+          </button>
+          <button class="icon-button pin-button is-active" id="pinButton" type="button" aria-label="始终置顶" title="始终置顶">
+            <svg viewBox="0 0 24 24"><path d="m14.8 4.5 4.7 4.7-2 1.1-3.4 3.4-.2 3-1 1-3.2-3.2-4.4 4.4-.9-.9 4.4-4.4-3.2-3.2 1-1 3-.2 3.4-3.4 1.1-2Z"></path></svg>
+          </button>
+          <button class="icon-button" id="minimizeButton" type="button" aria-label="最小化" title="最小化">
+            <svg viewBox="0 0 24 24"><path d="M6 12h12"></path></svg>
+          </button>
+          <button class="icon-button" id="closeButton" type="button" aria-label="隐藏到托盘" title="隐藏到托盘">
+            <svg viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"></path></svg>
+          </button>
+        </div>
+      </header>
+
+      <aside class="background-popover no-drag" id="backgroundPopover" hidden>
+        <div class="popover-heading">
+          <div>
+            <span class="eyebrow">GLASS CANVAS</span>
+            <strong data-i18n="backgroundTitle">卡片背景</strong>
+          </div>
+          <button class="popover-close" id="backgroundClose" type="button" aria-label="关闭">×</button>
+        </div>
+        <p data-i18n="backgroundHint">添加图片后，玻璃折射与层次会更加明显。</p>
+        <div class="upload-zone" id="backgroundDropZone" role="button" tabindex="0">
+          <svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L8 8m4-4 4 4"></path><path d="M5 14v5h14v-5"></path></svg>
+          <strong data-i18n="dropBackground">拖入图片或点击选择</strong>
+          <span data-i18n="backgroundRequirement">图片需大于 460 × 690</span>
+        </div>
+        <div class="background-actions">
+          <button class="glass-button primary" id="chooseBackground" type="button" data-i18n="chooseBackground">选择图片</button>
+          <button class="glass-button" id="clearBackground" type="button" data-i18n="clearBackground">恢复默认</button>
+        </div>
+        <label class="opacity-control">
+          <span data-i18n="backgroundOpacity">背景透明度</span>
+          <strong id="opacityValue">34%</strong>
+          <input id="opacitySlider" type="range" min="8" max="85" value="34">
+        </label>
+        <div class="background-error" id="backgroundError" hidden data-i18n="backgroundTooLarge">图片不能超过 20 MB</div>
+      </aside>
+
+      <section class="connection-strip" id="connectionStrip">
+        <div class="connection-state">
+          <span class="status-dot" id="statusDot"></span>
+          <span class="connection-label" id="connectionLabel" data-i18n="checking">正在连接 Codex…</span>
+        </div>
+        <div class="connection-actions no-drag">
+          <button class="language-button" id="languageButton" type="button" aria-label="切换语言">EN</button>
+          <button class="refresh-button" id="refreshButton" type="button" aria-label="立即刷新" title="立即刷新">
+            <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"></path></svg>
+          </button>
+        </div>
+      </section>
+
+      <div class="offline-notice" id="offlineNotice" hidden>
+        <svg viewBox="0 0 24 24"><path d="M12 9v4m0 3h.01M10.3 4.4 2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.4a2 2 0 0 0-3.4 0Z"></path></svg>
+        <div>
+          <strong data-i18n="offlineTitle">Codex 当前离线</strong>
+          <p id="offlineMessage" data-i18n="offlineMessage">若你在中国大陆，请开启 VPN，并检查网络连接与 Codex 登录状态。</p>
+        </div>
+      </div>
+
+      <section class="quota-section" aria-label="额度">
+        <article class="quota-panel" id="fiveHourPanel">
+          <div class="quota-heading">
+            <div class="quota-icon mint">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><path d="M12 8v4l2.8 1.8"></path></svg>
+            </div>
+            <div>
+              <div class="quota-name" data-i18n="fiveHour">5 小时额度</div>
+              <div class="quota-reset" id="fiveHourReset">--</div>
+            </div>
+            <div class="quota-number" id="fiveHourNumber"><span>--</span><small>%</small></div>
+          </div>
+          <div class="progress-track" id="fiveHourTrack">
+            <div class="progress-glow mint-progress" id="fiveHourProgress"></div>
+          </div>
+          <div class="quota-caption">
+            <span data-i18n="remaining">剩余</span>
+            <span id="fiveHourUsed">--</span>
+          </div>
+        </article>
+
+        <article class="quota-panel" id="weeklyPanel">
+          <div class="quota-heading">
+            <div class="quota-icon violet">
+              <svg viewBox="0 0 24 24"><path d="M7 3v3m10-3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z"></path></svg>
+            </div>
+            <div>
+              <div class="quota-name" data-i18n="weekly">1 周额度</div>
+              <div class="quota-reset" id="weeklyReset">--</div>
+            </div>
+            <div class="quota-number" id="weeklyNumber"><span>--</span><small>%</small></div>
+          </div>
+          <div class="progress-track">
+            <div class="progress-glow violet-progress" id="weeklyProgress"></div>
+          </div>
+          <div class="quota-caption">
+            <span data-i18n="remaining">剩余</span>
+            <span id="weeklyUsed">--</span>
+          </div>
+        </article>
+      </section>
+
+      <section class="reset-section">
+        <div class="section-title-row">
+          <div>
+            <div class="eyebrow" data-i18n="resetCreditEyebrow">RESET CREDITS</div>
+            <h2 data-i18n="resetCreditTitle">额度重置次数</h2>
+          </div>
+          <span class="count-badge" id="resetCount">--</span>
+        </div>
+        <div class="reset-details">
+          <div class="detail-item">
+            <span data-i18n="resetType">重置类型</span>
+            <strong id="resetType">--</strong>
+          </div>
+          <div class="detail-divider"></div>
+          <div class="detail-item">
+            <span data-i18n="expiresAt">最近到期</span>
+            <strong id="expiresAt">--</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="signals">
+        <div class="signal-row">
+          <div class="signal-icon" id="newResetIcon">
+            <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18"></path></svg>
+          </div>
+          <div class="signal-copy">
+            <span data-i18n="newResetQuestion">收到新的重置次数</span>
+            <strong id="newResetStatus">--</strong>
+          </div>
+          <div class="signal-check" id="newResetCheck">
+            <svg viewBox="0 0 24 24"><path d="m6.5 12.5 3.3 3.3 7.7-7.7"></path></svg>
+          </div>
+        </div>
+        <div class="signal-row">
+          <div class="signal-icon">
+            <svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.6 2.8 8.2 7 10 4.2-1.8 7-5.4 7-10V6l-7-3Z"></path><path d="m12 7 .9 2.1 2.1.9-2.1.9L12 14l-.9-2.1L9 11l2.1-.9L12 7Z"></path></svg>
+          </div>
+          <div class="signal-copy">
+            <span data-i18n="officialResetQuestion">官方额度重置</span>
+            <strong id="officialResetStatus">--</strong>
+          </div>
+          <div class="signal-check" id="officialResetCheck">
+            <svg viewBox="0 0 24 24"><path d="m6.5 12.5 3.3 3.3 7.7-7.7"></path></svg>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        <span id="lastChecked" data-i18n="waiting">等待首次检测</span>
+        <span class="footer-separator">·</span>
+        <span data-i18n="autoRefresh">每 60 秒自动刷新</span>
+      </footer>
+
+      <div class="drag-edge drag-edge-top" data-drag-edge="top" aria-hidden="true"></div>
+      <div class="drag-edge drag-edge-right" data-drag-edge="right" aria-hidden="true"></div>
+      <div class="drag-edge drag-edge-bottom" data-drag-edge="bottom" aria-hidden="true"></div>
+      <div class="drag-edge drag-edge-left" data-drag-edge="left" aria-hidden="true"></div>
+
+      <section class="crop-modal no-drag" id="cropModal" hidden aria-modal="true" role="dialog">
+        <div class="crop-dialog">
+          <div class="crop-heading">
+            <div>
+              <span class="eyebrow">BACKGROUND CROP</span>
+              <h2 data-i18n="cropTitle">截取背景区域</h2>
+            </div>
+            <button class="popover-close" id="cropClose" type="button" aria-label="关闭">×</button>
+          </div>
+          <p data-i18n="cropHint">拖动选框调整位置，拖动右下角改变选区大小。</p>
+          <div class="crop-stage" id="cropStage">
+            <img id="cropImage" alt="">
+            <div class="crop-box" id="cropBox">
+              <i></i><i></i><i></i><i></i>
+              <span class="crop-size">460 × 690</span>
+              <button class="crop-resize-handle" id="cropResizeHandle" type="button" aria-label="调整裁剪区域"></button>
+            </div>
+          </div>
+          <div class="crop-source-info" id="cropSourceInfo"></div>
+          <div class="crop-actions">
+            <button class="glass-button" id="cropCancel" type="button" data-i18n="cancel">取消</button>
+            <button class="glass-button primary" id="cropApply" type="button" data-i18n="applyCrop">使用此区域</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="loading-layer" id="loadingLayer">
+        <div class="pulse-orbit"><span></span></div>
+        <span data-i18n="reading">读取 Codex 额度…</span>
+      </div>
+    </main>
+    <script src="./crop-geometry.js"></script>
+    <script src="./renderer.js"></script>
+  </body>
+</html>

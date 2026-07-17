@@ -1,0 +1,66 @@
+{
+  "name": "codex-quota-monitor",
+  "version": "1.0.0",
+  "description": "A bilingual liquid-glass desktop monitor for Codex rate limits and reset credits.",
+  "main": "src/main.js",
+  "author": "Codex Quota Monitor",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "test": "node --test",
+    "icons": "node scripts/build-icons.js",
+    "prebuild": "npm run icons",
+    "pack": "electron-builder --dir",
+    "build": "electron-builder --win portable nsis"
+  },
+  "build": {
+    "appId": "com.codex.quota-monitor",
+    "productName": "Codex 额度检测器",
+    "electronDist": "node_modules/electron/dist",
+    "asar": true,
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "assets/tray-icon-on-dark.png",
+        "to": "tray-icon-on-dark.png"
+      },
+      {
+        "from": "assets/tray-icon-on-light.png",
+        "to": "tray-icon-on-light.png"
+      },
+      {
+        "from": "assets/icon.ico",
+        "to": "icon.ico"
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        "portable",
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "artifactName": "${productName}-${version}-setup-${arch}.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Codex 额度检测器"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable-${arch}.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "43.1.1",
+    "electron-builder": "26.15.3",
+    "sharp": "0.34.3"
+  }
+}
