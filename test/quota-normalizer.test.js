@@ -103,12 +103,195 @@ test("official full reset requires both windows at 100% before their scheduled r
   assert.equal(didOfficialFullReset(previous, bothRestored, 4000), false);
 });
 
-test("official full reset cannot be inferred while the five-hour window is disabled", () => {
+test("detects an early weekly reset while the five-hour window is officially disabled", () => {
   assert.equal(didOfficialFullReset({
     fiveHour: null,
     weekly: { usedPercent: 50, remainingPercent: 50, resetsAt: 9000 }
   }, {
     fiveHour: null,
     weekly: { usedPercent: 0, remainingPercent: 100, resetsAt: 12000 }
+  }, 2000), true);
+});
+
+test("does not treat the natural weekly recovery as official while five-hour is disabled", () => {
+  assert.equal(didOfficialFullReset({
+    fiveHour: null,
+    weekly: { usedPercent: 50, remainingPercent: 50, resetsAt: 2000 }
+  }, {
+    fiveHour: null,
+    weekly: { usedPercent: 0, remainingPercent: 100, resetsAt: 12000 }
   }, 2000), false);
+});
+
+test("appends a detected official reset to permanent history", () => {
+  const normalized = normalizeQuotaResponse({
+    rateLimits: {
+      primary: { usedPercent: 0, windowDurationMins: 10080, resetsAt: 12000 },
+      secondary: { usedPercent: 0, windowDurationMins: 300, resetsAt: 6000 }
+    },
+    rateLimitResetCredits: { availableCount: 0, credits: [] }
+  }, {
+    hasBaseline: true,
+    lastSnapshot: {
+      windows: {
+        fiveHour: { usedPercent: 65, remainingPercent: 35, resetsAt: 4000 },
+        weekly: { usedPercent: 42, remainingPercent: 58, resetsAt: 9000 }
+      },
+      resets: { availableCount: 0 }
+    }
+  }, 2000);
+
+  assert.equal(normalized.events.officialReset.detected, true);
+  assert.equal(normalized.events.officialReset.detectedNow, true);
+  assert.equal(normalized.events.officialReset.latestAt, 2000);
+  assert.deepEqual(normalized.persistence.officialResetHistory, [{
+    detectedAt: 2000,
+    detectionMode: "all-limits",
+    previousFiveHourResetAt: 4000,
+    previousWeeklyResetAt: 9000
+  }]);
+});
+
+test("records the five-hour-disabled detection mode in official reset history", () => {
+  const normalized = normalizeQuotaResponse({
+    rateLimits: {
+      primary: { usedPercent: 0, windowDurationMins: 10080, resetsAt: 12000 },
+      secondary: null
+    },
+    rateLimitResetCredits: { availableCount: 0, credits: [] }
+  }, {
+    hasBaseline: true,
+    lastSnapshot: {
+      windows: {
+        fiveHour: null,
+        weekly: { usedPercent: 42, remainingPercent: 58, resetsAt: 9000 }
+      },
+      resets: { availableCount: 0 }
+    }
+  }, 2000);
+
+  assert.equal(normalized.events.officialReset.detectedNow, true);
+  assert.equal(
+    normalized.persistence.officialResetHistory[0].detectionMode,
+    "weekly-only-five-hour-disabled"
+  );
+});
+
+test("keeps official reset history permanently instead of expiring it", () => {
+  const detectedAt = 100;
+  const normalized = normalizeQuotaResponse({
+    rateLimits: {
+      primary: { usedPercent: 20, windowDurationMins: 10080, resetsAt: 9999999 },
+      secondary: { usedPercent: 10, windowDurationMins: 300, resetsAt: 9999999 }
+    },
+    rateLimitResetCredits: { availableCount: 0, credits: [] }
+  }, {
+    hasBaseline: true,
+    officialResetHistory: [{ detectedAt }],
+    lastSnapshot: {
+      windows: {
+        fiveHour: { usedPercent: 9, remainingPercent: 91, resetsAt: 9999999 },
+        weekly: { usedPercent: 19, remainingPercent: 81, resetsAt: 9999999 }
+      },
+      resets: { availableCount: 0 }
+    }
+  }, detectedAt + 365 * 24 * 60 * 60);
+
+  assert.equal(normalized.events.officialReset.detected, true);
+  assert.equal(normalized.events.officialReset.detectedNow, false);
+  assert.equal(normalized.events.officialReset.latestAt, detectedAt);
+  assert.equal(normalized.persistence.officialResetHistory.length, 1);
+});
+
+test("migrates the legacy official reset timestamp into permanent history", () => {
+  const normalized = normalizeQuotaResponse({
+    rateLimits: {
+      primary: { usedPercent: 20, windowDurationMins: 10080, resetsAt: 9000 },
+      secondary: null
+    },
+    rateLimitResetCredits: { availableCount: 0, credits: [] }
+  }, {
+    hasBaseline: true,
+    officialResetAt: 1234,
+    lastSnapshot: { windows: {}, resets: { availableCount: 0 } }
+  }, 5000);
+
+  assert.deepEqual(normalized.persistence.officialResetHistory, [{ detectedAt: 1234 }]);
+  assert.equal(normalized.events.officialReset.latestAt, 1234);
+});
+
+test("does not duplicate the same official reset during adjacent refreshes", () => {
+  const normalized = normalizeQuotaResponse({
+    rateLimits: {
+      primary: { usedPercent: 0, windowDurationMins: 10080, resetsAt: 12000 },
+      secondary: { usedPercent: 0, windowDurationMins: 300, resetsAt: 6000 }
+    },
+    rateLimitResetCredits: { availableCount: 0, credits: [] }
+  }, {
+    hasBaseline: true,
+    officialResetHistory: [{ detectedAt: 1950 }],
+    lastSnapshot: {
+      windows: {
+        fiveHour: { usedPercent: 65, remainingPercent: 35, resetsAt: 4000 },
+        weekly: { usedPercent: 42, remainingPercent: 58, resetsAt: 9000 }
+      },
+      resets: { availableCount: 0 }
+    }
+  }, 2000);
+
+  assert.equal(normalized.events.officialReset.detectedNow, false);
+  assert.equal(normalized.persistence.officialResetHistory.length, 1);
+});
+
+test("does not misclassify a user-consumed reset credit as an official reset", () => {
+  const normalized = normalizeQuotaResponse({
+    rateLimits: {
+      primary: { usedPercent: 0, windowDurationMins: 10080, resetsAt: 12000 },
+      secondary: { usedPercent: 0, windowDurationMins: 300, resetsAt: 6000 }
+    },
+    rateLimitResetCredits: {
+      availableCount: 1,
+      credits: [{ id: "remaining", status: "available", resetType: "codexRateLimits" }]
+    }
+  }, {
+    hasBaseline: true,
+    knownCreditIds: ["used", "remaining"],
+    lastSnapshot: {
+      windows: {
+        fiveHour: { usedPercent: 65, remainingPercent: 35, resetsAt: 4000 },
+        weekly: { usedPercent: 42, remainingPercent: 58, resetsAt: 9000 }
+      },
+      resets: { availableCount: 2 }
+    }
+  }, 2000);
+
+  assert.equal(normalized.events.manualReset.detected, true);
+  assert.equal(normalized.events.officialReset.detectedNow, false);
+  assert.equal(normalized.events.officialReset.history.length, 0);
+});
+
+test("does not misclassify a user reset while the five-hour window is disabled", () => {
+  const normalized = normalizeQuotaResponse({
+    rateLimits: {
+      primary: { usedPercent: 0, windowDurationMins: 10080, resetsAt: 12000 },
+      secondary: null
+    },
+    rateLimitResetCredits: {
+      availableCount: 0,
+      credits: []
+    }
+  }, {
+    hasBaseline: true,
+    lastSnapshot: {
+      windows: {
+        fiveHour: null,
+        weekly: { usedPercent: 42, remainingPercent: 58, resetsAt: 9000 }
+      },
+      resets: { availableCount: 1 }
+    }
+  }, 2000);
+
+  assert.equal(normalized.events.manualReset.detected, true);
+  assert.equal(normalized.events.officialReset.detectedNow, false);
+  assert.equal(normalized.persistence.officialResetHistory.length, 0);
 });

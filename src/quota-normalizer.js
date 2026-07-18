@@ -1,7 +1,8 @@
 const FIVE_HOURS_MINUTES = 300;
 const ONE_WEEK_MINUTES = 10080;
 const WINDOW_TOLERANCE_MINUTES = 60;
-const EVENT_TTL_SECONDS = 7 * 24 * 60 * 60;
+const NEW_RESET_EVENT_TTL_SECONDS = 7 * 24 * 60 * 60;
+const OFFICIAL_RESET_DEDUP_SECONDS = 2 * 60;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, Number(value) || 0));
@@ -75,23 +76,64 @@ function didUnexpectedReset(previous, current, nowSeconds, creditCountDecreased)
   return !naturalReset;
 }
 
-function didOfficialFullReset(previousWindows, currentWindows, nowSeconds) {
+function getOfficialResetDetectionMode(previousWindows, currentWindows, nowSeconds) {
   const previousFiveHour = previousWindows?.fiveHour;
   const previousWeekly = previousWindows?.weekly;
   const currentFiveHour = currentWindows?.fiveHour;
   const currentWeekly = currentWindows?.weekly;
 
-  // A full official reset can only be established when both official windows
-  // are present, both are completely restored, and there was usage to reset.
-  if (!previousFiveHour || !previousWeekly || !currentFiveHour || !currentWeekly) return false;
-  if (currentFiveHour.remainingPercent !== 100 || currentWeekly.remainingPercent !== 100) return false;
-  if (previousFiveHour.usedPercent <= 0 || previousWeekly.usedPercent <= 0) return false;
-
-  const beforeFiveHourReset = Number.isFinite(previousFiveHour.resetsAt) &&
-    nowSeconds < previousFiveHour.resetsAt - 90;
+  // The weekly window must always provide a before/after proof. When the
+  // official response omits the five-hour window, the weekly proof is the
+  // only meaningful signal available.
+  if (!previousWeekly || !currentWeekly) return null;
+  if (currentWeekly.remainingPercent !== 100 || previousWeekly.usedPercent <= 0) return null;
   const beforeWeeklyReset = Number.isFinite(previousWeekly.resetsAt) &&
     nowSeconds < previousWeekly.resetsAt - 90;
-  return beforeFiveHourReset && beforeWeeklyReset;
+  if (!beforeWeeklyReset) return null;
+
+  if (!currentFiveHour) {
+    return "weekly-only-five-hour-disabled";
+  }
+
+  if (!previousFiveHour) return null;
+  if (currentFiveHour.remainingPercent !== 100 || previousFiveHour.usedPercent <= 0) return null;
+  const beforeFiveHourReset = Number.isFinite(previousFiveHour.resetsAt) &&
+    nowSeconds < previousFiveHour.resetsAt - 90;
+  return beforeFiveHourReset ? "all-limits" : null;
+}
+
+function didOfficialFullReset(previousWindows, currentWindows, nowSeconds) {
+  return Boolean(getOfficialResetDetectionMode(previousWindows, currentWindows, nowSeconds));
+}
+
+function normalizeOfficialResetHistory(previousState) {
+  const rawHistory = Array.isArray(previousState?.officialResetHistory)
+    ? previousState.officialResetHistory
+    : [];
+  const migratedHistory = rawHistory.length
+    ? rawHistory
+    : (Number.isFinite(previousState?.officialResetAt) ? [previousState.officialResetAt] : []);
+  const uniqueByDetectedAt = new Map();
+
+  for (const entry of migratedHistory) {
+    const detectedAt = Number.isFinite(entry) ? entry : entry?.detectedAt;
+    if (!Number.isFinite(detectedAt) || detectedAt <= 0) continue;
+    const normalizedEntry = Number.isFinite(entry)
+      ? { detectedAt }
+      : {
+          detectedAt,
+          detectionMode: typeof entry.detectionMode === "string" ? entry.detectionMode : null,
+          previousFiveHourResetAt: Number.isFinite(entry.previousFiveHourResetAt)
+            ? entry.previousFiveHourResetAt
+            : null,
+          previousWeeklyResetAt: Number.isFinite(entry.previousWeeklyResetAt)
+            ? entry.previousWeeklyResetAt
+            : null
+        };
+    uniqueByDetectedAt.set(detectedAt, normalizedEntry);
+  }
+
+  return [...uniqueByDetectedAt.values()].sort((a, b) => a.detectedAt - b.detectedAt);
 }
 
 function deriveEvents(previousState, normalized, nowSeconds) {
@@ -100,21 +142,52 @@ function deriveEvents(previousState, normalized, nowSeconds) {
   const isFirstSnapshot = !previousState?.hasBaseline;
   const newlyGranted = isFirstSnapshot ? [] : normalized.resets.items.filter(item => !knownIds.has(item.id));
   const previousWindows = previousState?.lastSnapshot?.windows || {};
-  const officialFullReset = didOfficialFullReset(previousWindows, normalized.windows, nowSeconds);
+  const previousResetCount = previousState?.lastSnapshot?.resets?.availableCount;
+  const resetCreditCountDecreased = Number.isFinite(previousResetCount) &&
+    normalized.resets.availableCount < previousResetCount;
+  const resetPatternMode = getOfficialResetDetectionMode(previousWindows, normalized.windows, nowSeconds);
+  const manualResetDetected = Boolean(resetPatternMode && resetCreditCountDecreased);
+  const officialResetMode = manualResetDetected ? null : resetPatternMode;
+  const officialFullReset = Boolean(officialResetMode);
 
   const lastNewResetAt = newlyGranted.length ? nowSeconds : previousState?.lastNewResetAt || null;
   const lastNewResetCount = newlyGranted.length ? newlyGranted.length : previousState?.lastNewResetCount || 0;
-  const officialResetAt = officialFullReset ? nowSeconds : previousState?.officialResetAt || null;
+  const officialResetHistory = normalizeOfficialResetHistory(previousState);
+  const lastOfficialReset = officialResetHistory.at(-1);
+  const isDuplicateOfficialReset = lastOfficialReset &&
+    Math.abs(nowSeconds - lastOfficialReset.detectedAt) <= OFFICIAL_RESET_DEDUP_SECONDS;
+
+  if (officialFullReset && !isDuplicateOfficialReset) {
+    officialResetHistory.push({
+      detectedAt: nowSeconds,
+      detectionMode: officialResetMode,
+      previousFiveHourResetAt: Number.isFinite(previousWindows.fiveHour?.resetsAt)
+        ? previousWindows.fiveHour.resetsAt
+        : null,
+      previousWeeklyResetAt: Number.isFinite(previousWindows.weekly?.resetsAt)
+        ? previousWindows.weekly.resetsAt
+        : null
+    });
+  }
+
+  const officialResetAt = officialResetHistory.at(-1)?.detectedAt || null;
 
   return {
     newReset: {
-      detected: Boolean(lastNewResetAt && nowSeconds - lastNewResetAt <= EVENT_TTL_SECONDS),
-      count: lastNewResetAt && nowSeconds - lastNewResetAt <= EVENT_TTL_SECONDS ? lastNewResetCount : 0,
+      detected: Boolean(lastNewResetAt && nowSeconds - lastNewResetAt <= NEW_RESET_EVENT_TTL_SECONDS),
+      count: lastNewResetAt && nowSeconds - lastNewResetAt <= NEW_RESET_EVENT_TTL_SECONDS ? lastNewResetCount : 0,
       detectedAt: lastNewResetAt
     },
     officialReset: {
-      detected: Boolean(officialResetAt && nowSeconds - officialResetAt <= EVENT_TTL_SECONDS),
-      detectedAt: officialResetAt
+      detected: Boolean(officialResetHistory.length),
+      detectedNow: officialFullReset && !isDuplicateOfficialReset,
+      detectedAt: officialResetAt,
+      latestAt: officialResetAt,
+      history: officialResetHistory
+    },
+    manualReset: {
+      detected: manualResetDetected,
+      detectedAt: manualResetDetected ? nowSeconds : null
     },
     persistence: {
       hasBaseline: true,
@@ -122,6 +195,7 @@ function deriveEvents(previousState, normalized, nowSeconds) {
       lastNewResetAt,
       lastNewResetCount,
       officialResetAt,
+      officialResetHistory,
       lastSnapshot: {
         windows: normalized.windows,
         resets: { availableCount: normalized.resets.availableCount }
@@ -146,7 +220,8 @@ function normalizeQuotaResponse(raw, previousState = {}, nowSeconds = Math.floor
     ...normalized,
     events: {
       newReset: events.newReset,
-      officialReset: events.officialReset
+      officialReset: events.officialReset,
+      manualReset: events.manualReset
     },
     persistence: events.persistence
   };
@@ -157,5 +232,6 @@ module.exports = {
   normalizeCredits,
   normalizeQuotaResponse,
   didUnexpectedReset,
-  didOfficialFullReset
+  didOfficialFullReset,
+  getOfficialResetDetectionMode
 };

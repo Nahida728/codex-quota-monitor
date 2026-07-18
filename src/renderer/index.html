@@ -163,7 +163,7 @@
             <svg viewBox="0 0 24 24"><path d="m6.5 12.5 3.3 3.3 7.7-7.7"></path></svg>
           </div>
         </div>
-        <div class="signal-row">
+        <div class="signal-row signal-row-button no-drag" id="officialResetButton" role="button" tabindex="0">
           <div class="signal-icon">
             <svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.6 2.8 8.2 7 10 4.2-1.8 7-5.4 7-10V6l-7-3Z"></path><path d="m12 7 .9 2.1 2.1.9-2.1.9L12 14l-.9-2.1L9 11l2.1-.9L12 7Z"></path></svg>
           </div>
@@ -172,7 +172,7 @@
             <strong id="officialResetStatus">--</strong>
           </div>
           <div class="signal-check" id="officialResetCheck">
-            <svg viewBox="0 0 24 24"><path d="m6.5 12.5 3.3 3.3 7.7-7.7"></path></svg>
+            <svg viewBox="0 0 24 24"><path d="M8 6h11M8 12h11M8 18h11"></path><circle cx="4" cy="6" r=".7"></circle><circle cx="4" cy="12" r=".7"></circle><circle cx="4" cy="18" r=".7"></circle></svg>
           </div>
         </div>
       </section>
@@ -211,6 +211,21 @@
             <button class="glass-button" id="cropCancel" type="button" data-i18n="cancel">取消</button>
             <button class="glass-button primary" id="cropApply" type="button" data-i18n="applyCrop">使用此区域</button>
           </div>
+        </div>
+      </section>
+
+      <section class="history-modal no-drag" id="officialResetHistoryModal" hidden aria-modal="true" role="dialog" aria-labelledby="officialResetHistoryTitle">
+        <div class="history-dialog">
+          <div class="history-heading">
+            <div>
+              <span class="eyebrow">OFFICIAL RESET HISTORY</span>
+              <h2 id="officialResetHistoryTitle" data-i18n="officialResetHistoryTitle">官方重置记录</h2>
+            </div>
+            <button class="popover-close" id="officialResetHistoryClose" type="button" aria-label="关闭">×</button>
+          </div>
+          <p data-i18n="officialResetHistoryHint">记录检测器观察到双额度在正常恢复时间前同时恢复 100% 的时间，数据永久保存在本机。</p>
+          <div class="official-reset-history" id="officialResetHistoryList"></div>
+          <button class="glass-button primary history-done" id="officialResetHistoryDone" type="button" data-i18n="close">关闭</button>
         </div>
       </section>
 

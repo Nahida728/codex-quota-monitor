@@ -33,6 +33,19 @@ const i18n = {
     notDetected: "本次未发现",
     resetDetected: "官方已重置所有限额",
     resetNotDetected: "未检测到",
+    officialResetLatest: "最近一次：{time}",
+    officialResetNever: "暂无官方重置记录",
+    officialResetHistoryTitle: "官方重置记录",
+    officialResetHistoryHint: "记录检测器观察到双额度在正常恢复时间前同时恢复 100% 的时间，数据永久保存在本机。",
+    officialResetHistoryEmpty: "尚未记录到符合条件的官方重置",
+    officialResetHistoryCount: "共 {count} 次",
+    officialResetNewest: "最近一次",
+    officialResetDetectedAt: "检测于 {time}",
+    officialResetModeAll: "双额度提前恢复",
+    officialResetModeWeekly: "5 小时关闭 · 周额度提前恢复",
+    officialResetModeLegacy: "旧版检测记录",
+    manualResetExcluded: "检测到手动重置，未计入官方记录",
+    openOfficialResetHistory: "查看官方重置记录",
     waiting: "等待首次检测",
     checkedNow: "刚刚检测",
     checkedMinutes: "{count} 分钟前检测",
@@ -93,6 +106,19 @@ const i18n = {
     notDetected: "None detected",
     resetDetected: "Official full reset detected",
     resetNotDetected: "Not detected",
+    officialResetLatest: "Latest: {time}",
+    officialResetNever: "No official reset recorded",
+    officialResetHistoryTitle: "Official reset history",
+    officialResetHistoryHint: "Records when both quota windows were observed returning to 100% before their scheduled reset. Data is stored permanently on this device.",
+    officialResetHistoryEmpty: "No qualifying official reset has been recorded",
+    officialResetHistoryCount: "{count} total",
+    officialResetNewest: "Latest",
+    officialResetDetectedAt: "Detected {time}",
+    officialResetModeAll: "Both limits restored early",
+    officialResetModeWeekly: "5-hour paused · Weekly restored early",
+    officialResetModeLegacy: "Legacy detection record",
+    manualResetExcluded: "Manual reset detected; excluded from official history",
+    openOfficialResetHistory: "View official reset history",
     waiting: "Waiting for first check",
     checkedNow: "Checked just now",
     checkedMinutes: "Checked {count}m ago",
@@ -132,7 +158,9 @@ const elements = Object.fromEntries([
   "fiveHourPanel", "fiveHourReset", "fiveHourNumber", "fiveHourProgress", "fiveHourUsed",
   "weeklyPanel", "weeklyReset", "weeklyNumber", "weeklyProgress", "weeklyUsed",
   "resetCount", "resetType", "expiresAt", "newResetStatus", "newResetCheck", "newResetIcon",
-  "officialResetStatus", "officialResetCheck", "lastChecked", "loadingLayer"
+  "officialResetButton", "officialResetStatus", "officialResetCheck", "officialResetHistoryModal",
+  "officialResetHistoryClose", "officialResetHistoryDone", "officialResetHistoryList",
+  "lastChecked", "loadingLayer"
 ].map(id => [id, document.getElementById(id)]));
 
 let language = "zh";
@@ -147,6 +175,7 @@ let backgroundOpacity = 0.34;
 let cropSource = null;
 let cropInteraction = null;
 let cropFrame = null;
+let officialResetHistory = [];
 
 function t(key, values = {}) {
   let text = i18n[language][key] ?? key;
@@ -172,6 +201,8 @@ function applyLanguage() {
   elements.backgroundButton.setAttribute("aria-label", t("backgroundSettings"));
   elements.backgroundClose.setAttribute("aria-label", t("close"));
   elements.cropClose.setAttribute("aria-label", t("close"));
+  elements.officialResetHistoryClose.setAttribute("aria-label", t("close"));
+  elements.officialResetButton.setAttribute("aria-label", t("openOfficialResetHistory"));
   if (latestSnapshot) render(latestSnapshot);
 }
 
@@ -415,6 +446,76 @@ function setSignal(status, check, icon, detected, positiveText, negativeText) {
   icon?.classList.toggle("is-positive", detected);
 }
 
+function renderOfficialResetHistory(event = {}, manualReset = {}) {
+  officialResetHistory = Array.isArray(event.history)
+    ? event.history
+        .filter(item => Number.isFinite(item?.detectedAt))
+        .sort((a, b) => a.detectedAt - b.detectedAt)
+    : [];
+  const latestAt = Number.isFinite(event.latestAt)
+    ? event.latestAt
+    : officialResetHistory.at(-1)?.detectedAt;
+  const hasHistory = Number.isFinite(latestAt);
+
+  elements.officialResetStatus.textContent = manualReset.detected
+    ? t("manualResetExcluded")
+    : (hasHistory
+        ? t("officialResetLatest", { time: formatDate(latestAt, true) })
+        : t("officialResetNever"));
+  elements.officialResetCheck.classList.toggle("is-positive", hasHistory);
+  elements.officialResetButton.classList.toggle("has-history", hasHistory);
+
+  elements.officialResetHistoryList.replaceChildren();
+  if (!officialResetHistory.length) {
+    const empty = document.createElement("div");
+    empty.className = "history-empty";
+    empty.textContent = t("officialResetHistoryEmpty");
+    elements.officialResetHistoryList.append(empty);
+    return;
+  }
+
+  const count = document.createElement("div");
+  count.className = "history-count";
+  count.textContent = t("officialResetHistoryCount", { count: officialResetHistory.length });
+  elements.officialResetHistoryList.append(count);
+
+  officialResetHistory.slice().reverse().forEach((record, index) => {
+    const item = document.createElement("article");
+    item.className = "history-item";
+
+    const marker = document.createElement("span");
+    marker.className = "history-marker";
+    marker.textContent = String(officialResetHistory.length - index).padStart(2, "0");
+
+    const copy = document.createElement("div");
+    const title = document.createElement("strong");
+    const modeLabel = {
+      "all-limits": t("officialResetModeAll"),
+      "weekly-only-five-hour-disabled": t("officialResetModeWeekly")
+    }[record.detectionMode] || t("officialResetModeLegacy");
+    title.textContent = index === 0
+      ? `${modeLabel} · ${t("officialResetNewest")}`
+      : modeLabel;
+    const time = document.createElement("span");
+    time.textContent = t("officialResetDetectedAt", {
+      time: formatDate(record.detectedAt, true)
+    });
+    copy.append(title, time);
+    item.append(marker, copy);
+    elements.officialResetHistoryList.append(item);
+  });
+}
+
+function openOfficialResetHistory() {
+  elements.officialResetHistoryModal.hidden = false;
+  elements.officialResetHistoryClose.focus();
+}
+
+function closeOfficialResetHistory() {
+  elements.officialResetHistoryModal.hidden = true;
+  elements.officialResetButton.focus();
+}
+
 function renderOnline(snapshot) {
   const { data } = snapshot;
   elements.connectionStrip.className = "connection-strip is-online";
@@ -457,14 +558,7 @@ function renderOnline(snapshot) {
     t("detectedCount", { count: data.events.newReset.count }),
     t("notDetected")
   );
-  setSignal(
-    elements.officialResetStatus,
-    elements.officialResetCheck,
-    null,
-    data.events.officialReset.detected,
-    t("resetDetected"),
-    t("resetNotDetected")
-  );
+  renderOfficialResetHistory(data.events.officialReset, data.events.manualReset);
 }
 
 function renderOffline(snapshot) {
@@ -530,6 +624,7 @@ async function initialize() {
   applyLanguage();
   applyBackground();
   initializeCropper();
+  renderOfficialResetHistory();
 
   elements.languageButton.addEventListener("click", async () => {
     language = language === "zh" ? "en" : "zh";
@@ -547,6 +642,18 @@ async function initialize() {
   elements.minimizeButton.addEventListener("click", () => window.codexMonitor.minimize());
   elements.closeButton.addEventListener("click", () => window.codexMonitor.hide());
   elements.refreshButton.addEventListener("click", () => refresh());
+  elements.officialResetButton.addEventListener("click", openOfficialResetHistory);
+  elements.officialResetButton.addEventListener("keydown", event => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openOfficialResetHistory();
+    }
+  });
+  elements.officialResetHistoryClose.addEventListener("click", closeOfficialResetHistory);
+  elements.officialResetHistoryDone.addEventListener("click", closeOfficialResetHistory);
+  elements.officialResetHistoryModal.addEventListener("click", event => {
+    if (event.target === elements.officialResetHistoryModal) closeOfficialResetHistory();
+  });
   elements.backgroundButton.addEventListener("click", () => {
     const shouldOpen = elements.backgroundPopover.hidden;
     elements.backgroundPopover.hidden = !shouldOpen;
@@ -611,6 +718,11 @@ async function initialize() {
   window.codexMonitor.onRefresh(() => refresh());
   window.codexMonitor.onAlwaysOnTop(enabled => {
     alwaysOnTop = enabled;
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && !elements.officialResetHistoryModal.hidden) {
+      closeOfficialResetHistory();
+    }
   });
 
   await refresh({ initial: true });
