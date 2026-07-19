@@ -3,9 +3,66 @@ const assert = require("node:assert/strict");
 const {
   identifyWindows,
   normalizeQuotaResponse,
+  restoreCachedCreditDetails,
   didUnexpectedReset,
   didOfficialFullReset
 } = require("../src/quota-normalizer");
+
+test("keeps all available reset credit details and their individual expiries", () => {
+  const credits = Array.from({ length: 6 }, (_, index) => ({
+    id: `credit-${index + 1}`,
+    resetType: "codexRateLimits",
+    status: "available",
+    expiresAt: 2000 + index,
+    title: "Full reset"
+  }));
+  const normalized = normalizeQuotaResponse({
+    rateLimits: {
+      primary: { usedPercent: 4, windowDurationMins: 10080, resetsAt: 9000 },
+      secondary: null
+    },
+    rateLimitResetCredits: { availableCount: 6, credits }
+  }, {}, 1000);
+
+  assert.equal(normalized.resets.items.length, 6);
+  assert.deepEqual(
+    normalized.resets.items.map(item => item.expiresAt),
+    [2000, 2001, 2002, 2003, 2004, 2005]
+  );
+  assert.equal(normalized.persistence.resetCreditDetails.length, 6);
+});
+
+test("restores the last complete credit details when a response only has the count", () => {
+  const cached = [
+    { id: "one", status: "available", title: "Full reset", expiresAt: 2000 },
+    { id: "two", status: "available", title: "Full reset", expiresAt: 3000 }
+  ];
+  const restored = restoreCachedCreditDetails({
+    availableCount: 2,
+    items: [],
+    earliestExpiresAt: null
+  }, {
+    resetCreditDetails: cached
+  });
+
+  assert.equal(restored.items.length, 2);
+  assert.equal(restored.earliestExpiresAt, 2000);
+});
+
+test("does not restore stale credit details after the available count changes", () => {
+  const restored = restoreCachedCreditDetails({
+    availableCount: 1,
+    items: [],
+    earliestExpiresAt: null
+  }, {
+    resetCreditDetails: [
+      { id: "one", expiresAt: 2000 },
+      { id: "two", expiresAt: 3000 }
+    ]
+  });
+
+  assert.equal(restored.items.length, 0);
+});
 
 test("identifies five-hour and weekly windows by duration rather than field name", () => {
   const windows = identifyWindows({

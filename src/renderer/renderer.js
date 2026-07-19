@@ -27,6 +27,9 @@ const i18n = {
     unknown: "未知",
     noExpiry: "无到期时间",
     noCredits: "暂无可用次数",
+    creditExpires: "{time} 到期",
+    creditDetailsMissing: "另有 {count} 次明细暂未返回",
+    resetListScrollable: "共 {count} 次，可滚动查看全部记录",
     newResetQuestion: "收到新的重置次数",
     officialResetQuestion: "官方额度重置",
     detectedCount: "检测到新增 +{count}",
@@ -100,6 +103,9 @@ const i18n = {
     unknown: "Unknown",
     noExpiry: "No expiry",
     noCredits: "No available resets",
+    creditExpires: "Expires {time}",
+    creditDetailsMissing: "{count} more reset details are unavailable",
+    resetListScrollable: "{count} total; scroll to view every reset",
     newResetQuestion: "New reset received",
     officialResetQuestion: "Official quota reset",
     detectedCount: "New reset +{count}",
@@ -157,7 +163,7 @@ const elements = Object.fromEntries([
   "cropResizeHandle", "cropSourceInfo",
   "fiveHourPanel", "fiveHourReset", "fiveHourNumber", "fiveHourProgress", "fiveHourUsed",
   "weeklyPanel", "weeklyReset", "weeklyNumber", "weeklyProgress", "weeklyUsed",
-  "resetCount", "resetType", "expiresAt", "newResetStatus", "newResetCheck", "newResetIcon",
+  "resetCount", "resetCreditList", "newResetStatus", "newResetCheck", "newResetIcon",
   "officialResetButton", "officialResetStatus", "officialResetCheck", "officialResetHistoryModal",
   "officialResetHistoryClose", "officialResetHistoryDone", "officialResetHistoryList",
   "lastChecked", "loadingLayer"
@@ -446,6 +452,83 @@ function setSignal(status, check, icon, detected, positiveText, negativeText) {
   icon?.classList.toggle("is-positive", detected);
 }
 
+function getResetCreditTitle(credit) {
+  if (credit?.title) return credit.title;
+  if (credit?.resetType === "codexRateLimits") return t("fullReset");
+  return t("codexReset");
+}
+
+function renderResetCredits(resets = {}) {
+  const availableCount = Number.isFinite(resets.availableCount) ? resets.availableCount : 0;
+  const items = Array.isArray(resets.items)
+    ? resets.items
+        .filter(Boolean)
+        .slice()
+        .sort((a, b) => {
+          const left = Number.isFinite(a.expiresAt) ? a.expiresAt : Number.POSITIVE_INFINITY;
+          const right = Number.isFinite(b.expiresAt) ? b.expiresAt : Number.POSITIVE_INFINITY;
+          return left - right;
+        })
+    : [];
+  const missingCount = Math.max(0, availableCount - items.length);
+  const renderedRowCount = items.length + (missingCount ? 1 : 0);
+
+  elements.resetCount.textContent = availableCount;
+  elements.resetCreditList.replaceChildren();
+  elements.resetCreditList.classList.toggle("is-overflowing", renderedRowCount > 6);
+  elements.resetCreditList.style.setProperty(
+    "--reset-visible-count",
+    String(Math.max(1, Math.min(renderedRowCount, 6)))
+  );
+
+  if (renderedRowCount > 6) {
+    elements.resetCreditList.tabIndex = 0;
+    elements.resetCreditList.setAttribute(
+      "aria-label",
+      t("resetListScrollable", { count: availableCount })
+    );
+  } else {
+    elements.resetCreditList.removeAttribute("tabindex");
+    elements.resetCreditList.removeAttribute("aria-label");
+  }
+
+  if (!availableCount) {
+    const empty = document.createElement("div");
+    empty.className = "reset-credit-empty";
+    empty.textContent = t("noCredits");
+    elements.resetCreditList.append(empty);
+    return;
+  }
+
+  items.forEach((credit, index) => {
+    const row = document.createElement("article");
+    row.className = "reset-credit-item";
+
+    const marker = document.createElement("span");
+    marker.className = "reset-credit-index";
+    marker.textContent = String(index + 1).padStart(2, "0");
+
+    const title = document.createElement("strong");
+    title.textContent = getResetCreditTitle(credit);
+
+    const expiry = document.createElement("span");
+    expiry.className = "reset-credit-expiry";
+    expiry.textContent = Number.isFinite(credit.expiresAt)
+      ? t("creditExpires", { time: formatDate(credit.expiresAt, true) })
+      : t("noExpiry");
+
+    row.append(marker, title, expiry);
+    elements.resetCreditList.append(row);
+  });
+
+  if (missingCount) {
+    const missing = document.createElement("div");
+    missing.className = "reset-credit-missing";
+    missing.textContent = t("creditDetailsMissing", { count: missingCount });
+    elements.resetCreditList.append(missing);
+  }
+}
+
 function renderOfficialResetHistory(event = {}, manualReset = {}) {
   officialResetHistory = Array.isArray(event.history)
     ? event.history
@@ -540,15 +623,7 @@ function renderOnline(snapshot) {
     data.windows.weekly
   );
 
-  elements.resetCount.textContent = data.resets.availableCount;
-  const firstCredit = data.resets.items[0];
-  elements.resetType.textContent = firstCredit?.title ||
-    (firstCredit?.resetType === "codexRateLimits"
-      ? t("fullReset")
-      : (data.resets.availableCount > 0 ? t("codexReset") : t("unknown")));
-  elements.expiresAt.textContent = data.resets.availableCount
-    ? (data.resets.earliestExpiresAt ? formatDate(data.resets.earliestExpiresAt, true) : t("noExpiry"))
-    : t("noCredits");
+  renderResetCredits(data.resets);
 
   setSignal(
     elements.newResetStatus,

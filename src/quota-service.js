@@ -2,6 +2,7 @@ const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { version: appVersion } = require("../package.json");
 const { JsonStore } = require("./store");
 const { normalizeQuotaResponse } = require("./quota-normalizer");
 
@@ -49,7 +50,7 @@ class AppServerClient {
       clientInfo: {
         name: "codex-quota-monitor",
         title: "Codex Quota Monitor",
-        version: "1.0.0"
+        version: appVersion
       }
     });
     this.initialized = true;

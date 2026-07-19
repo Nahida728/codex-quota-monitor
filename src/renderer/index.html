@@ -93,12 +93,10 @@
             <div class="quota-icon mint">
               <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><path d="M12 8v4l2.8 1.8"></path></svg>
             </div>
-            <div>
-              <div class="quota-name" data-i18n="fiveHour">5 小时额度</div>
-              <div class="quota-reset" id="fiveHourReset">--</div>
-            </div>
+            <div class="quota-name" data-i18n="fiveHour">5 小时额度</div>
             <div class="quota-number" id="fiveHourNumber"><span>--</span><small>%</small></div>
           </div>
+          <div class="quota-reset" id="fiveHourReset">--</div>
           <div class="progress-track" id="fiveHourTrack">
             <div class="progress-glow mint-progress" id="fiveHourProgress"></div>
           </div>
@@ -113,12 +111,10 @@
             <div class="quota-icon violet">
               <svg viewBox="0 0 24 24"><path d="M7 3v3m10-3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z"></path></svg>
             </div>
-            <div>
-              <div class="quota-name" data-i18n="weekly">1 周额度</div>
-              <div class="quota-reset" id="weeklyReset">--</div>
-            </div>
+            <div class="quota-name" data-i18n="weekly">1 周额度</div>
             <div class="quota-number" id="weeklyNumber"><span>--</span><small>%</small></div>
           </div>
+          <div class="quota-reset" id="weeklyReset">--</div>
           <div class="progress-track">
             <div class="progress-glow violet-progress" id="weeklyProgress"></div>
           </div>
@@ -137,16 +133,8 @@
           </div>
           <span class="count-badge" id="resetCount">--</span>
         </div>
-        <div class="reset-details">
-          <div class="detail-item">
-            <span data-i18n="resetType">重置类型</span>
-            <strong id="resetType">--</strong>
-          </div>
-          <div class="detail-divider"></div>
-          <div class="detail-item">
-            <span data-i18n="expiresAt">最近到期</span>
-            <strong id="expiresAt">--</strong>
-          </div>
+        <div class="reset-credit-list" id="resetCreditList" aria-live="polite">
+          <div class="reset-credit-empty" data-i18n="noCredits">暂无可用次数</div>
         </div>
       </section>
 

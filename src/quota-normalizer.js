@@ -64,6 +64,26 @@ function normalizeCredits(summary) {
   };
 }
 
+function restoreCachedCreditDetails(resets, previousState) {
+  const cachedItems = Array.isArray(previousState?.resetCreditDetails)
+    ? previousState.resetCreditDetails
+    : [];
+  const shouldRestore = resets.availableCount > 0 &&
+    resets.items.length === 0 &&
+    cachedItems.length === resets.availableCount;
+  if (!shouldRestore) return resets;
+
+  const items = cachedItems.map(item => ({ ...item }));
+  return {
+    ...resets,
+    items,
+    earliestExpiresAt: items
+      .map(item => item.expiresAt)
+      .filter(Number.isFinite)
+      .sort((a, b) => a - b)[0] || null
+  };
+}
+
 function getRateLimit(raw) {
   return raw?.rateLimitsByLimitId?.codex || raw?.rateLimits || null;
 }
@@ -196,6 +216,9 @@ function deriveEvents(previousState, normalized, nowSeconds) {
       lastNewResetCount,
       officialResetAt,
       officialResetHistory,
+      resetCreditDetails: normalized.resets.items.length === normalized.resets.availableCount
+        ? normalized.resets.items
+        : [],
       lastSnapshot: {
         windows: normalized.windows,
         resets: { availableCount: normalized.resets.availableCount }
@@ -213,7 +236,10 @@ function normalizeQuotaResponse(raw, previousState = {}, nowSeconds = Math.floor
     limitReached: Boolean(rateLimit.rateLimitReachedType),
     limitReachedType: rateLimit.rateLimitReachedType || null,
     windows: identifyWindows(rateLimit),
-    resets: normalizeCredits(raw.rateLimitResetCredits)
+    resets: restoreCachedCreditDetails(
+      normalizeCredits(raw.rateLimitResetCredits),
+      previousState
+    )
   };
   const events = deriveEvents(previousState, normalized, nowSeconds);
   return {
@@ -230,6 +256,7 @@ function normalizeQuotaResponse(raw, previousState = {}, nowSeconds = Math.floor
 module.exports = {
   identifyWindows,
   normalizeCredits,
+  restoreCachedCreditDetails,
   normalizeQuotaResponse,
   didUnexpectedReset,
   didOfficialFullReset,
