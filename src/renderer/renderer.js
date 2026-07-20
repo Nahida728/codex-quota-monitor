@@ -2,7 +2,12 @@ const AUTO_REFRESH_MS = 60_000;
 
 const i18n = {
   zh: {
+    appTitle: "Codex 额度检测器",
     title: "额度检测器",
+    switchLanguage: "切换到英文",
+    refreshNow: "立即刷新",
+    quotaRegion: "额度",
+    statusRegion: "状态提醒",
     checking: "正在连接 Codex…",
     connected: "Codex 已连接 · {plan}",
     offlineTitle: "Codex 当前离线",
@@ -30,13 +35,15 @@ const i18n = {
     creditExpires: "{time} 到期",
     creditDetailsMissing: "另有 {count} 次明细暂未返回",
     resetListScrollable: "共 {count} 次，可滚动查看全部记录",
-    newResetQuestion: "收到新的重置次数",
-    officialResetQuestion: "官方额度重置",
+    newResetQuestion: "新重置次数",
+    officialResetQuestion: "官方重置",
+    clientUpdateQuestion: "Codex 客户端更新",
     detectedCount: "检测到新增 +{count}",
     notDetected: "本次未发现",
     resetDetected: "官方已重置所有限额",
     resetNotDetected: "未检测到",
     officialResetLatest: "最近一次：{time}",
+    officialResetCardLatest: "{time}",
     officialResetNever: "暂无官方重置记录",
     officialResetHistoryTitle: "官方重置记录",
     officialResetHistoryHint: "记录检测器观察到双额度在正常恢复时间前同时恢复 100% 的时间，数据永久保存在本机。",
@@ -48,7 +55,15 @@ const i18n = {
     officialResetModeWeekly: "5 小时关闭 · 周额度提前恢复",
     officialResetModeLegacy: "旧版检测记录",
     manualResetExcluded: "检测到手动重置，未计入官方记录",
+    manualResetCardExcluded: "手动重置已排除",
     openOfficialResetHistory: "查看官方重置记录",
+    clientUpdateDetected: "检测到新版已安装",
+    clientUpdateReady: "发现可用更新",
+    clientUpdateNotDetected: "未发现新更新",
+    clientUpdateUnknown: "版本状态不可用",
+    clientUpdateVersion: "当前 v{version}",
+    clientUpdateVersionChange: "新版 v{version}",
+    clientUpdateTarget: "可更新至 v{version}",
     waiting: "等待首次检测",
     checkedNow: "刚刚检测",
     checkedMinutes: "{count} 分钟前检测",
@@ -73,12 +88,18 @@ const i18n = {
     unsupportedImage: "请选择 PNG、JPG、WebP 或 GIF 图片",
     cropTitle: "截取背景区域",
     cropHint: "拖动选框调整位置，拖动右下角改变选区大小。",
+    cropResize: "调整裁剪区域",
     cancel: "取消",
     applyCrop: "使用此区域",
     cropSaving: "正在保存…"
   },
   en: {
+    appTitle: "Codex Quota Monitor",
     title: "Quota Monitor",
+    switchLanguage: "Switch to Chinese",
+    refreshNow: "Refresh now",
+    quotaRegion: "Quotas",
+    statusRegion: "Status alerts",
     checking: "Connecting to Codex…",
     connected: "Codex connected · {plan}",
     offlineTitle: "Codex is offline",
@@ -106,13 +127,15 @@ const i18n = {
     creditExpires: "Expires {time}",
     creditDetailsMissing: "{count} more reset details are unavailable",
     resetListScrollable: "{count} total; scroll to view every reset",
-    newResetQuestion: "New reset received",
-    officialResetQuestion: "Official quota reset",
+    newResetQuestion: "New reset credit",
+    officialResetQuestion: "Official reset",
+    clientUpdateQuestion: "Codex client update",
     detectedCount: "New reset +{count}",
     notDetected: "None detected",
     resetDetected: "Official full reset detected",
     resetNotDetected: "Not detected",
     officialResetLatest: "Latest: {time}",
+    officialResetCardLatest: "{time}",
     officialResetNever: "No official reset recorded",
     officialResetHistoryTitle: "Official reset history",
     officialResetHistoryHint: "Records when both quota windows were observed returning to 100% before their scheduled reset. Data is stored permanently on this device.",
@@ -124,7 +147,15 @@ const i18n = {
     officialResetModeWeekly: "5-hour paused · Weekly restored early",
     officialResetModeLegacy: "Legacy detection record",
     manualResetExcluded: "Manual reset detected; excluded from official history",
+    manualResetCardExcluded: "Manual reset excluded",
     openOfficialResetHistory: "View official reset history",
+    clientUpdateDetected: "New version installed",
+    clientUpdateReady: "Update available",
+    clientUpdateNotDetected: "No new update found",
+    clientUpdateUnknown: "Version unavailable",
+    clientUpdateVersion: "Current v{version}",
+    clientUpdateVersionChange: "Now v{version}",
+    clientUpdateTarget: "Update to v{version}",
     waiting: "Waiting for first check",
     checkedNow: "Checked just now",
     checkedMinutes: "Checked {count}m ago",
@@ -148,6 +179,7 @@ const i18n = {
     unsupportedImage: "Choose a PNG, JPG, WebP, or GIF image",
     cropTitle: "Crop background",
     cropHint: "Drag the frame to move it. Drag the lower-right handle to resize.",
+    cropResize: "Resize crop area",
     cancel: "Cancel",
     applyCrop: "Use this area",
     cropSaving: "Saving…"
@@ -157,6 +189,7 @@ const i18n = {
 const elements = Object.fromEntries([
   "app", "connectionStrip", "connectionLabel", "statusDot", "offlineNotice", "offlineMessage",
   "languageButton", "refreshButton", "pinButton", "minimizeButton", "closeButton", "titlebar",
+  "quotaSection", "statusSection",
   "backgroundButton", "backgroundPopover", "backgroundClose", "chooseBackground", "clearBackground",
   "opacitySlider", "opacityValue", "backgroundError", "customBackground", "backgroundDropZone",
   "cropModal", "cropClose", "cropCancel", "cropApply", "cropStage", "cropImage", "cropBox",
@@ -166,6 +199,7 @@ const elements = Object.fromEntries([
   "resetCount", "resetCreditList", "newResetStatus", "newResetCheck", "newResetIcon",
   "officialResetButton", "officialResetStatus", "officialResetCheck", "officialResetHistoryModal",
   "officialResetHistoryClose", "officialResetHistoryDone", "officialResetHistoryList",
+  "clientUpdateCard", "clientUpdateStatus", "clientUpdateVersion", "clientUpdateCheck", "clientUpdateIcon",
   "lastChecked", "loadingLayer"
 ].map(id => [id, document.getElementById(id)]));
 
@@ -193,10 +227,17 @@ function t(key, values = {}) {
 
 function applyLanguage() {
   document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
+  document.title = t("appTitle");
   document.querySelectorAll("[data-i18n]").forEach(node => {
     node.textContent = t(node.dataset.i18n);
   });
   elements.languageButton.textContent = language === "zh" ? "EN" : "中";
+  elements.languageButton.title = t("switchLanguage");
+  elements.languageButton.setAttribute("aria-label", t("switchLanguage"));
+  elements.refreshButton.title = t("refreshNow");
+  elements.refreshButton.setAttribute("aria-label", t("refreshNow"));
+  elements.quotaSection.setAttribute("aria-label", t("quotaRegion"));
+  elements.statusSection.setAttribute("aria-label", t("statusRegion"));
   elements.pinButton.title = positionLocked ? t("pinOn") : t("pinOff");
   elements.pinButton.setAttribute("aria-label", elements.pinButton.title);
   elements.minimizeButton.title = t("minimize");
@@ -207,6 +248,7 @@ function applyLanguage() {
   elements.backgroundButton.setAttribute("aria-label", t("backgroundSettings"));
   elements.backgroundClose.setAttribute("aria-label", t("close"));
   elements.cropClose.setAttribute("aria-label", t("close"));
+  elements.cropResizeHandle.setAttribute("aria-label", t("cropResize"));
   elements.officialResetHistoryClose.setAttribute("aria-label", t("close"));
   elements.officialResetButton.setAttribute("aria-label", t("openOfficialResetHistory"));
   if (latestSnapshot) render(latestSnapshot);
@@ -453,8 +495,8 @@ function setSignal(status, check, icon, detected, positiveText, negativeText) {
 }
 
 function getResetCreditTitle(credit) {
-  if (credit?.title) return credit.title;
   if (credit?.resetType === "codexRateLimits") return t("fullReset");
+  if (credit?.title) return credit.title;
   return t("codexReset");
 }
 
@@ -541,9 +583,9 @@ function renderOfficialResetHistory(event = {}, manualReset = {}) {
   const hasHistory = Number.isFinite(latestAt);
 
   elements.officialResetStatus.textContent = manualReset.detected
-    ? t("manualResetExcluded")
+    ? t("manualResetCardExcluded")
     : (hasHistory
-        ? t("officialResetLatest", { time: formatDate(latestAt, true) })
+        ? t("officialResetCardLatest", { time: formatDate(latestAt) })
         : t("officialResetNever"));
   elements.officialResetCheck.classList.toggle("is-positive", hasHistory);
   elements.officialResetButton.classList.toggle("has-history", hasHistory);
@@ -589,6 +631,41 @@ function renderOfficialResetHistory(event = {}, manualReset = {}) {
   });
 }
 
+function renderClientUpdate(clientUpdate = {}) {
+  const pending = Boolean(
+    clientUpdate.pendingUpdate &&
+    clientUpdate.currentVersion &&
+    clientUpdate.pendingVersion
+  );
+  const installed = Boolean(
+    !pending &&
+    (clientUpdate.installedUpdateDetected || clientUpdate.status === "updated") &&
+    clientUpdate.currentVersion
+  );
+  const available = Boolean(clientUpdate.available && clientUpdate.currentVersion);
+  if (pending) {
+    elements.clientUpdateStatus.textContent = t("clientUpdateReady");
+    elements.clientUpdateVersion.textContent = t("clientUpdateTarget", {
+      version: clientUpdate.pendingVersion
+    });
+  } else if (installed) {
+    elements.clientUpdateStatus.textContent = t("clientUpdateDetected");
+    elements.clientUpdateVersion.textContent = t("clientUpdateVersionChange", {
+      version: clientUpdate.currentVersion
+    });
+  } else {
+    elements.clientUpdateStatus.textContent = available
+      ? t("clientUpdateNotDetected")
+      : t("clientUpdateUnknown");
+    elements.clientUpdateVersion.textContent = available
+      ? t("clientUpdateVersion", { version: clientUpdate.currentVersion })
+      : "—";
+  }
+  elements.clientUpdateCheck.classList.toggle("is-positive", pending || installed);
+  elements.clientUpdateIcon.classList.toggle("is-positive", pending || installed);
+  elements.clientUpdateCard.classList.toggle("has-update", pending || installed);
+}
+
 function openOfficialResetHistory() {
   elements.officialResetHistoryModal.hidden = false;
   elements.officialResetHistoryClose.focus();
@@ -601,6 +678,7 @@ function closeOfficialResetHistory() {
 
 function renderOnline(snapshot) {
   const { data } = snapshot;
+  elements.app.classList.remove("is-offline-state");
   elements.connectionStrip.className = "connection-strip is-online";
   elements.connectionLabel.textContent = t("connected", { plan: String(data.planType).toUpperCase() });
   elements.offlineNotice.hidden = true;
@@ -634,9 +712,11 @@ function renderOnline(snapshot) {
     t("notDetected")
   );
   renderOfficialResetHistory(data.events.officialReset, data.events.manualReset);
+  renderClientUpdate(snapshot.clientUpdate);
 }
 
 function renderOffline(snapshot) {
+  elements.app.classList.add("is-offline-state");
   elements.connectionStrip.className = "connection-strip is-offline";
   elements.connectionLabel.textContent = t("offlineTitle");
   elements.offlineNotice.hidden = false;
@@ -646,6 +726,7 @@ function renderOffline(snapshot) {
     TIMEOUT: "timeout"
   }[snapshot.errorCode] || "offlineMessage";
   elements.offlineMessage.textContent = t(messageKey);
+  renderClientUpdate(snapshot.clientUpdate);
 }
 
 function updateLastChecked() {
@@ -700,6 +781,7 @@ async function initialize() {
   applyBackground();
   initializeCropper();
   renderOfficialResetHistory();
+  renderClientUpdate();
 
   elements.languageButton.addEventListener("click", async () => {
     language = language === "zh" ? "en" : "zh";

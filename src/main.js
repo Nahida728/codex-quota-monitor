@@ -16,6 +16,14 @@ const WINDOW_WIDTH = 460;
 const WINDOW_HEIGHT = 690;
 const MAX_BACKGROUND_BYTES = 20 * 1024 * 1024;
 
+function isChinese() {
+  return store?.get("language", "zh") === "zh";
+}
+
+function getLocalizedAppName() {
+  return isChinese() ? APP_NAME : "Codex Quota Monitor";
+}
+
 function ensureWindowSize() {
   if (!window || window.isDestroyed()) return;
   const bounds = window.getBounds();
@@ -117,7 +125,9 @@ function buildTrayMenu() {
 }
 
 function updateTray() {
-  if (tray) tray.setContextMenu(buildTrayMenu());
+  if (!tray) return;
+  tray.setToolTip(getLocalizedAppName());
+  tray.setContextMenu(buildTrayMenu());
 }
 
 function showWindow() {
@@ -238,11 +248,12 @@ function registerIpc() {
     return next;
   });
   ipcMain.handle("background:choose", async () => {
+    const zh = isChinese();
     const result = await dialog.showOpenDialog(window, {
-      title: store.get("language", "zh") === "zh" ? "选择卡片背景图" : "Choose card background",
+      title: zh ? "选择卡片背景图" : "Choose card background",
       properties: ["openFile"],
       filters: [
-        { name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }
+        { name: zh ? "图片" : "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }
       ]
     });
     if (result.canceled || !result.filePaths[0]) return { canceled: true };
@@ -306,7 +317,7 @@ app.whenReady().then(() => {
   registerIpc();
   createWindow();
   tray = new Tray(createTrayIcon());
-  tray.setToolTip(APP_NAME);
+  tray.setToolTip(getLocalizedAppName());
   tray.setContextMenu(buildTrayMenu());
   tray.on("click", () => {
     window?.isVisible() ? window.hide() : showWindow();

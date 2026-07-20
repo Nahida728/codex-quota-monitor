@@ -23,6 +23,32 @@ test("renders every reset credit into a dedicated list row", () => {
   assert.match(renderer, /className\s*=\s*"reset-credit-item"/);
 });
 
+test("places three status cards between quota cards and reset credits", () => {
+  const quotaIndex = html.indexOf('class="quota-section"');
+  const signalsIndex = html.indexOf('class="signals"');
+  const resetIndex = html.indexOf('class="reset-section"');
+  assert.ok(quotaIndex >= 0 && quotaIndex < signalsIndex);
+  assert.ok(signalsIndex < resetIndex);
+  assert.equal((html.match(/class="status-card(?:\s[^"]*)?"/g) || []).length, 3);
+  assert.match(html, /id="clientUpdateStatus"/);
+  assert.match(html, /id="clientUpdateVersion"/);
+  assert.match(
+    css,
+    /\.signals\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/
+  );
+});
+
+test("client update copy is bilingual and does not rely on ellipsis", () => {
+  assert.match(renderer, /clientUpdateDetected:\s*"检测到新版已安装"/);
+  assert.match(renderer, /clientUpdateDetected:\s*"New version installed"/);
+  assert.match(renderer, /clientUpdateReady:\s*"发现可用更新"/);
+  assert.match(renderer, /clientUpdateReady:\s*"Update available"/);
+  assert.doesNotMatch(
+    css,
+    /\.status-card[\s\S]{0,1200}text-overflow:\s*ellipsis/
+  );
+});
+
 test("caps the visible reset list at six rows and scrolls larger counts", () => {
   assert.match(renderer, /renderedRowCount\s*>\s*6/);
   assert.match(renderer, /Math\.min\(renderedRowCount,\s*6\)/);

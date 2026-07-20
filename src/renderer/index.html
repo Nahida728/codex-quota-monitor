@@ -87,7 +87,7 @@
         </div>
       </div>
 
-      <section class="quota-section" aria-label="额度">
+      <section class="quota-section" id="quotaSection" aria-label="额度">
         <article class="quota-panel" id="fiveHourPanel">
           <div class="quota-heading">
             <div class="quota-icon mint">
@@ -125,6 +125,52 @@
         </article>
       </section>
 
+      <section class="signals" id="statusSection" aria-label="状态提醒">
+        <article class="status-card">
+          <div class="status-card-top">
+            <div class="signal-icon" id="newResetIcon">
+            <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18"></path></svg>
+            </div>
+            <div class="signal-check" id="newResetCheck">
+              <svg viewBox="0 0 24 24"><path d="m6.5 12.5 3.3 3.3 7.7-7.7"></path></svg>
+            </div>
+          </div>
+          <div class="signal-copy">
+            <span data-i18n="newResetQuestion">收到新的重置次数</span>
+            <strong id="newResetStatus">--</strong>
+          </div>
+        </article>
+        <article class="status-card status-card-button no-drag" id="officialResetButton" role="button" tabindex="0">
+          <div class="status-card-top">
+            <div class="signal-icon">
+              <svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.6 2.8 8.2 7 10 4.2-1.8 7-5.4 7-10V6l-7-3Z"></path><path d="m12 7 .9 2.1 2.1.9-2.1.9L12 14l-.9-2.1L9 11l2.1-.9L12 7Z"></path></svg>
+            </div>
+            <div class="signal-check" id="officialResetCheck">
+              <svg viewBox="0 0 24 24"><path d="M8 6h11M8 12h11M8 18h11"></path><circle cx="4" cy="6" r=".7"></circle><circle cx="4" cy="12" r=".7"></circle><circle cx="4" cy="18" r=".7"></circle></svg>
+            </div>
+          </div>
+          <div class="signal-copy">
+            <span data-i18n="officialResetQuestion">官方额度重置</span>
+            <strong id="officialResetStatus">--</strong>
+          </div>
+        </article>
+        <article class="status-card" id="clientUpdateCard">
+          <div class="status-card-top">
+            <div class="signal-icon" id="clientUpdateIcon">
+              <svg viewBox="0 0 24 24"><path d="M12 4v11m0 0-4-4m4 4 4-4"></path><path d="M5 18v2h14v-2"></path></svg>
+            </div>
+            <div class="signal-check" id="clientUpdateCheck">
+              <svg viewBox="0 0 24 24"><path d="m6.5 12.5 3.3 3.3 7.7-7.7"></path></svg>
+            </div>
+          </div>
+          <div class="signal-copy">
+            <span data-i18n="clientUpdateQuestion">Codex 客户端</span>
+            <strong id="clientUpdateStatus">--</strong>
+          </div>
+          <small class="status-card-detail" id="clientUpdateVersion">--</small>
+        </article>
+      </section>
+
       <section class="reset-section">
         <div class="section-title-row">
           <div>
@@ -135,33 +181,6 @@
         </div>
         <div class="reset-credit-list" id="resetCreditList" aria-live="polite">
           <div class="reset-credit-empty" data-i18n="noCredits">暂无可用次数</div>
-        </div>
-      </section>
-
-      <section class="signals">
-        <div class="signal-row">
-          <div class="signal-icon" id="newResetIcon">
-            <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18"></path></svg>
-          </div>
-          <div class="signal-copy">
-            <span data-i18n="newResetQuestion">收到新的重置次数</span>
-            <strong id="newResetStatus">--</strong>
-          </div>
-          <div class="signal-check" id="newResetCheck">
-            <svg viewBox="0 0 24 24"><path d="m6.5 12.5 3.3 3.3 7.7-7.7"></path></svg>
-          </div>
-        </div>
-        <div class="signal-row signal-row-button no-drag" id="officialResetButton" role="button" tabindex="0">
-          <div class="signal-icon">
-            <svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.6 2.8 8.2 7 10 4.2-1.8 7-5.4 7-10V6l-7-3Z"></path><path d="m12 7 .9 2.1 2.1.9-2.1.9L12 14l-.9-2.1L9 11l2.1-.9L12 7Z"></path></svg>
-          </div>
-          <div class="signal-copy">
-            <span data-i18n="officialResetQuestion">官方额度重置</span>
-            <strong id="officialResetStatus">--</strong>
-          </div>
-          <div class="signal-check" id="officialResetCheck">
-            <svg viewBox="0 0 24 24"><path d="M8 6h11M8 12h11M8 18h11"></path><circle cx="4" cy="6" r=".7"></circle><circle cx="4" cy="12" r=".7"></circle><circle cx="4" cy="18" r=".7"></circle></svg>
-          </div>
         </div>
       </section>
 
@@ -176,12 +195,12 @@
       <div class="drag-edge drag-edge-bottom" data-drag-edge="bottom" aria-hidden="true"></div>
       <div class="drag-edge drag-edge-left" data-drag-edge="left" aria-hidden="true"></div>
 
-      <section class="crop-modal no-drag" id="cropModal" hidden aria-modal="true" role="dialog">
+      <section class="crop-modal no-drag" id="cropModal" hidden aria-modal="true" role="dialog" aria-labelledby="cropTitleLabel">
         <div class="crop-dialog">
           <div class="crop-heading">
             <div>
               <span class="eyebrow">BACKGROUND CROP</span>
-              <h2 data-i18n="cropTitle">截取背景区域</h2>
+              <h2 id="cropTitleLabel" data-i18n="cropTitle">截取背景区域</h2>
             </div>
             <button class="popover-close" id="cropClose" type="button" aria-label="关闭">×</button>
           </div>

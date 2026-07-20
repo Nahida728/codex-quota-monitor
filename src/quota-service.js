@@ -5,6 +5,10 @@ const path = require("node:path");
 const { version: appVersion } = require("../package.json");
 const { JsonStore } = require("./store");
 const { normalizeQuotaResponse } = require("./quota-normalizer");
+const {
+  CodexDesktopVersionDetector,
+  evaluateClientUpdate
+} = require("./codex-update-service");
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
@@ -117,8 +121,9 @@ class AppServerClient {
 }
 
 class QuotaService {
-  constructor({ appStatePath }) {
-    this.client = new AppServerClient();
+  constructor({ appStatePath, client, versionDetector } = {}) {
+    this.client = client || new AppServerClient();
+    this.versionDetector = versionDetector || new CodexDesktopVersionDetector();
     this.state = new JsonStore(appStatePath);
     this.inFlight = null;
   }
@@ -133,22 +138,32 @@ class QuotaService {
 
   async performRead() {
     const checkedAt = Date.now();
+    const versionPromise = this.versionDetector.read(checkedAt).catch(() => null);
     try {
-      const raw = await this.client.readRateLimits();
+      const [raw, installedVersion] = await Promise.all([
+        this.client.readRateLimits(),
+        versionPromise
+      ]);
       const normalized = normalizeQuotaResponse(raw, this.state.data);
       const persisted = normalized.persistence;
       delete normalized.persistence;
-      Object.assign(this.state.data, persisted);
+      const clientUpdate = evaluateClientUpdate(installedVersion, this.state.data, checkedAt);
+      Object.assign(this.state.data, persisted, clientUpdate.persistence);
       this.state.set("lastSuccessfulAt", checkedAt);
       return {
         online: true,
         checkedAt,
         lastSuccessfulAt: checkedAt,
         data: normalized,
+        clientUpdate,
         errorCode: null
       };
     } catch (error) {
       this.client.dispose();
+      const installedVersion = await versionPromise;
+      const clientUpdate = evaluateClientUpdate(installedVersion, this.state.data, checkedAt);
+      Object.assign(this.state.data, clientUpdate.persistence);
+      this.state.set("lastClientVersionCheckAt", checkedAt);
       const message = String(error?.message || error);
       let errorCode = "NETWORK_ERROR";
       if (message.includes("CODEX_NOT_INSTALLED")) errorCode = "CODEX_NOT_INSTALLED";
@@ -159,6 +174,7 @@ class QuotaService {
         checkedAt,
         lastSuccessfulAt: this.state.get("lastSuccessfulAt", null),
         data: null,
+        clientUpdate,
         errorCode
       };
     }
