@@ -30,6 +30,9 @@ test("language switching updates document and accessibility-only copy", () => {
     "refreshNow",
     "quotaRegion",
     "statusRegion",
+    "tokenUsageRegion",
+    "tokenPeriodGroup",
+    "tokenChartLabel",
     "cropResize"
   ]) {
     assert.match(renderer, new RegExp(`${key}:\\s*\"[^\"]+\"`, "g"));
@@ -39,6 +42,9 @@ test("language switching updates document and accessibility-only copy", () => {
   assert.match(renderer, /refreshButton\.setAttribute\("aria-label",\s*t\("refreshNow"\)\)/);
   assert.match(renderer, /quotaSection\.setAttribute\("aria-label",\s*t\("quotaRegion"\)\)/);
   assert.match(renderer, /statusSection\.setAttribute\("aria-label",\s*t\("statusRegion"\)\)/);
+  assert.match(renderer, /tokenOverview\.setAttribute\("aria-label",\s*t\("openTokenUsage"\)\)/);
+  assert.match(renderer, /tokenPeriodSwitch\.setAttribute\("aria-label",\s*t\("tokenPeriodGroup"\)\)/);
+  assert.match(renderer, /tokenUsageChart\.setAttribute\("aria-label",\s*t\("tokenChartLabel"\)\)/);
   assert.match(renderer, /cropResizeHandle\.setAttribute\("aria-label",\s*t\("cropResize"\)\)/);
   assert.match(html, /id="quotaSection"/);
   assert.match(html, /id="statusSection"/);

@@ -20,7 +20,7 @@ const i18n = {
     remaining: "剩余",
     used: "已使用 {value}%",
     restores: "{time} 恢复",
-    unavailable: "官方暂未启用",
+    unavailable: "暂停",
     unavailableDetail: "5 小时限额当前未由官方返回",
     noData: "暂无数据",
     resetCreditEyebrow: "RESET CREDITS",
@@ -64,13 +64,33 @@ const i18n = {
     clientUpdateVersion: "当前 v{version}",
     clientUpdateVersionChange: "新版 v{version}",
     clientUpdateTarget: "可更新至 v{version}",
+    tokenUsageRegion: "Token 使用概览",
+    tokenUsageTitle: "Token 使用量",
+    tokenUsageCachedTitle: "Token 缓存",
+    lifetimeTokens: "累计 Token",
+    currentStreak: "连续工作",
+    streakDays: "{count} 天",
+    tokenUnavailable: "暂无数据",
+    openTokenUsage: "查看 Token 使用趋势",
+    tokenPeriodGroup: "统计周期",
+    tokenPeriodDay: "日",
+    tokenPeriodWeek: "周",
+    tokenPeriodMonth: "月",
+    tokenChartLabel: "Token 使用量折线图",
+    tokenChartEmpty: "暂无 Token 历史数据",
+    tokenLive: "已同步账号数据",
+    tokenCached: "显示最近缓存",
+    tokenLatestValue: "{date} · {tokens}",
     waiting: "等待首次检测",
     checkedNow: "刚刚检测",
     checkedMinutes: "{count} 分钟前检测",
     autoRefresh: "每 60 秒自动刷新",
-    reading: "读取 Codex 额度…",
+    reading: "读取 Codex 数据…",
     pinOn: "解锁位置",
     pinOff: "锁定位置",
+    collapseToOrb: "收缩为悬浮球",
+    expandFromOrb: "展开额度检测器",
+    floatingOrb: "Codex 悬浮球，按住任意位置拖动，单击展开",
     minimize: "最小化",
     hide: "隐藏到托盘"
     ,
@@ -112,7 +132,7 @@ const i18n = {
     remaining: "Remaining",
     used: "{value}% used",
     restores: "Resets {time}",
-    unavailable: "5h limit paused",
+    unavailable: "Paused",
     unavailableDetail: "The official 5-hour limit is not currently returned",
     noData: "No data",
     resetCreditEyebrow: "RESET CREDITS",
@@ -156,13 +176,33 @@ const i18n = {
     clientUpdateVersion: "Current v{version}",
     clientUpdateVersionChange: "Now v{version}",
     clientUpdateTarget: "Update to v{version}",
+    tokenUsageRegion: "Token usage overview",
+    tokenUsageTitle: "Token usage",
+    tokenUsageCachedTitle: "Cached usage",
+    lifetimeTokens: "Lifetime tokens",
+    currentStreak: "Current streak",
+    streakDays: "{count} days",
+    tokenUnavailable: "Unavailable",
+    openTokenUsage: "View token usage trend",
+    tokenPeriodGroup: "Aggregation period",
+    tokenPeriodDay: "Day",
+    tokenPeriodWeek: "Week",
+    tokenPeriodMonth: "Month",
+    tokenChartLabel: "Token usage line chart",
+    tokenChartEmpty: "No token history available",
+    tokenLive: "Account data synced",
+    tokenCached: "Showing recent cache",
+    tokenLatestValue: "{date} · {tokens}",
     waiting: "Waiting for first check",
     checkedNow: "Checked just now",
     checkedMinutes: "Checked {count}m ago",
     autoRefresh: "Auto-refresh every 60s",
-    reading: "Reading Codex quota…",
+    reading: "Reading Codex data…",
     pinOn: "Unlock position",
     pinOff: "Lock position",
+    collapseToOrb: "Collapse to floating orb",
+    expandFromOrb: "Expand quota monitor",
+    floatingOrb: "Codex floating orb. Hold anywhere to drag; click to expand.",
     minimize: "Minimize",
     hide: "Hide to tray",
     backgroundTitle: "Card background",
@@ -188,7 +228,7 @@ const i18n = {
 
 const elements = Object.fromEntries([
   "app", "connectionStrip", "connectionLabel", "statusDot", "offlineNotice", "offlineMessage",
-  "languageButton", "refreshButton", "pinButton", "minimizeButton", "closeButton", "titlebar",
+  "languageButton", "refreshButton", "pinButton", "collapseButton", "minimizeButton", "closeButton", "titlebar",
   "quotaSection", "statusSection",
   "backgroundButton", "backgroundPopover", "backgroundClose", "chooseBackground", "clearBackground",
   "opacitySlider", "opacityValue", "backgroundError", "customBackground", "backgroundDropZone",
@@ -196,16 +236,23 @@ const elements = Object.fromEntries([
   "cropResizeHandle", "cropSourceInfo",
   "fiveHourPanel", "fiveHourReset", "fiveHourNumber", "fiveHourProgress", "fiveHourUsed",
   "weeklyPanel", "weeklyReset", "weeklyNumber", "weeklyProgress", "weeklyUsed",
-  "resetCount", "resetCreditList", "newResetStatus", "newResetCheck", "newResetIcon",
+  "resetSection", "resetCount", "resetCreditList", "newResetStatus", "newResetCheck", "newResetIcon",
   "officialResetButton", "officialResetStatus", "officialResetCheck", "officialResetHistoryModal",
   "officialResetHistoryClose", "officialResetHistoryDone", "officialResetHistoryList",
   "clientUpdateCard", "clientUpdateStatus", "clientUpdateVersion", "clientUpdateCheck", "clientUpdateIcon",
-  "lastChecked", "loadingLayer"
+  "tokenOverview", "tokenOverviewTitle", "lifetimeTokenValue", "currentStreakValue", "tokenSparkline",
+  "tokenUsageModal", "tokenUsageClose", "tokenUsageDone", "tokenModalLifetime", "tokenModalStreak",
+  "tokenPeriodSwitch", "tokenUsageFreshness", "tokenUsageChart", "tokenChartEmpty",
+  "tokenChartRange", "tokenChartLatest",
+  "lastChecked", "loadingLayer", "floatingOrb", "floatingOrbIcon", "floatingOrbOpen"
 ].map(id => [id, document.getElementById(id)]));
 
 let language = "zh";
 let alwaysOnTop = true;
 let positionLocked = false;
+let windowCollapsed = false;
+let windowModeChanging = false;
+let windowModeAnchor = { x: 358, y: 43 };
 let latestSnapshot = null;
 let refreshTimer = null;
 let clockTimer = null;
@@ -216,6 +263,9 @@ let cropSource = null;
 let cropInteraction = null;
 let cropFrame = null;
 let officialResetHistory = [];
+let tokenPeriod = "day";
+let tokenChartSeries = [];
+let tokenChartAnimationFrame = null;
 
 function t(key, values = {}) {
   let text = i18n[language][key] ?? key;
@@ -238,8 +288,15 @@ function applyLanguage() {
   elements.refreshButton.setAttribute("aria-label", t("refreshNow"));
   elements.quotaSection.setAttribute("aria-label", t("quotaRegion"));
   elements.statusSection.setAttribute("aria-label", t("statusRegion"));
+  elements.tokenOverview.setAttribute("aria-label", t("openTokenUsage"));
+  elements.tokenPeriodSwitch.setAttribute("aria-label", t("tokenPeriodGroup"));
+  elements.tokenUsageChart.setAttribute("aria-label", t("tokenChartLabel"));
   elements.pinButton.title = positionLocked ? t("pinOn") : t("pinOff");
   elements.pinButton.setAttribute("aria-label", elements.pinButton.title);
+  elements.collapseButton.title = t("collapseToOrb");
+  elements.collapseButton.setAttribute("aria-label", t("collapseToOrb"));
+  elements.floatingOrbOpen.title = t("expandFromOrb");
+  elements.floatingOrbOpen.setAttribute("aria-label", t("expandFromOrb"));
   elements.minimizeButton.title = t("minimize");
   elements.minimizeButton.setAttribute("aria-label", t("minimize"));
   elements.closeButton.title = t("hide");
@@ -250,6 +307,7 @@ function applyLanguage() {
   elements.cropClose.setAttribute("aria-label", t("close"));
   elements.cropResizeHandle.setAttribute("aria-label", t("cropResize"));
   elements.officialResetHistoryClose.setAttribute("aria-label", t("close"));
+  elements.tokenUsageClose.setAttribute("aria-label", t("close"));
   elements.officialResetButton.setAttribute("aria-label", t("openOfficialResetHistory"));
   if (latestSnapshot) render(latestSnapshot);
 }
@@ -500,6 +558,19 @@ function getResetCreditTitle(credit) {
   return t("codexReset");
 }
 
+function updateUsageSectionBalance(renderedRowCount, offline = false) {
+  const visibleRows = Math.min(6, Math.max(1, renderedRowCount));
+  const resetHeight = offline
+    ? 104
+    : (renderedRowCount === 0
+        ? 104
+        : 66 + visibleRows * 28 + (visibleRows - 1) * 4);
+  const tokenHeight = (offline ? 232 : 316) - resetHeight;
+  elements.resetSection.style.setProperty("--reset-section-height", `${resetHeight}px`);
+  elements.tokenOverview.style.setProperty("--token-overview-height", `${tokenHeight}px`);
+  elements.tokenOverview.classList.toggle("is-expanded", tokenHeight >= 124);
+}
+
 function renderResetCredits(resets = {}) {
   const availableCount = Number.isFinite(resets.availableCount) ? resets.availableCount : 0;
   const items = Array.isArray(resets.items)
@@ -514,6 +585,7 @@ function renderResetCredits(resets = {}) {
     : [];
   const missingCount = Math.max(0, availableCount - items.length);
   const renderedRowCount = items.length + (missingCount ? 1 : 0);
+  updateUsageSectionBalance(renderedRowCount);
 
   elements.resetCount.textContent = availableCount;
   elements.resetCreditList.replaceChildren();
@@ -588,7 +660,6 @@ function renderOfficialResetHistory(event = {}, manualReset = {}) {
         ? t("officialResetCardLatest", { time: formatDate(latestAt) })
         : t("officialResetNever"));
   elements.officialResetCheck.classList.toggle("is-positive", hasHistory);
-  elements.officialResetButton.classList.toggle("has-history", hasHistory);
 
   elements.officialResetHistoryList.replaceChildren();
   if (!officialResetHistory.length) {
@@ -666,6 +737,256 @@ function renderClientUpdate(clientUpdate = {}) {
   elements.clientUpdateCard.classList.toggle("has-update", pending || installed);
 }
 
+function formatTokenCount(value, compact = false) {
+  if (!Number.isFinite(value)) return t("tokenUnavailable");
+  return new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en-US", compact ? {
+    notation: "compact",
+    maximumFractionDigits: 1
+  } : {
+    maximumFractionDigits: 0
+  }).format(value);
+}
+
+function formatTokenDate(value, period = "day") {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) return "—";
+  const date = new Date(`${value}T00:00:00Z`);
+  const locale = language === "zh" ? "zh-CN" : "en-US";
+  return new Intl.DateTimeFormat(locale, period === "month" ? {
+    year: "numeric",
+    month: "short",
+    timeZone: "UTC"
+  } : {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC"
+  }).format(date);
+}
+
+function prepareCanvas(canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width));
+  const height = Math.max(1, Math.round(rect.height));
+  const ratio = Math.min(2, window.devicePixelRatio || 1);
+  const pixelWidth = Math.round(width * ratio);
+  const pixelHeight = Math.round(height * ratio);
+  if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+  }
+  const context = canvas.getContext("2d");
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  return { context, width, height };
+}
+
+function chartPoints(series, width, height, padding, maximum) {
+  const usableWidth = Math.max(1, width - padding.left - padding.right);
+  const usableHeight = Math.max(1, height - padding.top - padding.bottom);
+  return series.map((item, index) => ({
+    x: padding.left + (series.length === 1 ? usableWidth / 2 : usableWidth * index / (series.length - 1)),
+    y: padding.top + usableHeight * (1 - item.tokens / maximum)
+  }));
+}
+
+function drawTokenLine(context, series, width, height, alpha = 1, compact = false, overview = false) {
+  if (!series.length || alpha <= 0) return;
+  const padding = overview
+    ? { left: 7, right: 7, top: 8, bottom: 8 }
+    : (compact
+    ? { left: 2, right: 2, top: 4, bottom: 4 }
+    : { left: 43, right: 13, top: 17, bottom: 28 });
+  const maximum = Math.max(1, ...series.map(item => item.tokens));
+  const points = chartPoints(series, width, height, padding, maximum);
+  context.save();
+  context.globalAlpha = alpha;
+  context.lineCap = "round";
+  context.lineJoin = "round";
+
+  if (!compact || overview) {
+    const area = context.createLinearGradient(0, padding.top, 0, height - padding.bottom);
+    area.addColorStop(0, "rgba(120,234,213,.24)");
+    area.addColorStop(1, "rgba(120,234,213,0)");
+    context.beginPath();
+    if (points.length === 1) {
+      context.moveTo(padding.left, height - padding.bottom);
+      context.lineTo(padding.left, points[0].y);
+      context.lineTo(width - padding.right, points[0].y);
+      context.lineTo(width - padding.right, height - padding.bottom);
+    } else {
+      context.moveTo(points[0].x, height - padding.bottom);
+      points.forEach(point => context.lineTo(point.x, point.y));
+      context.lineTo(points.at(-1).x, height - padding.bottom);
+    }
+    context.closePath();
+    context.fillStyle = area;
+    context.fill();
+  }
+
+  const gradient = context.createLinearGradient(padding.left, 0, width - padding.right, 0);
+  gradient.addColorStop(0, "rgba(120,234,213,.72)");
+  gradient.addColorStop(.68, "rgba(157,168,255,.92)");
+  gradient.addColorStop(1, "rgba(120,234,213,1)");
+  context.beginPath();
+  if (points.length === 1) {
+    context.moveTo(padding.left, points[0].y);
+    context.lineTo(width - padding.right, points[0].y);
+  } else {
+    points.forEach((point, index) => {
+      if (index === 0) context.moveTo(point.x, point.y);
+      else context.lineTo(point.x, point.y);
+    });
+  }
+  context.strokeStyle = gradient;
+  context.lineWidth = compact ? (overview ? 2 : 1.7) : 2.2;
+  context.shadowColor = "rgba(120,234,213,.32)";
+  context.shadowBlur = compact ? 5 : 9;
+  context.stroke();
+
+  if (!compact || overview) {
+    const last = points.at(-1);
+    context.shadowBlur = 10;
+    context.fillStyle = "#8ff1de";
+    context.beginPath();
+    context.arc(last.x, last.y, 3.2, 0, Math.PI * 2);
+    context.fill();
+  }
+  context.restore();
+}
+
+function drawTokenAxes(context, series, width, height) {
+  if (!series.length) return;
+  const padding = { left: 43, right: 13, top: 17, bottom: 28 };
+  const maximum = Math.max(1, ...series.map(item => item.tokens));
+  context.save();
+  context.fillStyle = "rgba(206,226,237,.48)";
+  context.font = '9px "Segoe UI Variable", sans-serif';
+  context.textBaseline = "middle";
+  context.textAlign = "right";
+  for (const ratio of [1, .5, 0]) {
+    const y = padding.top + (height - padding.top - padding.bottom) * (1 - ratio);
+    context.fillText(formatTokenCount(maximum * ratio, true), padding.left - 7, y);
+  }
+
+  context.textBaseline = "alphabetic";
+  const labelIndexes = [...new Set([0, Math.floor((series.length - 1) / 2), series.length - 1])];
+  labelIndexes.forEach((index, labelIndex) => {
+    const x = padding.left + (series.length === 1
+      ? (width - padding.left - padding.right) / 2
+      : (width - padding.left - padding.right) * index / (series.length - 1));
+    context.textAlign = labelIndex === 0 ? "left" : (labelIndex === labelIndexes.length - 1 ? "right" : "center");
+    context.fillText(formatTokenDate(series[index].startDate, tokenPeriod), x, height - 8);
+  });
+  context.restore();
+}
+
+function drawTokenChartFrame(previousSeries, currentSeries, progress) {
+  const { context, width, height } = prepareCanvas(elements.tokenUsageChart);
+  context.clearRect(0, 0, width, height);
+  drawTokenAxes(context, currentSeries, width, height);
+  const eased = 1 - Math.pow(1 - progress, 3);
+  drawTokenLine(context, previousSeries, width, height, 1 - eased);
+  drawTokenLine(context, currentSeries, width, height, eased);
+}
+
+function getTokenSeries(period = tokenPeriod) {
+  const buckets = latestSnapshot?.tokenUsage?.dailyUsageBuckets || [];
+  const aggregated = window.TokenUsage?.aggregateTokenUsage(buckets, period) || [];
+  const limit = period === "day" ? 30 : (period === "week" ? 16 : 12);
+  return aggregated.slice(-limit);
+}
+
+function renderTokenChart(animate = true) {
+  const nextSeries = getTokenSeries();
+  const previousSeries = tokenChartSeries;
+  tokenChartSeries = nextSeries;
+  cancelAnimationFrame(tokenChartAnimationFrame);
+  elements.tokenChartEmpty.hidden = nextSeries.length > 0;
+
+  if (!nextSeries.length) {
+    const { context, width, height } = prepareCanvas(elements.tokenUsageChart);
+    context.clearRect(0, 0, width, height);
+    elements.tokenChartRange.textContent = "—";
+    elements.tokenChartLatest.textContent = "—";
+    return;
+  }
+
+  const first = nextSeries[0];
+  const last = nextSeries.at(-1);
+  elements.tokenChartRange.textContent = `${formatTokenDate(first.startDate, tokenPeriod)} — ${formatTokenDate(last.startDate, tokenPeriod)}`;
+  elements.tokenChartLatest.textContent = t("tokenLatestValue", {
+    date: formatTokenDate(last.startDate, tokenPeriod),
+    tokens: formatTokenCount(last.tokens, true)
+  });
+
+  if (!animate || !previousSeries.length) {
+    drawTokenChartFrame([], nextSeries, 1);
+    return;
+  }
+
+  const startedAt = performance.now();
+  const animateFrame = now => {
+    const progress = Math.min(1, (now - startedAt) / 360);
+    drawTokenChartFrame(previousSeries, nextSeries, progress);
+    if (progress < 1) tokenChartAnimationFrame = requestAnimationFrame(animateFrame);
+  };
+  tokenChartAnimationFrame = requestAnimationFrame(animateFrame);
+}
+
+function drawTokenSparkline() {
+  const series = getTokenSeries("day").slice(-16);
+  const { context, width, height } = prepareCanvas(elements.tokenSparkline);
+  context.clearRect(0, 0, width, height);
+  drawTokenLine(
+    context,
+    series,
+    width,
+    height,
+    1,
+    true,
+    elements.tokenOverview.classList.contains("is-expanded")
+  );
+}
+
+function renderTokenUsageModal(animate = false) {
+  const usage = latestSnapshot?.tokenUsage || {};
+  elements.tokenModalLifetime.textContent = formatTokenCount(usage.lifetimeTokens);
+  elements.tokenModalStreak.textContent = Number.isFinite(usage.currentStreakDays)
+    ? t("streakDays", { count: formatTokenCount(usage.currentStreakDays) })
+    : t("tokenUnavailable");
+  elements.tokenUsageFreshness.textContent = usage.available
+    ? t(usage.cached ? "tokenCached" : "tokenLive")
+    : t("tokenUnavailable");
+  elements.tokenPeriodSwitch.querySelectorAll("[data-token-period]").forEach(button => {
+    button.classList.toggle("is-active", button.dataset.tokenPeriod === tokenPeriod);
+    button.setAttribute("aria-pressed", button.dataset.tokenPeriod === tokenPeriod ? "true" : "false");
+  });
+  renderTokenChart(animate);
+}
+
+function renderTokenUsage(usage = {}) {
+  elements.tokenOverviewTitle.textContent = t(usage.cached ? "tokenUsageCachedTitle" : "tokenUsageTitle");
+  elements.lifetimeTokenValue.textContent = formatTokenCount(usage.lifetimeTokens);
+  elements.currentStreakValue.textContent = Number.isFinite(usage.currentStreakDays)
+    ? t("streakDays", { count: formatTokenCount(usage.currentStreakDays) })
+    : t("tokenUnavailable");
+  elements.tokenOverview.classList.toggle("is-unavailable", !usage.available);
+  requestAnimationFrame(drawTokenSparkline);
+  setTimeout(drawTokenSparkline, 340);
+  if (!elements.tokenUsageModal.hidden) requestAnimationFrame(() => renderTokenUsageModal(false));
+}
+
+function openTokenUsage() {
+  elements.tokenUsageModal.hidden = false;
+  tokenChartSeries = [];
+  requestAnimationFrame(() => renderTokenUsageModal(false));
+  elements.tokenUsageClose.focus();
+}
+
+function closeTokenUsage() {
+  elements.tokenUsageModal.hidden = true;
+  cancelAnimationFrame(tokenChartAnimationFrame);
+  elements.tokenOverview.focus();
+}
+
 function openOfficialResetHistory() {
   elements.officialResetHistoryModal.hidden = false;
   elements.officialResetHistoryClose.focus();
@@ -726,6 +1047,7 @@ function renderOffline(snapshot) {
     TIMEOUT: "timeout"
   }[snapshot.errorCode] || "offlineMessage";
   elements.offlineMessage.textContent = t(messageKey);
+  updateUsageSectionBalance(0, true);
   renderClientUpdate(snapshot.clientUpdate);
 }
 
@@ -741,6 +1063,7 @@ function updateLastChecked() {
 function render(snapshot) {
   if (snapshot.online) renderOnline(snapshot);
   else renderOffline(snapshot);
+  renderTokenUsage(snapshot.tokenUsage);
   updateLastChecked();
 }
 
@@ -767,21 +1090,99 @@ async function refresh({ initial = false } = {}) {
   }
 }
 
+function normalizeWindowModeResult(result, fallbackCollapsed, fallbackAnchor) {
+  if (typeof result === "boolean") {
+    return { collapsed: result, anchor: fallbackAnchor };
+  }
+  return {
+    collapsed: result?.collapsed ?? fallbackCollapsed,
+    anchor: result?.anchor && Number.isFinite(result.anchor.x) && Number.isFinite(result.anchor.y)
+      ? result.anchor
+      : fallbackAnchor
+  };
+}
+
+function getCollapseButtonAnchor() {
+  const bounds = elements.collapseButton.getBoundingClientRect();
+  return {
+    x: Math.round(bounds.left + bounds.width / 2),
+    y: Math.round(bounds.top + bounds.height / 2)
+  };
+}
+
+function applyWindowModeVisual(collapsed, anchor = windowModeAnchor) {
+  windowCollapsed = Boolean(collapsed);
+  windowModeAnchor = anchor || windowModeAnchor;
+  document.documentElement.style.setProperty("--orb-anchor-x", `${windowModeAnchor.x}px`);
+  document.documentElement.style.setProperty("--orb-anchor-y", `${windowModeAnchor.y}px`);
+  document.body.classList.toggle("is-window-collapsed", windowCollapsed);
+}
+
+function waitForWindowModePaint() {
+  return new Promise(resolve => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  });
+}
+
+async function collapseToFloatingOrb() {
+  if (windowModeChanging || windowCollapsed) return;
+  windowModeChanging = true;
+  windowModeAnchor = getCollapseButtonAnchor();
+  applyWindowModeVisual(true, windowModeAnchor);
+  await waitForWindowModePaint();
+
+  try {
+    const result = normalizeWindowModeResult(
+      await window.codexMonitor.setCollapsed(true, windowModeAnchor),
+      false,
+      windowModeAnchor
+    );
+    windowCollapsed = result.collapsed;
+    windowModeAnchor = result.anchor;
+    applyWindowModeVisual(windowCollapsed, windowModeAnchor);
+  } finally {
+    windowModeChanging = false;
+  }
+}
+
+async function expandFromFloatingOrb() {
+  if (windowModeChanging || !windowCollapsed) return;
+  windowModeChanging = true;
+
+  try {
+    const result = normalizeWindowModeResult(
+      await window.codexMonitor.setCollapsed(false, windowModeAnchor),
+      true,
+      windowModeAnchor
+    );
+    windowCollapsed = result.collapsed;
+    windowModeAnchor = result.anchor;
+    applyWindowModeVisual(windowCollapsed, windowModeAnchor);
+  } finally {
+    windowModeChanging = false;
+  }
+}
+
 async function initialize() {
   const settings = await window.codexMonitor.readSettings();
   language = settings.language;
   alwaysOnTop = settings.alwaysOnTop;
   positionLocked = settings.positionLocked;
+  windowCollapsed = settings.windowCollapsed === true;
+  windowModeAnchor = settings.windowModeAnchor || windowModeAnchor;
+  if (settings.appIconDataUrl) elements.floatingOrbIcon.src = settings.appIconDataUrl;
   backgroundDataUrl = settings.backgroundDataUrl;
   backgroundOpacity = settings.backgroundOpacity;
   elements.pinButton.classList.toggle("is-active", positionLocked);
   elements.app.classList.toggle("is-position-locked", positionLocked);
   document.body.classList.toggle("is-position-locked", positionLocked);
+  applyWindowModeVisual(windowCollapsed, windowModeAnchor);
   applyLanguage();
   applyBackground();
   initializeCropper();
   renderOfficialResetHistory();
   renderClientUpdate();
+  renderTokenUsage();
 
   elements.languageButton.addEventListener("click", async () => {
     language = language === "zh" ? "en" : "zh";
@@ -795,6 +1196,13 @@ async function initialize() {
     elements.app.classList.toggle("is-position-locked", positionLocked);
     document.body.classList.toggle("is-position-locked", positionLocked);
     applyLanguage();
+  });
+  elements.collapseButton.addEventListener("click", collapseToFloatingOrb);
+  elements.floatingOrbOpen.addEventListener("click", expandFromFloatingOrb);
+  elements.floatingOrb.addEventListener("pointerdown", event => {
+    if (event.button !== 0 || !windowCollapsed || windowModeChanging) return;
+    event.preventDefault();
+    window.codexMonitor.beginOrbGesture();
   });
   elements.minimizeButton.addEventListener("click", () => window.codexMonitor.minimize());
   elements.closeButton.addEventListener("click", () => window.codexMonitor.hide());
@@ -810,6 +1218,24 @@ async function initialize() {
   elements.officialResetHistoryDone.addEventListener("click", closeOfficialResetHistory);
   elements.officialResetHistoryModal.addEventListener("click", event => {
     if (event.target === elements.officialResetHistoryModal) closeOfficialResetHistory();
+  });
+  elements.tokenOverview.addEventListener("click", openTokenUsage);
+  elements.tokenOverview.addEventListener("keydown", event => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openTokenUsage();
+    }
+  });
+  elements.tokenUsageClose.addEventListener("click", closeTokenUsage);
+  elements.tokenUsageDone.addEventListener("click", closeTokenUsage);
+  elements.tokenUsageModal.addEventListener("click", event => {
+    if (event.target === elements.tokenUsageModal) closeTokenUsage();
+  });
+  elements.tokenPeriodSwitch.addEventListener("click", event => {
+    const button = event.target.closest("[data-token-period]");
+    if (!button || button.dataset.tokenPeriod === tokenPeriod) return;
+    tokenPeriod = button.dataset.tokenPeriod;
+    renderTokenUsageModal(true);
   });
   elements.backgroundButton.addEventListener("click", () => {
     const shouldOpen = elements.backgroundPopover.hidden;
@@ -876,10 +1302,15 @@ async function initialize() {
   window.codexMonitor.onAlwaysOnTop(enabled => {
     alwaysOnTop = enabled;
   });
+  window.codexMonitor.onWindowModeChanged((collapsed, anchor) => {
+    applyWindowModeVisual(collapsed, anchor);
+    windowModeChanging = false;
+    if (!collapsed) renderTokenUsage(latestSnapshot?.tokenUsage);
+  });
   document.addEventListener("keydown", event => {
-    if (event.key === "Escape" && !elements.officialResetHistoryModal.hidden) {
-      closeOfficialResetHistory();
-    }
+    if (event.key !== "Escape") return;
+    if (!elements.tokenUsageModal.hidden) closeTokenUsage();
+    else if (!elements.officialResetHistoryModal.hidden) closeOfficialResetHistory();
   });
 
   await refresh({ initial: true });
@@ -894,4 +1325,5 @@ window.addEventListener("DOMContentLoaded", initialize);
 window.addEventListener("beforeunload", () => {
   clearInterval(refreshTimer);
   clearInterval(clockTimer);
+  cancelAnimationFrame(tokenChartAnimationFrame);
 });

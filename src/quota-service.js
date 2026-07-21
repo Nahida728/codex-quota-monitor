@@ -5,6 +5,7 @@ const path = require("node:path");
 const { version: appVersion } = require("../package.json");
 const { JsonStore } = require("./store");
 const { normalizeQuotaResponse } = require("./quota-normalizer");
+const { normalizeTokenUsageResponse } = require("./token-usage");
 const {
   CodexDesktopVersionDetector,
   evaluateClientUpdate
@@ -19,6 +20,7 @@ class AppServerClient {
     this.nextId = 1;
     this.pending = new Map();
     this.initialized = false;
+    this.startPromise = null;
   }
 
   findExecutable() {
@@ -37,6 +39,14 @@ class AppServerClient {
 
   async start() {
     if (this.process && this.initialized) return;
+    if (this.startPromise) return this.startPromise;
+    this.startPromise = this.performStart().finally(() => {
+      this.startPromise = null;
+    });
+    return this.startPromise;
+  }
+
+  async performStart() {
     const executable = this.findExecutable();
     if (!executable) throw new Error("CODEX_NOT_INSTALLED");
 
@@ -114,6 +124,11 @@ class AppServerClient {
     return this.request("account/rateLimits/read", {});
   }
 
+  async readTokenUsage() {
+    await this.start();
+    return this.request("account/usage/read", null);
+  }
+
   dispose() {
     this.process?.kill();
     this.process = null;
@@ -139,27 +154,34 @@ class QuotaService {
   async performRead() {
     const checkedAt = Date.now();
     const versionPromise = this.versionDetector.read(checkedAt).catch(() => null);
+    const tokenUsagePromise = typeof this.client.readTokenUsage === "function"
+      ? Promise.resolve().then(() => this.client.readTokenUsage()).catch(() => null)
+      : Promise.resolve(null);
     try {
-      const [raw, installedVersion] = await Promise.all([
+      const [raw, tokenUsageRaw, installedVersion] = await Promise.all([
         this.client.readRateLimits(),
+        tokenUsagePromise,
         versionPromise
       ]);
       const normalized = normalizeQuotaResponse(raw, this.state.data);
       const persisted = normalized.persistence;
       delete normalized.persistence;
+      const tokenUsage = normalizeTokenUsageResponse(tokenUsageRaw, this.state.data, checkedAt);
       const clientUpdate = evaluateClientUpdate(installedVersion, this.state.data, checkedAt);
-      Object.assign(this.state.data, persisted, clientUpdate.persistence);
+      Object.assign(this.state.data, persisted, tokenUsage.persistence, clientUpdate.persistence);
       this.state.set("lastSuccessfulAt", checkedAt);
       return {
         online: true,
         checkedAt,
         lastSuccessfulAt: checkedAt,
         data: normalized,
+        tokenUsage: withoutPersistence(tokenUsage),
         clientUpdate,
         errorCode: null
       };
     } catch (error) {
       this.client.dispose();
+      const tokenUsage = normalizeTokenUsageResponse(null, this.state.data, checkedAt);
       const installedVersion = await versionPromise;
       const clientUpdate = evaluateClientUpdate(installedVersion, this.state.data, checkedAt);
       Object.assign(this.state.data, clientUpdate.persistence);
@@ -174,6 +196,7 @@ class QuotaService {
         checkedAt,
         lastSuccessfulAt: this.state.get("lastSuccessfulAt", null),
         data: null,
+        tokenUsage: withoutPersistence(tokenUsage),
         clientUpdate,
         errorCode
       };
@@ -183,6 +206,12 @@ class QuotaService {
   dispose() {
     this.client.dispose();
   }
+}
+
+function withoutPersistence(value) {
+  const result = { ...value };
+  delete result.persistence;
+  return result;
 }
 
 module.exports = { QuotaService, AppServerClient };

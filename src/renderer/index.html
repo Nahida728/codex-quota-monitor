@@ -73,6 +73,9 @@
         </div>
         <div class="connection-actions no-drag">
           <button class="language-button" id="languageButton" type="button" aria-label="切换语言">EN</button>
+          <button class="refresh-button" id="collapseButton" type="button" aria-label="收缩为悬浮球" title="收缩为悬浮球">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5.2"></circle><path d="M8.4 8.4 5.5 5.5m0 0v3.2m0-3.2h3.2M15.6 8.4l2.9-2.9m0 0v3.2m0-3.2h-3.2M8.4 15.6l-2.9 2.9m0 0v-3.2m0 3.2h3.2M15.6 15.6l2.9 2.9m0 0v-3.2m0 3.2h3.2"></path></svg>
+          </button>
           <button class="refresh-button" id="refreshButton" type="button" aria-label="立即刷新" title="立即刷新">
             <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"></path></svg>
           </button>
@@ -171,7 +174,24 @@
         </article>
       </section>
 
-      <section class="reset-section">
+      <section class="token-overview no-drag" id="tokenOverview" role="button" tabindex="0" aria-label="查看 Token 使用趋势">
+        <div class="token-overview-heading">
+          <span class="eyebrow">TOKEN PULSE</span>
+          <strong id="tokenOverviewTitle" data-i18n="tokenUsageTitle">Token 使用量</strong>
+        </div>
+        <div class="token-stat">
+          <span data-i18n="lifetimeTokens">累计 Token</span>
+          <strong id="lifetimeTokenValue">--</strong>
+        </div>
+        <div class="token-stat token-streak-stat">
+          <span data-i18n="currentStreak">连续工作</span>
+          <strong id="currentStreakValue">--</strong>
+        </div>
+        <canvas class="token-sparkline" id="tokenSparkline" aria-hidden="true"></canvas>
+        <svg class="token-overview-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"></path></svg>
+      </section>
+
+      <section class="reset-section" id="resetSection">
         <div class="section-title-row">
           <div>
             <div class="eyebrow" data-i18n="resetCreditEyebrow">RESET CREDITS</div>
@@ -195,7 +215,7 @@
       <div class="drag-edge drag-edge-bottom" data-drag-edge="bottom" aria-hidden="true"></div>
       <div class="drag-edge drag-edge-left" data-drag-edge="left" aria-hidden="true"></div>
 
-      <section class="crop-modal no-drag" id="cropModal" hidden aria-modal="true" role="dialog" aria-labelledby="cropTitleLabel">
+      <section class="crop-modal" id="cropModal" hidden aria-modal="true" role="dialog" aria-labelledby="cropTitleLabel">
         <div class="crop-dialog">
           <div class="crop-heading">
             <div>
@@ -221,7 +241,7 @@
         </div>
       </section>
 
-      <section class="history-modal no-drag" id="officialResetHistoryModal" hidden aria-modal="true" role="dialog" aria-labelledby="officialResetHistoryTitle">
+      <section class="history-modal" id="officialResetHistoryModal" hidden aria-modal="true" role="dialog" aria-labelledby="officialResetHistoryTitle">
         <div class="history-dialog">
           <div class="history-heading">
             <div>
@@ -236,12 +256,56 @@
         </div>
       </section>
 
+      <section class="token-modal" id="tokenUsageModal" hidden aria-modal="true" role="dialog" aria-labelledby="tokenUsageModalTitle">
+        <div class="token-dialog">
+          <div class="history-heading">
+            <div>
+              <span class="eyebrow">TOKEN ANALYTICS</span>
+              <h2 id="tokenUsageModalTitle" data-i18n="tokenUsageTitle">Token 使用量</h2>
+            </div>
+            <button class="popover-close" id="tokenUsageClose" type="button" aria-label="关闭">×</button>
+          </div>
+          <div class="token-summary-grid">
+            <article>
+              <span data-i18n="lifetimeTokens">累计 Token</span>
+              <strong id="tokenModalLifetime">--</strong>
+            </article>
+            <article>
+              <span data-i18n="currentStreak">连续工作</span>
+              <strong id="tokenModalStreak">--</strong>
+            </article>
+          </div>
+          <div class="token-chart-toolbar">
+            <div class="token-period-switch" id="tokenPeriodSwitch" role="group" aria-label="统计周期">
+              <button class="is-active" type="button" data-token-period="day" data-i18n="tokenPeriodDay">日</button>
+              <button type="button" data-token-period="week" data-i18n="tokenPeriodWeek">周</button>
+              <button type="button" data-token-period="month" data-i18n="tokenPeriodMonth">月</button>
+            </div>
+            <span id="tokenUsageFreshness">--</span>
+          </div>
+          <div class="token-chart-shell">
+            <canvas id="tokenUsageChart" role="img" aria-label="Token 使用量折线图"></canvas>
+            <div class="token-chart-empty" id="tokenChartEmpty" hidden data-i18n="tokenChartEmpty">暂无 Token 历史数据</div>
+          </div>
+          <div class="token-chart-footer">
+            <span id="tokenChartRange">--</span>
+            <strong id="tokenChartLatest">--</strong>
+          </div>
+          <button class="glass-button primary token-chart-done" id="tokenUsageDone" type="button" data-i18n="close">关闭</button>
+        </div>
+      </section>
+
       <div class="loading-layer" id="loadingLayer">
         <div class="pulse-orbit"><span></span></div>
-        <span data-i18n="reading">读取 Codex 额度…</span>
+        <span data-i18n="reading">读取 Codex 数据…</span>
       </div>
     </main>
+    <div class="floating-orb" id="floatingOrb">
+      <img id="floatingOrbIcon" alt="" aria-hidden="true">
+      <button class="floating-orb-open" id="floatingOrbOpen" type="button" aria-label="展开额度检测器" title="展开额度检测器"></button>
+    </div>
     <script src="./crop-geometry.js"></script>
+    <script src="../token-usage.js"></script>
     <script src="./renderer.js"></script>
   </body>
 </html>

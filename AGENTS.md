@@ -7,8 +7,8 @@ mode, or regression is discovered.
 ## Scope and packaging
 
 - This is a Windows x64 Electron desktop application, not a website.
-- The production window is a fixed 460 × 690 transparent, frameless liquid-glass
-  card.
+- The production UI uses one fixed 460 × 690 transparent, frameless liquid-glass
+  window whose visible region can be clipped to a 76 × 76 floating orb.
 - `AGENTS.md` is development-only. It must be committed to the repository but
   must never be included in portable, installer, unpacked, or ASAR output.
 - Keep `build.files` as an explicit allowlist containing only `src/**/*` and
@@ -30,6 +30,9 @@ The monitor must:
 - distinguish a user-consumed reset credit from an official remote reset.
 - Permanently retain official-reset history and show the latest event on the card.
 - Detect both a Codex client update ready to install and a newly installed version.
+- Show the account lifetime Token total and current consecutive-work-day streak.
+- Show an animated Token usage line chart switchable between daily, weekly, and
+  monthly aggregation.
 - Report Codex online only when the local app-server can reach the OpenAI service
   and return quota data.
 - Give an offline VPN/network/sign-in hint, including the mainland-China case.
@@ -38,6 +41,8 @@ The monitor must:
   cropping, and background opacity.
 - Support native window movement, position lock, always-on-top, tray hide/show,
   manual refresh, and 60-second auto-refresh.
+- Support immediate collapse to a freely movable floating orb and restoration to
+  the full card without a cross-window snapshot animation.
 
 Do not remove or weaken an existing function while implementing a visual change.
 
@@ -55,7 +60,10 @@ Do not remove or weaken an existing function while implementing a visual change.
   - Normalizes server rate-limit windows and reset-credit details.
 - `src/codex-update-service.js`
   - Reads the installed Store package version and only the Codex Windows Store
-    updater status lines needed to detect pending updates.
+  updater status lines needed to detect pending updates.
+- `src/token-usage.js`
+  - Normalizes account Token summaries and daily buckets, restores the last safe
+    snapshot when needed, and performs deterministic day/week/month aggregation.
 - `src/store.js`
   - Local JSON persistence.
 - `src/renderer/index.html`
@@ -83,9 +91,18 @@ Renderer security settings are non-negotiable:
 
 ## Fixed window and dragging invariants
 
-The window must remain exactly 460 × 690 during its whole lifetime:
+The app uses exactly one persistent 460 × 690 native window:
 
-- `width`, `height`, minimum size, and maximum size must all remain 460 × 690.
+- Width, height, minimum size, and maximum size remain 460 × 690 for the whole
+  lifetime.
+- Floating-orb mode clips that same native surface and hit-test region to a
+  76 × 76 rectangle at the saved anchor with `setShape()`. The renderer hides
+  the full card and draws an antialiased CSS circle inside that transparent
+  region. It does not create, hide, show, resize, or swap another BrowserWindow.
+- Do not create an orb BrowserWindow, transition BrowserWindow, capture renderer
+  snapshots, or interpolate native bounds. A bounded two-frame renderer paint
+  synchronization before applying the circular shape is allowed to prevent a
+  stale full-card frame from being clipped into the orb.
 - Keep `resizable: false`, `maximizable: false`, `fullscreenable: false`,
   `frame: false`, `thickFrame: false`, and `hasShadow: false`.
 - Keep the native `will-resize` prevention as a final guard.
@@ -97,10 +114,27 @@ Movement must use Electron/Chromium native `-webkit-app-region: drag` areas:
 - The title-bar free space and all four edge strips are drag regions.
 - Buttons, connection controls, popovers, dialogs, upload controls, crop controls,
   status buttons, and scrollable lists are `no-drag`.
-- When position is locked, every drag region must be disabled together.
+- Keep `.titlebar` itself `no-drag`; its expanding `.brand` child owns the native
+  drag region and the sibling `.window-actions` remains `no-drag`. Making the
+  whole title bar draggable can swallow every action-button click while unlocked.
+- Keep the collapse control in the connection strip's ordinary `no-drag`
+  interaction area. The Windows title hit-test path is not reliable enough for
+  this mode-changing action while the card is movable.
+- When position is locked, every full-card drag region must be disabled together.
+  The floating orb remains movable so it can always be repositioned.
+- Crop, history, and Token analytics views must keep native drag access through
+  their free heading space and all four edge strips; their close and content
+  controls remain `no-drag`.
+- The floating orb's whole 76 × 76 surface starts one Windows native system-move
+  command through the narrow preload bridge. When that command returns, unchanged
+  native bounds restore the card and changed bounds retain the moved orb.
+- Collapse and expand share the collapse button's measured screen anchor.
+  Moving the orb changes where the full card is restored.
+- The orb uses the existing application icon and must have no `no-drag` hole.
 - Lock controls window movement only. It is not the always-on-top setting.
-- Do not implement pointer/mouse move loops that call `setBounds`, `setPosition`,
-  or continually calculate cursor deltas.
+- Outside the explicitly bounded orb gesture above, do not implement
+  pointer/mouse move loops that call `setBounds`, `setPosition`, or continually
+  calculate cursor deltas.
 - Do not use resize hit-testing as a substitute for movement.
 - Do not change edge-strip width or stacking without interactive verification.
 - Saving the final position may be debounced; moving the window may not be.
@@ -121,14 +155,94 @@ change to main-process window options, CSS hit regions, overlays, or tray logic:
    blocking other mouse actions.
 8. Fixing lag accidentally made all drag regions stop working.
 9. A transparent or shadowed outer border appeared around the card.
+10. The visual card collapsed toward the window corner, then jumped sideways to
+    an orb because the animation and native bounds change used different anchors.
+11. Any separate restore hotspot inside the orb made “drag anywhere” false.
+12. Resizing the live renderer during collapse or expand caused flashing,
+    stuttering, and hard positional jumps. Keep one fixed 460 × 690 window and
+    change only its native shape.
+13. Snapshot transition overlays repeatedly caused click stalls, DWM flashes,
+    missed completion events, stale loading screenshots, and unclickable frames.
+    The overlay, capture pipeline, and transition renderer are retired.
+14. DOM-derived collapse anchors may contain fractional coordinates, which blur
+    the orb icon and misalign native clipping. Round the anchor and final window
+    positions, and always clear the mode-change guard in a `finally` block so one
+    failure cannot permanently disable collapse.
+15. Keeping two live windows visible, hiding/showing them, using native opacity
+    zero, and parking one offscreen all proved unreliable: Windows can recycle or
+    remount transparent surfaces and restore focus/z-order unexpectedly.
+16. Polling the cursor and calling `setPosition` every animation frame makes the
+    orb trail the pointer and then jump. Start one Windows system-move command and
+    compare the native bounds after it returns; never drive orb movement from a
+    JavaScript timer.
+17. Same-level `moveTop()` calls are not a reliable Windows z-order contract and
+    can leave the disabled full card above the orb. Do not use z-order swapping
+    as mode state.
+18. An opaque shaped orb produced a visible black 76 × 76 square on affected
+    Windows systems. Keep the orb and native window transparent, hide the full
+    card while collapsed, and load the orb before enabling the collapse control.
+19. A visually ambitious cross-window animation is not worth blocking the mode
+    switch. Do not reintroduce `capturePage`, transition IPC, animation waits, or
+    a third BrowserWindow without a native-compositor design and explicit user
+    approval.
+20. Multiple monitor processes can leave an old orb and a new full card visible
+    simultaneously, producing apparent flicker and stale behavior. Hold Electron's
+    single-instance lock for the whole app lifetime. A second launch restores the
+    existing instance instead of creating another window set.
+21. Electron drag regions intentionally ignore renderer pointer events. A center
+    `no-drag` expand control made dragging depend on where the user pressed, while
+    hooked non-client messages failed to deliver reliable click release events on
+    the transparent shaped window. Keep the whole orb `no-drag`, capture one
+    renderer `pointerdown`, and immediately hand movement to Windows with
+    `ReleaseCapture` plus the synchronous
+    `SendMessage(WM_SYSCOMMAND, SC_MOVE | HTCAPTION)` modal move loop. Sending a
+    synthetic `WM_NCLBUTTONDOWN` is not sufficient because Chromium can consume
+    it and return before movement begins. Electron's native handle Buffer stores
+    the HWND value; decode that value before passing it to Koffi and validate it
+    with `IsWindow` rather than passing the Buffer's memory address. Do not use
+    focus heuristics, delayed click timers, or JavaScript movement loops.
+22. Register the full card's `ready-to-show` listener before calling `loadFile`.
+    Fast local loads can otherwise emit the event first and leave a healthy
+    process with both live windows hidden.
+23. Some transparent-window starts may never emit `ready-to-show` despite a
+    successful renderer load. Use one idempotent initial-show function from both
+    `ready-to-show` and `webContents.did-finish-load`.
+24. Even an animation-free show/hide swap between two transparent BrowserWindows
+    can flash because DWM remounts a surface. Orb mode therefore uses `setShape`
+    on the existing full-size window and a pre-rendered in-page orb; mode changes
+    must not call native show/hide or switch compositor surfaces.
+25. Focus is not a click signal. Expanding on focus makes the orb open as soon as
+    the user presses it to drag, while blur/focusability toggles add latency. Keep
+    focus stable and classify native down/move/up for both lock states.
+26. A stale single-instance process can make every source restart appear to have
+    failed. Before manual verification, confirm the root Electron PID and creation
+    time changed; do not trust a launch command alone.
+27. A circular `setShape()` boundary exposes Windows' integer scanline aliasing,
+    and overscanning it exposes pieces of the full card beneath the orb. Use a
+    76 × 76 rectangular native region, hide the full card while collapsed, and
+    let the clipped CSS orb provide the only visible antialiased circle.
+28. Persistent data states must not reuse hover-like card backgrounds. Official
+    reset history is conveyed by copy and its positive status icon; hover styling
+    only appears while the pointer is actually over the card.
+29. `opacity: 0` and `pointer-events: none` do not disable an Electron native drag
+    region. The hidden orb must be explicitly `no-drag` in full-card mode, then
+    become `drag` only in collapsed mode; otherwise it silently covers part of
+    the language and connection controls.
+30. A hidden center `no-drag` control made the orb appear to fail randomly: center
+    presses could not move it while edge presses could. The expand control may
+    remain for keyboard accessibility, but in collapsed mode its whole surface is
+    part of the native drag region and has no pointer hit target.
 
 Do not call a dragging change complete from static inspection. Manually verify:
 
 - unlocked title drag;
 - unlocked top, right, bottom, and left edge drag;
 - smooth continuous movement for several seconds;
-- unchanged 460 × 690 bounds throughout;
+- unchanged 460 × 690 bounds throughout full-card movement;
 - locked title and edge behavior;
+- immediate clipping to a 76 × 76 visible orb, smooth unlocked orb drag, click
+  restore, and unchanged 460 × 690 native bounds throughout;
+- locked orb behavior and restoration while locked;
 - controls near each edge remain clickable;
 - hide to tray, single-click restore, release the mouse, then use other controls;
 - no cursor capture, sticking, resize cursor, jitter, lag, or outer ring.
@@ -139,6 +253,8 @@ Do not call a dragging change complete from static inspection. Manually verify:
 - The three status cards are one row immediately below the quota row, ordered:
   new reset credit, official reset, Codex client update.
 - The reset-credit section is last, above the footer.
+- The compact Token overview sits between the three status cards and the final
+  reset-credit section; selecting it opens the full chart dialog.
 - Keep only one refresh control: the refresh button in the connection strip.
   The removed top-left refresh button must not return.
 - The footer must remain visible in online and offline states with no unexplained
@@ -150,16 +266,23 @@ Do not call a dragging change complete from static inspection. Manually verify:
 - Check real English text, not only placeholder dashes.
 - Keep the liquid-glass layers, translucency, blur, refraction, subtle borders,
   and readable contrast over both light and dark custom backgrounds.
+- Secondary dialogs must remain translucent enough for the user's custom
+  background to stay visibly continuous behind them.
 
 ### Reset-list capacity
 
 - Show each returned credit as its own row.
 - One through six rows must fit without moving the window boundary.
+- Reset rows use a compact fixed height and must never stretch vertically just
+  because only one or two credits are available.
 - More than six rows must scroll inside the reset list.
 - Large counts must not stretch the card, overlap the footer, or squeeze the quota
   and status rows.
 - If the service returns a total count but temporarily omits some details, render
   the known rows plus one localized missing-details row.
+- The Token overview and reset section share a fixed vertical budget: unused
+  reset-list height expands the Token trend area, while up to six reset rows take
+  back only the space they need.
 
 ## Quota normalization
 
@@ -274,6 +397,25 @@ Performance and privacy:
 The old implementation only compared installed versions and therefore missed the
 client's visible “Update” button before installation. Do not regress to that model.
 
+## Token usage analytics
+
+- Read account usage only through the local app-server `account/usage/read`
+  request with protocol `params: null`.
+- Use `summary.lifetimeTokens` as the cumulative account total and
+  `summary.currentStreakDays` as the current consecutive-work-day value. Do not
+  infer either value from local conversations or quota percentages.
+- Normalize `dailyUsageBuckets` by validated `YYYY-MM-DD` dates and non-negative
+  integer Token counts. Treat the response as untrusted input.
+- Daily aggregation fills missing dates with zero. Weekly aggregation starts on
+  Monday. Monthly aggregation uses calendar months.
+- The day/week/month chart switch must animate and remain keyboard accessible.
+- A Token usage endpoint failure must not make an otherwise successful quota read
+  appear offline. Preserve and clearly identify the last normalized Token usage
+  snapshot instead.
+- Expose only normalized summary numbers and dated Token buckets to the renderer.
+  Never expose raw account responses, authentication data, prompts, conversation
+  content, or unrelated thread metadata.
+
 ## Background workflow
 
 - Upload must work by both clicking the upload area/button and dragging a file
@@ -337,6 +479,8 @@ Historical language/readability failures:
 - Settings are stored in `settings.json`.
 - Event baselines, reset history, credit detail cache, and client-update state are
   stored in `quota-state.json`.
+- The last normalized Token usage summary and daily buckets are also stored in
+  `quota-state.json` for temporary endpoint failures.
 - Cropped background is stored in the Electron user-data directory.
 - Write sensitive local state with restrictive file permissions where supported.
 - Never ask the user for an OpenAI API key.
@@ -362,12 +506,15 @@ the fix. At minimum, automated tests must continue covering:
 - manual reset exclusion;
 - permanent history migration and de-duplication;
 - Store updater log parsing, pending persistence/clearing, and installed updates;
+- account lifetime Token and streak normalization, cached fallback, and
+  day/week/month aggregation;
 - crop containment, movement, resize, ratio, and source-to-output mapping;
 - side-by-side quota cards, three-card status row, reset section ordering;
 - bilingual key parity and dynamic accessibility labels;
 - development-file package exclusion.
 
-For UI or main-window changes, also run a 460 × 690 visual/manual matrix:
+For UI or main-window changes, also run a full-card and floating-orb
+visual/manual matrix:
 
 - Chinese and English;
 - online and offline;
@@ -375,14 +522,17 @@ For UI or main-window changes, also run a 460 × 690 visual/manual matrix:
 - zero credits, one credit, six credits, and more than six credits;
 - no official history and multiple history records;
 - current client, update ready, and update installed;
+- Token data available/unavailable, day/week/month chart modes, and chart dialog
+  transitions in Chinese and English;
 - default background and light/dark custom backgrounds;
 - background popover, crop dialog, and reset-history dialog;
 - unlocked/locked title and four-edge movement;
+- instant collapse/restore, plus unlocked/locked orb movement;
 - hide and single-click restore from tray.
 
 Verify:
 
-- no overflow beyond 460 × 690;
+- no overflow beyond the active 460 × 690 or 76 × 76 boundary;
 - no clipped or ellipsized English;
 - footer remains visible;
 - reset list alone scrolls when needed;

@@ -1,6 +1,6 @@
 {
   "name": "codex-quota-monitor",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "A bilingual liquid-glass desktop monitor for Codex rate limits and reset credits.",
   "main": "src/main.js",
   "author": "Codex Quota Monitor",
@@ -62,5 +62,8 @@
     "electron": "43.1.1",
     "electron-builder": "26.15.3",
     "sharp": "0.34.3"
+  },
+  "dependencies": {
+    "koffi": "^3.1.2"
   }
 }

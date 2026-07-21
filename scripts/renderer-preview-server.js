@@ -27,6 +27,7 @@ http.createServer((request, response) => {
     const html = fs.readFileSync(htmlPath, "utf8")
       .replace("./styles.css", "/src/renderer/styles.css")
       .replace("./crop-geometry.js", "/src/renderer/crop-geometry.js")
+      .replace("../token-usage.js", "/src/token-usage.js")
       .replace(
         '<script src="./renderer.js"></script>',
         '<script src="/scripts/renderer-preview-mock.js"></script><script src="/src/renderer/renderer.js"></script>'
