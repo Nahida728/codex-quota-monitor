@@ -27,6 +27,39 @@ function compareVersions(left, right) {
   return 0;
 }
 
+function normalizeClientUpdateHistory(state = {}) {
+  const records = [];
+  const seen = new Set();
+  const append = value => {
+    const fromVersion = normalizeVersion(value?.fromVersion);
+    const toVersion = normalizeVersion(value?.toVersion);
+    const detectedAt = Number.isFinite(value?.detectedAt) && value.detectedAt > 0
+      ? Math.floor(value.detectedAt)
+      : null;
+    if (
+      !fromVersion ||
+      !toVersion ||
+      !detectedAt ||
+      compareVersions(toVersion, fromVersion) <= 0
+    ) return false;
+    const key = `${fromVersion}>${toVersion}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    records.push({ fromVersion, toVersion, detectedAt });
+    return true;
+  };
+
+  if (Array.isArray(state.codexClientUpdateHistory)) {
+    for (const record of state.codexClientUpdateHistory) append(record);
+  }
+  append({
+    fromVersion: state.codexClientPreviousVersion,
+    toVersion: state.codexClientUpdatedVersion,
+    detectedAt: state.codexClientUpdateAt
+  });
+  return records.sort((left, right) => left.detectedAt - right.detectedAt);
+}
+
 function parseInstalledVersion(stdout) {
   return String(stdout || "")
     .split(/\r?\n/)
@@ -171,7 +204,14 @@ function evaluateClientUpdate(observation, state = {}, now = Date.now()) {
   let pendingDetectedAt = Number.isFinite(state.codexClientPendingAt)
     ? state.codexClientPendingAt
     : null;
+  const updateHistory = normalizeClientUpdateHistory(state);
   const persistence = {};
+  const storedHistory = Array.isArray(state.codexClientUpdateHistory)
+    ? state.codexClientUpdateHistory
+    : [];
+  if (JSON.stringify(storedHistory) !== JSON.stringify(updateHistory)) {
+    persistence.codexClientUpdateHistory = updateHistory;
+  }
 
   if (detectedVersion && detectedVersion !== storedVersion) {
     if (storedVersion && compareVersions(detectedVersion, storedVersion) > 0) {
@@ -183,6 +223,16 @@ function evaluateClientUpdate(observation, state = {}, now = Date.now()) {
         codexClientUpdatedVersion: updatedVersion,
         codexClientUpdateAt: detectedAt
       });
+      const historyKey = `${previousVersion}>${updatedVersion}`;
+      if (!updateHistory.some(record => `${record.fromVersion}>${record.toVersion}` === historyKey)) {
+        updateHistory.push({
+          fromVersion: previousVersion,
+          toVersion: updatedVersion,
+          detectedAt
+        });
+        updateHistory.sort((left, right) => left.detectedAt - right.detectedAt);
+      }
+      persistence.codexClientUpdateHistory = updateHistory;
     }
     currentVersion = detectedVersion;
     persistence.codexClientVersion = detectedVersion;
@@ -249,6 +299,7 @@ function evaluateClientUpdate(observation, state = {}, now = Date.now()) {
     previousVersion: installedUpdateDetected ? previousVersion : null,
     detectedAt: installedUpdateDetected ? detectedAt : null,
     checkedLocally: Boolean(detectedVersion),
+    history: updateHistory.slice().sort((left, right) => right.detectedAt - left.detectedAt),
     persistence
   };
 }
@@ -339,6 +390,7 @@ module.exports = {
   UPDATE_NOTICE_MS,
   compareVersions,
   evaluateClientUpdate,
+  normalizeClientUpdateHistory,
   normalizeVersion,
   parseInstalledPackageInfo,
   parseInstalledVersion,

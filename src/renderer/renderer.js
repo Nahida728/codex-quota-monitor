@@ -1,9 +1,13 @@
-const AUTO_REFRESH_MS = 60_000;
+const {
+  ACTIVE_TASK_PROBE_MS,
+  getRefreshDelay,
+  shouldWakeForActiveTask
+} = window.RefreshPolicy;
 
 const i18n = {
   zh: {
-    appTitle: "Codex 额度检测器",
-    title: "额度检测器",
+    appTitle: "Codex监测台",
+    title: "Codex监测台",
     switchLanguage: "切换到英文",
     refreshNow: "立即刷新",
     quotaRegion: "额度",
@@ -25,6 +29,16 @@ const i18n = {
     noData: "暂无数据",
     resetCreditEyebrow: "RESET CREDITS",
     resetCreditTitle: "额度重置次数",
+    resetCreditCardHint: "点击查看列表与收到记录",
+    resetAvailableCount: "{count} 次可用",
+    resetCreditDetailsLabel: "查看重置次数列表和收到记录",
+    availableResetListTitle: "当前可用",
+    receivedResetHistoryTitle: "收到记录",
+    receivedResetHistoryEmpty: "尚未检测到新收到的重置次数",
+    receivedResetHistoryCount: "共 {count} 条收到记录",
+    receivedResetEntry: "收到 {count} 次重置额度",
+    receivedResetLegacy: "旧版检测到新增重置额度",
+    receivedResetAt: "检测于 {time}",
     resetType: "重置类型",
     expiresAt: "最近到期",
     fullReset: "完整额度重置",
@@ -64,12 +78,63 @@ const i18n = {
     clientUpdateVersion: "当前 v{version}",
     clientUpdateVersionChange: "新版 v{version}",
     clientUpdateTarget: "可更新至 v{version}",
+    openClientUpdateHistory: "查看客户端版本更新时间线",
+    clientUpdateHistoryTitle: "版本更新时间线",
+    clientUpdateHistoryHint: "记录检测器观察到的 Codex 客户端版本升级，时间为本机首次检测到新版本的时间。",
+    clientUpdateHistoryEmpty: "尚未检测到客户端版本升级",
+    clientUpdateHistoryCount: "共 {count} 次版本升级",
+    clientUpdateCurrentLabel: "当前版本",
+    clientUpdatePendingLabel: "待安装版本",
+    clientUpdateNoPending: "暂无",
+    clientUpdateHistoryChange: "v{from} → v{to}",
+    clientUpdateHistoryDetectedAt: "检测于 {time}",
     tokenUsageRegion: "Token 使用概览",
     tokenUsageTitle: "Token 使用量",
     tokenUsageCachedTitle: "Token 缓存",
     lifetimeTokens: "累计 Token",
-    currentStreak: "连续工作",
-    streakDays: "{count} 天",
+    totalWorkDays: "累计工作",
+    workDays: "{count} 天",
+    estimatedApiCost: "API 等价金额",
+    estimatedApiCostShort: "API 等价金额",
+    estimatedTotalCost: "本机可统计调用",
+    openCostDetails: "查看模型用量与 API 成本明细",
+    costEstimateHint: "按 OpenAI 标准 API 价格估算，不代表 Codex 订阅的实际收费。只读取本机 Codex 使用记录中的模型与 Token 统计。",
+    costCoverage: "{count} 个模型 · 定价更新 {date}",
+    costCoveragePartial: "{count} 个模型 · 部分未计价 · {date}",
+    costCoverageTruncated: "本机记录过多，仅统计可安全读取的部分",
+    modelCostInput: "输入",
+    modelCostCached: "缓存输入",
+    modelCostOutput: "输出",
+    modelCostHitRate: "命中率",
+    modelCostUnpriced: "未提供 API 定价",
+    modelCostUnknown: "未识别模型",
+    modelCostEmpty: "暂无可统计的本机模型用量",
+    modelCostRate: "每百万 Token：输入 ${input} · 缓存 ${cached} · 输出 ${output}",
+    modelCostRequests: "{count} 次调用",
+    modelCostCacheWrite: "缓存写入 {tokens}",
+    modelCostLongContext: "{count} 次长上下文按官方倍率计价",
+    activeTasksTitle: "进行中任务",
+    activeTaskDetailsLabel: "查看进行中任务详情",
+    activeTaskRunningCount: "{count} 个任务正在进行",
+    activeTaskNone: "当前没有进行中的任务",
+    activeTaskUnavailable: "任务状态暂不可用",
+    activeTaskProjectFallback: "未命名项目",
+    activeTaskProjectsMore: "{project} 等 {count} 个项目",
+    activeTaskElapsedLabel: "已进行",
+    activeTaskRunningStatus: "进行中",
+    activeTaskRunningMetric: "正在运行",
+    activeTaskLongestLabel: "最长",
+    activeTaskTotalCostLabel: "API 等价",
+    activeTaskMore: "另有 {count} 项",
+    activeTaskCostLabel: "API 等价",
+    activeTaskTimeLabel: "花费时间",
+    activeTaskModelsLabel: "模型",
+    activeTaskUnpriced: "含未定价模型",
+    activeTaskPartialCost: "仅统计可读取部分",
+    activeTaskDetailsHint: "按本机 Codex 当前回合的 Token 使用量与标准 API 价格估算，不代表 Codex 订阅实际收费。",
+    activeTaskDetailCount: "当前 {count} 个任务",
+    activeTaskLongest: "最长已进行 {time}",
+    activeTaskEmptyDetail: "暂无正在进行的 Codex 任务",
     tokenUnavailable: "暂无数据",
     openTokenUsage: "查看 Token 使用趋势",
     tokenPeriodGroup: "统计周期",
@@ -78,6 +143,7 @@ const i18n = {
     tokenPeriodMonth: "月",
     tokenChartLabel: "Token 使用量折线图",
     tokenChartEmpty: "暂无 Token 历史数据",
+    tokenChartTooltipValue: "{tokens} Token",
     tokenLive: "已同步账号数据",
     tokenCached: "显示最近缓存",
     tokenLatestValue: "{date} · {tokens}",
@@ -85,11 +151,12 @@ const i18n = {
     checkedNow: "刚刚检测",
     checkedMinutes: "{count} 分钟前检测",
     autoRefresh: "每 60 秒自动刷新",
+    autoRefreshActive: "任务期间每 5 秒自动刷新",
     reading: "读取 Codex 数据…",
     pinOn: "解锁位置",
     pinOff: "锁定位置",
     collapseToOrb: "收缩为悬浮球",
-    expandFromOrb: "展开额度检测器",
+    expandFromOrb: "展开 Codex监测台",
     floatingOrb: "Codex 悬浮球，按住任意位置拖动，单击展开",
     minimize: "最小化",
     hide: "隐藏到托盘"
@@ -137,6 +204,16 @@ const i18n = {
     noData: "No data",
     resetCreditEyebrow: "RESET CREDITS",
     resetCreditTitle: "Available resets",
+    resetCreditCardHint: "View available resets and received history",
+    resetAvailableCount: "{count} available",
+    resetCreditDetailsLabel: "View available resets and received history",
+    availableResetListTitle: "Available now",
+    receivedResetHistoryTitle: "Received history",
+    receivedResetHistoryEmpty: "No newly received reset credits have been detected",
+    receivedResetHistoryCount: "{count} received events",
+    receivedResetEntry: "Received {count} reset credits",
+    receivedResetLegacy: "New reset credits detected by an earlier version",
+    receivedResetAt: "Detected {time}",
     resetType: "Reset type",
     expiresAt: "Nearest expiry",
     fullReset: "Full reset",
@@ -176,12 +253,63 @@ const i18n = {
     clientUpdateVersion: "Current v{version}",
     clientUpdateVersionChange: "Now v{version}",
     clientUpdateTarget: "Update to v{version}",
+    openClientUpdateHistory: "View Codex client update timeline",
+    clientUpdateHistoryTitle: "Version update timeline",
+    clientUpdateHistoryHint: "Records Codex client upgrades observed by the monitor. Each time is when the new version was first detected on this device.",
+    clientUpdateHistoryEmpty: "No client version upgrade has been detected",
+    clientUpdateHistoryCount: "{count} version upgrades",
+    clientUpdateCurrentLabel: "Current version",
+    clientUpdatePendingLabel: "Pending version",
+    clientUpdateNoPending: "None",
+    clientUpdateHistoryChange: "v{from} → v{to}",
+    clientUpdateHistoryDetectedAt: "Detected {time}",
     tokenUsageRegion: "Token usage overview",
     tokenUsageTitle: "Token usage",
     tokenUsageCachedTitle: "Cached usage",
     lifetimeTokens: "Lifetime tokens",
-    currentStreak: "Current streak",
-    streakDays: "{count} days",
+    totalWorkDays: "Total work",
+    workDays: "{count} days",
+    estimatedApiCost: "API-equivalent cost",
+    estimatedApiCostShort: "API cost est.",
+    estimatedTotalCost: "Locally measurable calls",
+    openCostDetails: "View model usage and API cost details",
+    costEstimateHint: "Estimated with standard OpenAI API prices; this is not an actual Codex subscription charge. Only model and Token statistics from local Codex usage records are read.",
+    costCoverage: "{count} models · Pricing updated {date}",
+    costCoveragePartial: "{count} models · Some unpriced · {date}",
+    costCoverageTruncated: "Only a bounded portion of the local records could be safely scanned",
+    modelCostInput: "Input",
+    modelCostCached: "Cached input",
+    modelCostOutput: "Output",
+    modelCostHitRate: "Cache hit",
+    modelCostUnpriced: "No API price",
+    modelCostUnknown: "Unidentified model",
+    modelCostEmpty: "No local model usage is available",
+    modelCostRate: "Per 1M Tokens: input ${input} · cached ${cached} · output ${output}",
+    modelCostRequests: "{count} calls",
+    modelCostCacheWrite: "Cache writes {tokens}",
+    modelCostLongContext: "{count} long-context calls use official multipliers",
+    activeTasksTitle: "Active tasks",
+    activeTaskDetailsLabel: "View active task details",
+    activeTaskRunningCount: "{count} tasks running",
+    activeTaskNone: "No active tasks",
+    activeTaskUnavailable: "Task status unavailable",
+    activeTaskProjectFallback: "Unnamed project",
+    activeTaskProjectsMore: "{project} + {count} more",
+    activeTaskElapsedLabel: "Elapsed",
+    activeTaskRunningStatus: "Running",
+    activeTaskRunningMetric: "Running",
+    activeTaskLongestLabel: "Longest",
+    activeTaskTotalCostLabel: "API equivalent",
+    activeTaskMore: "{count} more",
+    activeTaskCostLabel: "API equivalent",
+    activeTaskTimeLabel: "Time spent",
+    activeTaskModelsLabel: "Models",
+    activeTaskUnpriced: "Includes unpriced models",
+    activeTaskPartialCost: "Only the readable portion is counted",
+    activeTaskDetailsHint: "Estimated from current local Codex turn Token usage and standard API prices; this is not an actual Codex subscription charge.",
+    activeTaskDetailCount: "{count} active tasks",
+    activeTaskLongest: "Longest running {time}",
+    activeTaskEmptyDetail: "No Codex tasks are currently running",
     tokenUnavailable: "Unavailable",
     openTokenUsage: "View token usage trend",
     tokenPeriodGroup: "Aggregation period",
@@ -190,6 +318,7 @@ const i18n = {
     tokenPeriodMonth: "Month",
     tokenChartLabel: "Token usage line chart",
     tokenChartEmpty: "No token history available",
+    tokenChartTooltipValue: "{tokens} Tokens",
     tokenLive: "Account data synced",
     tokenCached: "Showing recent cache",
     tokenLatestValue: "{date} · {tokens}",
@@ -197,6 +326,7 @@ const i18n = {
     checkedNow: "Checked just now",
     checkedMinutes: "Checked {count}m ago",
     autoRefresh: "Auto-refresh every 60s",
+    autoRefreshActive: "Auto-refresh every 5s during tasks",
     reading: "Reading Codex data…",
     pinOn: "Unlock position",
     pinOff: "Lock position",
@@ -236,15 +366,27 @@ const elements = Object.fromEntries([
   "cropResizeHandle", "cropSourceInfo",
   "fiveHourPanel", "fiveHourReset", "fiveHourNumber", "fiveHourProgress", "fiveHourUsed",
   "weeklyPanel", "weeklyReset", "weeklyNumber", "weeklyProgress", "weeklyUsed",
-  "resetSection", "resetCount", "resetCreditList", "newResetStatus", "newResetCheck", "newResetIcon",
+  "resetCreditButton", "resetCreditIcon", "resetStatusCount", "resetCreditStatus",
+  "resetCreditDetail", "resetCreditModal", "resetCreditClose", "resetCreditDone",
+  "resetDetailCount", "resetCreditList", "receivedResetHistoryList",
   "officialResetButton", "officialResetStatus", "officialResetCheck", "officialResetHistoryModal",
   "officialResetHistoryClose", "officialResetHistoryDone", "officialResetHistoryList",
   "clientUpdateCard", "clientUpdateStatus", "clientUpdateVersion", "clientUpdateCheck", "clientUpdateIcon",
-  "tokenOverview", "tokenOverviewTitle", "lifetimeTokenValue", "currentStreakValue", "tokenSparkline",
-  "tokenUsageModal", "tokenUsageClose", "tokenUsageDone", "tokenModalLifetime", "tokenModalStreak",
+  "clientUpdateHistoryModal", "clientUpdateHistoryClose", "clientUpdateHistoryDone",
+  "clientUpdateHistoryCurrent", "clientUpdateHistoryPending", "clientUpdateHistoryList",
+  "tokenOverview", "tokenOverviewTitle", "lifetimeTokenValue", "totalWorkDaysValue",
+  "estimatedCostValue", "tokenCostHelp", "tokenSparkline",
+  "tokenUsageModal", "tokenUsageClose", "tokenUsageDone", "tokenModalLifetime", "tokenModalTotalWorkDays",
   "tokenPeriodSwitch", "tokenUsageFreshness", "tokenUsageChart", "tokenChartEmpty",
-  "tokenChartRange", "tokenChartLatest",
-  "lastChecked", "loadingLayer", "floatingOrb", "floatingOrbIcon", "floatingOrbOpen"
+  "tokenChartRange", "tokenChartLatest", "tokenChartTooltip", "tokenChartTooltipDate",
+  "tokenChartTooltipValue",
+  "tokenCostModal", "tokenCostClose", "tokenCostDone", "tokenCostTotal",
+  "tokenCostCoverage", "modelCostList",
+  "activeTaskCard", "activeTaskCount", "activeTaskElapsed", "activeTaskTotalCost",
+  "activeTaskPreviewList", "activeTaskMoreIndicator", "activeTaskModal",
+  "activeTaskClose", "activeTaskDone",
+  "activeTaskDetailCount", "activeTaskDetailLongest", "activeTaskList",
+  "lastChecked", "autoRefreshLabel", "loadingLayer", "floatingOrb", "floatingOrbIcon", "floatingOrbOpen"
 ].map(id => [id, document.getElementById(id)]));
 
 let language = "zh";
@@ -255,6 +397,7 @@ let windowModeChanging = false;
 let windowModeAnchor = { x: 358, y: 43 };
 let latestSnapshot = null;
 let refreshTimer = null;
+let activeTaskProbeTimer = null;
 let clockTimer = null;
 let isRefreshing = false;
 let backgroundDataUrl = null;
@@ -263,9 +406,116 @@ let cropSource = null;
 let cropInteraction = null;
 let cropFrame = null;
 let officialResetHistory = [];
+let receivedResetHistory = [];
+let latestClientUpdate = {};
 let tokenPeriod = "day";
 let tokenChartSeries = [];
 let tokenChartAnimationFrame = null;
+let tokenChartAnimationActive = false;
+let tokenChartHoverIndex = null;
+let activeTasks = [];
+let activeTasksAvailable = false;
+let activeTaskObservedAt = null;
+let activeTaskTimer = null;
+
+const TOKEN_CHART_PADDING = Object.freeze({ left: 43, right: 13, top: 17, bottom: 28 });
+const SECONDARY_DIALOG_SELECTOR = [
+  ".crop-dialog",
+  ".reset-dialog",
+  ".history-dialog",
+  ".token-dialog",
+  ".cost-dialog",
+  ".task-dialog"
+].join(",");
+const SECONDARY_MODAL_ENTER_FALLBACK_MS = 460;
+const SECONDARY_MODAL_EXIT_FALLBACK_MS = 320;
+const secondaryModalTransitions = new WeakMap();
+
+function cancelSecondaryModalTransition(modal) {
+  const transition = secondaryModalTransitions.get(modal);
+  if (!transition) return;
+  clearTimeout(transition.timer);
+  transition.dialog?.removeEventListener("animationend", transition.onAnimationEnd);
+  secondaryModalTransitions.delete(modal);
+}
+
+function openSecondaryModal(modal, focusTarget) {
+  cancelSecondaryModalTransition(modal);
+  modal.inert = false;
+  modal.removeAttribute("aria-hidden");
+  modal.classList.remove("is-entering", "is-closing");
+  modal.hidden = false;
+
+  // Restart the entrance sequence when a close is interrupted and the same
+  // dialog is immediately reopened.
+  void modal.offsetWidth;
+  const dialog = modal.querySelector(SECONDARY_DIALOG_SELECTOR);
+  const transition = {
+    dialog,
+    timer: null,
+    onAnimationEnd: null
+  };
+  const finish = () => {
+    if (secondaryModalTransitions.get(modal) !== transition) return;
+    clearTimeout(transition.timer);
+    dialog?.removeEventListener("animationend", transition.onAnimationEnd);
+    secondaryModalTransitions.delete(modal);
+    modal.classList.remove("is-entering");
+  };
+  transition.onAnimationEnd = event => {
+    if (event.target === dialog && event.animationName === "secondary-dialog-enter") {
+      finish();
+    }
+  };
+  dialog?.addEventListener("animationend", transition.onAnimationEnd);
+  transition.timer = setTimeout(finish, SECONDARY_MODAL_ENTER_FALLBACK_MS);
+  secondaryModalTransitions.set(modal, transition);
+  modal.classList.add("is-entering");
+  requestAnimationFrame(() => {
+    if (!modal.hidden && !modal.classList.contains("is-closing")) {
+      focusTarget?.focus({ preventScroll: true });
+    }
+  });
+}
+
+function closeSecondaryModal(modal, restoreFocus, { onClose, onHidden } = {}) {
+  if (!modal || modal.hidden || modal.classList.contains("is-closing")) return;
+
+  cancelSecondaryModalTransition(modal);
+  modal.classList.remove("is-entering");
+  modal.classList.add("is-closing");
+  modal.inert = true;
+  onClose?.();
+
+  const dialog = modal.querySelector(SECONDARY_DIALOG_SELECTOR);
+  const transition = {
+    dialog,
+    timer: null,
+    onAnimationEnd: null
+  };
+
+  const finish = () => {
+    if (secondaryModalTransitions.get(modal) !== transition) return;
+    clearTimeout(transition.timer);
+    dialog?.removeEventListener("animationend", transition.onAnimationEnd);
+    secondaryModalTransitions.delete(modal);
+    modal.hidden = true;
+    modal.classList.remove("is-closing");
+    modal.inert = false;
+    modal.removeAttribute("aria-hidden");
+    onHidden?.();
+    restoreFocus?.focus({ preventScroll: true });
+  };
+
+  transition.onAnimationEnd = event => {
+    if (event.target === dialog && event.animationName === "secondary-dialog-exit") {
+      finish();
+    }
+  };
+  dialog?.addEventListener("animationend", transition.onAnimationEnd);
+  transition.timer = setTimeout(finish, SECONDARY_MODAL_EXIT_FALLBACK_MS);
+  secondaryModalTransitions.set(modal, transition);
+}
 
 function t(key, values = {}) {
   let text = i18n[language][key] ?? key;
@@ -288,7 +538,12 @@ function applyLanguage() {
   elements.refreshButton.setAttribute("aria-label", t("refreshNow"));
   elements.quotaSection.setAttribute("aria-label", t("quotaRegion"));
   elements.statusSection.setAttribute("aria-label", t("statusRegion"));
+  elements.resetCreditButton.setAttribute("aria-label", t("resetCreditDetailsLabel"));
+  elements.clientUpdateCard.setAttribute("aria-label", t("openClientUpdateHistory"));
   elements.tokenOverview.setAttribute("aria-label", t("openTokenUsage"));
+  elements.tokenCostHelp.title = t("openCostDetails");
+  elements.tokenCostHelp.setAttribute("aria-label", t("openCostDetails"));
+  elements.activeTaskCard.setAttribute("aria-label", t("activeTaskDetailsLabel"));
   elements.tokenPeriodSwitch.setAttribute("aria-label", t("tokenPeriodGroup"));
   elements.tokenUsageChart.setAttribute("aria-label", t("tokenChartLabel"));
   elements.pinButton.title = positionLocked ? t("pinOn") : t("pinOff");
@@ -307,7 +562,11 @@ function applyLanguage() {
   elements.cropClose.setAttribute("aria-label", t("close"));
   elements.cropResizeHandle.setAttribute("aria-label", t("cropResize"));
   elements.officialResetHistoryClose.setAttribute("aria-label", t("close"));
+  elements.clientUpdateHistoryClose.setAttribute("aria-label", t("close"));
+  elements.resetCreditClose.setAttribute("aria-label", t("close"));
   elements.tokenUsageClose.setAttribute("aria-label", t("close"));
+  elements.tokenCostClose.setAttribute("aria-label", t("close"));
+  elements.activeTaskClose.setAttribute("aria-label", t("close"));
   elements.officialResetButton.setAttribute("aria-label", t("openOfficialResetHistory"));
   if (latestSnapshot) render(latestSnapshot);
 }
@@ -343,10 +602,13 @@ function renderCropBox() {
 }
 
 function closeCropModal() {
-  elements.cropModal.hidden = true;
-  elements.cropImage.removeAttribute("src");
-  cropSource = null;
-  cropInteraction = null;
+  closeSecondaryModal(elements.cropModal, elements.backgroundButton, {
+    onHidden() {
+      elements.cropImage.removeAttribute("src");
+      cropSource = null;
+      cropInteraction = null;
+    }
+  });
 }
 
 function openCropper(dataUrl, name = "") {
@@ -365,9 +627,9 @@ function openCropper(dataUrl, name = "") {
       displayedImage: null,
       crop: null
     };
-    elements.cropModal.hidden = false;
     elements.cropImage.src = dataUrl;
     elements.cropSourceInfo.textContent = `${name ? `${name} · ` : ""}${probe.naturalWidth} × ${probe.naturalHeight}`;
+    openSecondaryModal(elements.cropModal, elements.cropClose);
     requestAnimationFrame(() => {
       const displayedImage = window.CropGeometry.containedImageRect(
         elements.cropStage.clientWidth,
@@ -558,21 +820,63 @@ function getResetCreditTitle(credit) {
   return t("codexReset");
 }
 
-function updateUsageSectionBalance(renderedRowCount, offline = false) {
-  const visibleRows = Math.min(6, Math.max(1, renderedRowCount));
-  const resetHeight = offline
-    ? 104
-    : (renderedRowCount === 0
-        ? 104
-        : 66 + visibleRows * 28 + (visibleRows - 1) * 4);
-  const tokenHeight = (offline ? 232 : 316) - resetHeight;
-  elements.resetSection.style.setProperty("--reset-section-height", `${resetHeight}px`);
-  elements.tokenOverview.style.setProperty("--token-overview-height", `${tokenHeight}px`);
-  elements.tokenOverview.classList.toggle("is-expanded", tokenHeight >= 124);
+function renderReceivedResetHistory(history = []) {
+  receivedResetHistory = Array.isArray(history)
+    ? history
+        .filter(item => Number.isFinite(item?.detectedAt))
+        .slice()
+        .sort((a, b) => b.detectedAt - a.detectedAt)
+    : [];
+  elements.receivedResetHistoryList.replaceChildren();
+
+  if (!receivedResetHistory.length) {
+    const empty = document.createElement("div");
+    empty.className = "received-reset-empty";
+    empty.textContent = t("receivedResetHistoryEmpty");
+    elements.receivedResetHistoryList.append(empty);
+    return;
+  }
+
+  const count = document.createElement("div");
+  count.className = "history-count";
+  count.textContent = t("receivedResetHistoryCount", {
+    count: formatTokenCount(receivedResetHistory.length)
+  });
+  elements.receivedResetHistoryList.append(count);
+
+  receivedResetHistory.forEach(event => {
+    const row = document.createElement("article");
+    row.className = "received-reset-item";
+
+    const marker = document.createElement("span");
+    marker.className = "received-reset-marker";
+    marker.textContent = `+${Math.max(1, Number(event.count) || 1)}`;
+
+    const copy = document.createElement("div");
+    const title = document.createElement("strong");
+    const hasDetails = Array.isArray(event.items) && event.items.length > 0;
+    title.textContent = hasDetails
+      ? t("receivedResetEntry", { count: Math.max(1, Number(event.count) || event.items.length) })
+      : t("receivedResetLegacy");
+
+    const detail = document.createElement("span");
+    const types = hasDetails
+      ? [...new Set(event.items.map(getResetCreditTitle).filter(Boolean))]
+      : [];
+    detail.textContent = [
+      t("receivedResetAt", { time: formatDate(event.detectedAt, true) }),
+      types.join(" · ")
+    ].filter(Boolean).join(" · ");
+
+    copy.append(title, detail);
+    row.append(marker, copy);
+    elements.receivedResetHistoryList.append(row);
+  });
 }
 
-function renderResetCredits(resets = {}) {
-  const availableCount = Number.isFinite(resets.availableCount) ? resets.availableCount : 0;
+function renderResetCredits(resets = {}, newResetEvent = {}) {
+  const hasAvailableCount = Number.isFinite(resets.availableCount);
+  const availableCount = hasAvailableCount ? resets.availableCount : 0;
   const items = Array.isArray(resets.items)
     ? resets.items
         .filter(Boolean)
@@ -585,9 +889,18 @@ function renderResetCredits(resets = {}) {
     : [];
   const missingCount = Math.max(0, availableCount - items.length);
   const renderedRowCount = items.length + (missingCount ? 1 : 0);
-  updateUsageSectionBalance(renderedRowCount);
-
-  elements.resetCount.textContent = availableCount;
+  elements.resetStatusCount.textContent = hasAvailableCount ? availableCount : "--";
+  elements.resetCreditStatus.textContent = hasAvailableCount
+    ? t("resetAvailableCount", { count: formatTokenCount(availableCount) })
+    : t("noData");
+  elements.resetCreditDetail.textContent = newResetEvent.detected
+    ? t("detectedCount", { count: newResetEvent.count })
+    : t("resetCreditCardHint");
+  elements.resetCreditIcon.classList.toggle("is-positive", availableCount > 0);
+  elements.resetDetailCount.textContent = hasAvailableCount
+    ? t("resetAvailableCount", { count: formatTokenCount(availableCount) })
+    : t("noData");
+  renderReceivedResetHistory(newResetEvent.history);
   elements.resetCreditList.replaceChildren();
   elements.resetCreditList.classList.toggle("is-overflowing", renderedRowCount > 6);
   elements.resetCreditList.style.setProperty(
@@ -609,7 +922,7 @@ function renderResetCredits(resets = {}) {
   if (!availableCount) {
     const empty = document.createElement("div");
     empty.className = "reset-credit-empty";
-    empty.textContent = t("noCredits");
+    empty.textContent = hasAvailableCount ? t("noCredits") : t("noData");
     elements.resetCreditList.append(empty);
     return;
   }
@@ -702,7 +1015,64 @@ function renderOfficialResetHistory(event = {}, manualReset = {}) {
   });
 }
 
+function renderClientUpdateHistory(clientUpdate = latestClientUpdate) {
+  latestClientUpdate = clientUpdate || {};
+  const history = Array.isArray(latestClientUpdate.history)
+    ? latestClientUpdate.history.filter(record =>
+        /^\d+(?:\.\d+){1,5}$/.test(String(record?.fromVersion || "")) &&
+        /^\d+(?:\.\d+){1,5}$/.test(String(record?.toVersion || "")) &&
+        Number.isFinite(record?.detectedAt)
+      )
+    : [];
+
+  elements.clientUpdateHistoryCurrent.textContent = latestClientUpdate.currentVersion
+    ? `v${latestClientUpdate.currentVersion}`
+    : "—";
+  elements.clientUpdateHistoryPending.textContent = latestClientUpdate.pendingVersion
+    ? `v${latestClientUpdate.pendingVersion}`
+    : t("clientUpdateNoPending");
+  elements.clientUpdateHistoryList.replaceChildren();
+
+  if (!history.length) {
+    const empty = document.createElement("div");
+    empty.className = "history-empty";
+    empty.textContent = t("clientUpdateHistoryEmpty");
+    elements.clientUpdateHistoryList.append(empty);
+    return;
+  }
+
+  const count = document.createElement("div");
+  count.className = "history-count";
+  count.textContent = t("clientUpdateHistoryCount", {
+    count: formatTokenCount(history.length)
+  });
+  elements.clientUpdateHistoryList.append(count);
+
+  history.forEach((record, index) => {
+    const item = document.createElement("article");
+    item.className = "history-item client-update-history-item";
+    const marker = document.createElement("span");
+    marker.className = "history-marker client-update-history-marker";
+    marker.textContent = String(history.length - index).padStart(2, "0");
+
+    const copy = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = t("clientUpdateHistoryChange", {
+      from: record.fromVersion,
+      to: record.toVersion
+    });
+    const time = document.createElement("span");
+    time.textContent = t("clientUpdateHistoryDetectedAt", {
+      time: formatDate(record.detectedAt / 1_000, true)
+    });
+    copy.append(title, time);
+    item.append(marker, copy);
+    elements.clientUpdateHistoryList.append(item);
+  });
+}
+
 function renderClientUpdate(clientUpdate = {}) {
+  latestClientUpdate = clientUpdate || {};
   const pending = Boolean(
     clientUpdate.pendingUpdate &&
     clientUpdate.currentVersion &&
@@ -735,6 +1105,7 @@ function renderClientUpdate(clientUpdate = {}) {
   elements.clientUpdateCheck.classList.toggle("is-positive", pending || installed);
   elements.clientUpdateIcon.classList.toggle("is-positive", pending || installed);
   elements.clientUpdateCard.classList.toggle("has-update", pending || installed);
+  renderClientUpdateHistory(clientUpdate);
 }
 
 function formatTokenCount(value, compact = false) {
@@ -745,6 +1116,72 @@ function formatTokenCount(value, compact = false) {
   } : {
     maximumFractionDigits: 0
   }).format(value);
+}
+
+function formatUsd(value) {
+  if (!Number.isFinite(value)) return t("tokenUnavailable");
+  const maximumFractionDigits = value > 0 && value < 0.01 ? 4 : 2;
+  return `$${new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits
+  }).format(value)}`;
+}
+
+function formatApiEstimate(cost = {}) {
+  if (!cost.available || !Number.isFinite(cost.estimatedCostUsd)) return t("tokenUnavailable");
+  const partial = cost.hasUnpricedModels || cost.truncated;
+  return `${partial ? "≥" : "≈"}${formatUsd(cost.estimatedCostUsd)}`;
+}
+
+function formatTaskDuration(value) {
+  const totalSeconds = Math.max(0, Math.floor(Number(value) || 0));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (language === "zh") {
+    if (hours > 0) return `${hours}时 ${String(minutes).padStart(2, "0")}分 ${String(seconds).padStart(2, "0")}秒`;
+    return `${minutes}分 ${String(seconds).padStart(2, "0")}秒`;
+  }
+  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+function getTaskElapsedSeconds(task) {
+  if (Number.isFinite(task?.startedAt)) {
+    return Math.max(0, Math.floor(Date.now() / 1_000) - task.startedAt);
+  }
+  const observedDelta = Number.isFinite(activeTaskObservedAt)
+    ? Math.max(0, Math.floor((Date.now() - activeTaskObservedAt) / 1_000))
+    : 0;
+  return Math.max(0, Number(task?.elapsedSeconds) || 0) + observedDelta;
+}
+
+function formatActiveTaskCost(task = {}) {
+  if (!Number.isFinite(task.estimatedCostUsd)) return t("tokenUnavailable");
+  return `${task.partial || task.hasUnpricedModels ? "≥" : "≈"}${formatUsd(task.estimatedCostUsd)}`;
+}
+
+function formatActiveTaskAggregateCost(tasks = []) {
+  if (!tasks.length) return formatUsd(0);
+  const pricedTasks = tasks.filter(task => Number.isFinite(task?.estimatedCostUsd));
+  if (!pricedTasks.length) return t("tokenUnavailable");
+  const total = pricedTasks.reduce((sum, task) => sum + task.estimatedCostUsd, 0);
+  const partial = pricedTasks.length !== tasks.length ||
+    tasks.some(task => task.partial || task.hasUnpricedModels);
+  return `${partial ? "≥" : "≈"}${formatUsd(total)}`;
+}
+
+function getActiveTaskModelNames(task) {
+  return Array.isArray(task?.models)
+    ? [...new Set(task.models.map(model => model.model).filter(Boolean))]
+    : [];
+}
+
+function formatPrice(value) {
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 3
+  }).format(Number(value) || 0);
 }
 
 function formatTokenDate(value, period = "day") {
@@ -760,6 +1197,29 @@ function formatTokenDate(value, period = "day") {
     day: "numeric",
     timeZone: "UTC"
   }).format(date);
+}
+
+function formatTokenTooltipDate(value, period = tokenPeriod) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) return "—";
+  const date = new Date(`${value}T00:00:00Z`);
+  const locale = language === "zh" ? "zh-CN" : "en-US";
+  if (period === "month") {
+    return new Intl.DateTimeFormat(locale, {
+      year: "numeric",
+      month: "long",
+      timeZone: "UTC"
+    }).format(date);
+  }
+  const format = target => new Intl.DateTimeFormat(locale, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC"
+  }).format(target);
+  if (period !== "week") return format(date);
+  const end = new Date(date);
+  end.setUTCDate(end.getUTCDate() + 6);
+  return `${format(date)} — ${format(end)}`;
 }
 
 function prepareCanvas(canvas) {
@@ -787,13 +1247,22 @@ function chartPoints(series, width, height, padding, maximum) {
   }));
 }
 
-function drawTokenLine(context, series, width, height, alpha = 1, compact = false, overview = false) {
+function drawTokenLine(
+  context,
+  series,
+  width,
+  height,
+  alpha = 1,
+  compact = false,
+  overview = false,
+  highlightedIndex = null
+) {
   if (!series.length || alpha <= 0) return;
   const padding = overview
     ? { left: 7, right: 7, top: 8, bottom: 8 }
     : (compact
     ? { left: 2, right: 2, top: 4, bottom: 4 }
-    : { left: 43, right: 13, top: 17, bottom: 28 });
+    : TOKEN_CHART_PADDING);
   const maximum = Math.max(1, ...series.map(item => item.tokens));
   const points = chartPoints(series, width, height, padding, maximum);
   context.save();
@@ -841,7 +1310,30 @@ function drawTokenLine(context, series, width, height, alpha = 1, compact = fals
   context.shadowBlur = compact ? 5 : 9;
   context.stroke();
 
-  if (!compact || overview) {
+  if (!compact) {
+    points.forEach((point, index) => {
+      const highlighted = index === highlightedIndex;
+      context.shadowBlur = highlighted ? 14 : 7;
+      context.fillStyle = highlighted ? "#e5fff9" : "#8ff1de";
+      context.beginPath();
+      context.arc(
+        point.x,
+        point.y,
+        highlighted ? 4.5 : (index === points.length - 1 ? 3.2 : 2.1),
+        0,
+        Math.PI * 2
+      );
+      context.fill();
+      if (highlighted) {
+        context.shadowBlur = 0;
+        context.strokeStyle = "rgba(143,241,222,.42)";
+        context.lineWidth = 2;
+        context.beginPath();
+        context.arc(point.x, point.y, 7.5, 0, Math.PI * 2);
+        context.stroke();
+      }
+    });
+  } else if (overview) {
     const last = points.at(-1);
     context.shadowBlur = 10;
     context.fillStyle = "#8ff1de";
@@ -854,7 +1346,7 @@ function drawTokenLine(context, series, width, height, alpha = 1, compact = fals
 
 function drawTokenAxes(context, series, width, height) {
   if (!series.length) return;
-  const padding = { left: 43, right: 13, top: 17, bottom: 28 };
+  const padding = TOKEN_CHART_PADDING;
   const maximum = Math.max(1, ...series.map(item => item.tokens));
   context.save();
   context.fillStyle = "rgba(206,226,237,.48)";
@@ -884,7 +1376,16 @@ function drawTokenChartFrame(previousSeries, currentSeries, progress) {
   drawTokenAxes(context, currentSeries, width, height);
   const eased = 1 - Math.pow(1 - progress, 3);
   drawTokenLine(context, previousSeries, width, height, 1 - eased);
-  drawTokenLine(context, currentSeries, width, height, eased);
+  drawTokenLine(
+    context,
+    currentSeries,
+    width,
+    height,
+    eased,
+    false,
+    false,
+    tokenChartHoverIndex
+  );
 }
 
 function getTokenSeries(period = tokenPeriod) {
@@ -894,11 +1395,77 @@ function getTokenSeries(period = tokenPeriod) {
   return aggregated.slice(-limit);
 }
 
+function hideTokenChartTooltip(redraw = true) {
+  const hadHover = tokenChartHoverIndex !== null;
+  tokenChartHoverIndex = null;
+  elements.tokenChartTooltip.hidden = true;
+  if (redraw && hadHover && tokenChartSeries.length && !tokenChartAnimationActive) {
+    drawTokenChartFrame([], tokenChartSeries, 1);
+  }
+}
+
+function updateTokenChartTooltip(event) {
+  if (!tokenChartSeries.length || elements.tokenUsageModal.hidden) {
+    hideTokenChartTooltip();
+    return;
+  }
+  const rect = elements.tokenUsageChart.getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width));
+  const height = Math.max(1, Math.round(rect.height));
+  const maximum = Math.max(1, ...tokenChartSeries.map(item => item.tokens));
+  const points = chartPoints(
+    tokenChartSeries,
+    width,
+    height,
+    TOKEN_CHART_PADDING,
+    maximum
+  );
+  const pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  let nearestIndex = null;
+  let nearestDistance = 15;
+  points.forEach((point, index) => {
+    const distance = Math.hypot(point.x - pointer.x, point.y - pointer.y);
+    if (distance <= nearestDistance) {
+      nearestDistance = distance;
+      nearestIndex = index;
+    }
+  });
+  if (nearestIndex === null) {
+    hideTokenChartTooltip();
+    return;
+  }
+
+  const point = points[nearestIndex];
+  const item = tokenChartSeries[nearestIndex];
+  const hoverChanged = tokenChartHoverIndex !== nearestIndex;
+  tokenChartHoverIndex = nearestIndex;
+  elements.tokenChartTooltipDate.textContent = formatTokenTooltipDate(item.startDate);
+  elements.tokenChartTooltipValue.textContent = t("tokenChartTooltipValue", {
+    tokens: formatTokenCount(item.tokens)
+  });
+  elements.tokenChartTooltip.hidden = false;
+
+  const tooltipWidth = elements.tokenChartTooltip.offsetWidth;
+  const tooltipHeight = elements.tokenChartTooltip.offsetHeight;
+  const halfWidth = tooltipWidth / 2;
+  const left = Math.max(halfWidth + 7, Math.min(width - halfWidth - 7, point.x));
+  const placeBelow = point.y - tooltipHeight - 12 < 6;
+  elements.tokenChartTooltip.style.left = `${left}px`;
+  elements.tokenChartTooltip.style.top = `${
+    placeBelow ? point.y + 12 : point.y - tooltipHeight - 12
+  }px`;
+  if (hoverChanged && !tokenChartAnimationActive) {
+    drawTokenChartFrame([], tokenChartSeries, 1);
+  }
+}
+
 function renderTokenChart(animate = true) {
   const nextSeries = getTokenSeries();
   const previousSeries = tokenChartSeries;
   tokenChartSeries = nextSeries;
   cancelAnimationFrame(tokenChartAnimationFrame);
+  tokenChartAnimationActive = false;
+  hideTokenChartTooltip(false);
   elements.tokenChartEmpty.hidden = nextSeries.length > 0;
 
   if (!nextSeries.length) {
@@ -923,10 +1490,15 @@ function renderTokenChart(animate = true) {
   }
 
   const startedAt = performance.now();
+  tokenChartAnimationActive = true;
   const animateFrame = now => {
     const progress = Math.min(1, (now - startedAt) / 360);
     drawTokenChartFrame(previousSeries, nextSeries, progress);
-    if (progress < 1) tokenChartAnimationFrame = requestAnimationFrame(animateFrame);
+    if (progress < 1) {
+      tokenChartAnimationFrame = requestAnimationFrame(animateFrame);
+    } else {
+      tokenChartAnimationActive = false;
+    }
   };
   tokenChartAnimationFrame = requestAnimationFrame(animateFrame);
 }
@@ -949,8 +1521,8 @@ function drawTokenSparkline() {
 function renderTokenUsageModal(animate = false) {
   const usage = latestSnapshot?.tokenUsage || {};
   elements.tokenModalLifetime.textContent = formatTokenCount(usage.lifetimeTokens);
-  elements.tokenModalStreak.textContent = Number.isFinite(usage.currentStreakDays)
-    ? t("streakDays", { count: formatTokenCount(usage.currentStreakDays) })
+  elements.tokenModalTotalWorkDays.textContent = Number.isFinite(usage.totalWorkDays)
+    ? t("workDays", { count: formatTokenCount(usage.totalWorkDays) })
     : t("tokenUnavailable");
   elements.tokenUsageFreshness.textContent = usage.available
     ? t(usage.cached ? "tokenCached" : "tokenLive")
@@ -965,8 +1537,8 @@ function renderTokenUsageModal(animate = false) {
 function renderTokenUsage(usage = {}) {
   elements.tokenOverviewTitle.textContent = t(usage.cached ? "tokenUsageCachedTitle" : "tokenUsageTitle");
   elements.lifetimeTokenValue.textContent = formatTokenCount(usage.lifetimeTokens);
-  elements.currentStreakValue.textContent = Number.isFinite(usage.currentStreakDays)
-    ? t("streakDays", { count: formatTokenCount(usage.currentStreakDays) })
+  elements.totalWorkDaysValue.textContent = Number.isFinite(usage.totalWorkDays)
+    ? t("workDays", { count: formatTokenCount(usage.totalWorkDays) })
     : t("tokenUnavailable");
   elements.tokenOverview.classList.toggle("is-unavailable", !usage.available);
   requestAnimationFrame(drawTokenSparkline);
@@ -974,27 +1546,316 @@ function renderTokenUsage(usage = {}) {
   if (!elements.tokenUsageModal.hidden) requestAnimationFrame(() => renderTokenUsageModal(false));
 }
 
+function appendModelCostStat(container, label, value) {
+  const item = document.createElement("div");
+  const caption = document.createElement("span");
+  const strong = document.createElement("strong");
+  caption.textContent = label;
+  strong.textContent = value;
+  item.append(caption, strong);
+  container.append(item);
+}
+
+function renderTokenCostDetails(cost = latestSnapshot?.tokenCost || {}) {
+  elements.tokenCostTotal.textContent = formatApiEstimate(cost);
+  const modelCount = Array.isArray(cost.models) ? cost.models.length : 0;
+  const coverageKey = cost.hasUnpricedModels ? "costCoveragePartial" : "costCoverage";
+  const coverage = t(coverageKey, {
+    count: modelCount,
+    date: cost.pricingDate || "—"
+  });
+  elements.tokenCostCoverage.textContent = cost.truncated
+    ? `${coverage} · ${t("costCoverageTruncated")}`
+    : coverage;
+  elements.modelCostList.replaceChildren();
+
+  if (!cost.available || !modelCount) {
+    const empty = document.createElement("div");
+    empty.className = "cost-empty";
+    empty.textContent = t("modelCostEmpty");
+    elements.modelCostList.append(empty);
+    return;
+  }
+
+  cost.models.forEach(model => {
+    const item = document.createElement("article");
+    item.className = "model-cost-item";
+    const heading = document.createElement("div");
+    heading.className = "model-cost-heading";
+    const modelName = document.createElement("strong");
+    modelName.textContent = model.model === "unknown" ? t("modelCostUnknown") : model.model;
+    const modelCost = document.createElement("span");
+    modelCost.textContent = model.priced
+      ? `≈${formatUsd(model.estimatedCostUsd)}`
+      : t("modelCostUnpriced");
+    modelCost.classList.toggle("is-unpriced", !model.priced);
+    heading.append(modelName, modelCost);
+
+    const stats = document.createElement("div");
+    stats.className = "model-cost-stats";
+    appendModelCostStat(stats, t("modelCostInput"), formatTokenCount(model.inputTokens, true));
+    appendModelCostStat(
+      stats,
+      t("modelCostCached"),
+      formatTokenCount(model.cachedInputTokens, true)
+    );
+    appendModelCostStat(stats, t("modelCostOutput"), formatTokenCount(model.outputTokens, true));
+    appendModelCostStat(stats, t("modelCostHitRate"), `${Number(model.cacheHitRate || 0).toFixed(1)}%`);
+    item.append(heading, stats);
+
+    const details = [t("modelCostRequests", {
+      count: formatTokenCount(model.requestCount)
+    })];
+    if (model.pricing) {
+      details.unshift(t("modelCostRate", {
+        input: formatPrice(model.pricing.input),
+        cached: formatPrice(model.pricing.cachedInput),
+        output: formatPrice(model.pricing.output)
+      }));
+    }
+    if (model.cacheWriteInputTokens > 0) {
+      details.push(t("modelCostCacheWrite", {
+        tokens: formatTokenCount(model.cacheWriteInputTokens, true)
+      }));
+    }
+    if (model.longContextRequests > 0) {
+      details.push(t("modelCostLongContext", {
+        count: formatTokenCount(model.longContextRequests)
+      }));
+    }
+    const rate = document.createElement("div");
+    rate.className = "model-cost-rate";
+    rate.textContent = details.join(" · ");
+    item.append(rate);
+    elements.modelCostList.append(item);
+  });
+}
+
+function renderTokenCost(cost = {}) {
+  elements.estimatedCostValue.textContent = formatApiEstimate(cost);
+  if (!elements.tokenCostModal.hidden) renderTokenCostDetails(cost);
+}
+
+function openTokenCost(event) {
+  event?.stopPropagation();
+  renderTokenCostDetails();
+  openSecondaryModal(elements.tokenCostModal, elements.tokenCostClose);
+}
+
+function closeTokenCost() {
+  closeSecondaryModal(elements.tokenCostModal, elements.tokenCostHelp);
+}
+
+function appendActiveTaskStat(container, label, value, elapsedIndex = null) {
+  const item = document.createElement("div");
+  const caption = document.createElement("span");
+  const strong = document.createElement("strong");
+  caption.textContent = label;
+  strong.textContent = value;
+  if (elapsedIndex !== null) strong.dataset.taskElapsedIndex = String(elapsedIndex);
+  item.append(caption, strong);
+  container.append(item);
+}
+
+function renderActiveTaskClock() {
+  if (!activeTasksAvailable || !activeTasks.length) return;
+  elements.activeTaskElapsed.textContent = formatTaskDuration(getTaskElapsedSeconds(activeTasks[0]));
+  elements.activeTaskDetailLongest.textContent = t("activeTaskLongest", {
+    time: formatTaskDuration(getTaskElapsedSeconds(activeTasks[0]))
+  });
+  elements.activeTaskList.querySelectorAll("[data-task-elapsed-index]").forEach(node => {
+    const task = activeTasks[Number(node.dataset.taskElapsedIndex)];
+    if (task) node.textContent = formatTaskDuration(getTaskElapsedSeconds(task));
+  });
+  elements.activeTaskPreviewList.querySelectorAll("[data-task-preview-elapsed-index]").forEach(node => {
+    const task = activeTasks[Number(node.dataset.taskPreviewElapsedIndex)];
+    if (task) node.textContent = formatTaskDuration(getTaskElapsedSeconds(task));
+  });
+}
+
+function renderActiveTaskPreview() {
+  elements.activeTaskPreviewList.replaceChildren();
+  elements.activeTaskPreviewList.classList.toggle("is-single", activeTasks.length === 1);
+
+  if (!activeTasksAvailable || !activeTasks.length) {
+    const empty = document.createElement("div");
+    empty.className = "active-task-preview-empty";
+    empty.textContent = activeTasksAvailable
+      ? t("activeTaskNone")
+      : t("activeTaskUnavailable");
+    elements.activeTaskPreviewList.append(empty);
+    return;
+  }
+
+  activeTasks.slice(0, 2).forEach((task, index) => {
+    const row = document.createElement("div");
+    row.className = "active-task-preview-row";
+    const dot = document.createElement("span");
+    dot.className = "active-task-preview-dot";
+    dot.setAttribute("aria-hidden", "true");
+
+    const identity = document.createElement("div");
+    identity.className = "active-task-preview-identity";
+    const project = document.createElement("strong");
+    project.textContent = task.projectName || t("activeTaskProjectFallback");
+    const model = document.createElement("span");
+    const modelNames = getActiveTaskModelNames(task);
+    model.textContent = modelNames.length ? modelNames.slice(0, 2).join(" · ") : "—";
+    identity.append(project, model);
+
+    const elapsed = document.createElement("strong");
+    elapsed.className = "active-task-preview-elapsed";
+    elapsed.dataset.taskPreviewElapsedIndex = String(index);
+    elapsed.textContent = formatTaskDuration(getTaskElapsedSeconds(task));
+
+    const cost = document.createElement("strong");
+    cost.className = "active-task-preview-cost";
+    cost.textContent = formatActiveTaskCost(task);
+    row.append(dot, identity, elapsed, cost);
+    elements.activeTaskPreviewList.append(row);
+  });
+}
+
+function renderActiveTaskDetails() {
+  elements.activeTaskList.replaceChildren();
+  elements.activeTaskDetailCount.textContent = activeTasksAvailable
+    ? t("activeTaskDetailCount", { count: activeTasks.length })
+    : t("activeTaskUnavailable");
+  elements.activeTaskDetailLongest.textContent = activeTasks.length
+    ? t("activeTaskLongest", {
+        time: formatTaskDuration(getTaskElapsedSeconds(activeTasks[0]))
+      })
+    : "—";
+
+  if (!activeTasksAvailable || !activeTasks.length) {
+    const empty = document.createElement("div");
+    empty.className = "active-task-empty";
+    empty.textContent = activeTasksAvailable
+      ? t("activeTaskEmptyDetail")
+      : t("activeTaskUnavailable");
+    elements.activeTaskList.append(empty);
+    return;
+  }
+
+  activeTasks.forEach((task, index) => {
+    const item = document.createElement("article");
+    item.className = "active-task-item is-running";
+
+    const heading = document.createElement("div");
+    heading.className = "active-task-item-heading";
+    const projectName = document.createElement("strong");
+    projectName.textContent = task.projectName || t("activeTaskProjectFallback");
+    const status = document.createElement("span");
+    status.textContent = t("activeTaskRunningStatus");
+    heading.append(projectName, status);
+
+    const stats = document.createElement("div");
+    stats.className = "active-task-item-stats";
+    appendActiveTaskStat(
+      stats,
+      t("activeTaskTimeLabel"),
+      formatTaskDuration(getTaskElapsedSeconds(task)),
+      index
+    );
+    appendActiveTaskStat(stats, t("activeTaskCostLabel"), formatActiveTaskCost(task));
+
+    const models = document.createElement("div");
+    models.className = "active-task-models";
+    const modelNames = getActiveTaskModelNames(task);
+    models.textContent = `${t("activeTaskModelsLabel")} · ${modelNames.length ? modelNames.join(" · ") : "—"}`;
+
+    item.append(heading, stats, models);
+    if (task.hasUnpricedModels || task.partial) {
+      const note = document.createElement("small");
+      note.className = "active-task-note";
+      note.textContent = [
+        task.hasUnpricedModels ? t("activeTaskUnpriced") : null,
+        task.partial ? t("activeTaskPartialCost") : null
+      ].filter(Boolean).join(" · ");
+      item.append(note);
+    }
+    elements.activeTaskList.append(item);
+  });
+}
+
+function renderActiveTasks(result = {}) {
+  activeTasksAvailable = Boolean(result.available);
+  activeTasks = activeTasksAvailable && Array.isArray(result.tasks)
+    ? result.tasks.slice().sort((left, right) => left.startedAt - right.startedAt)
+    : [];
+  activeTaskObservedAt = Number.isFinite(result.observedAt) ? result.observedAt : null;
+
+  elements.activeTaskCard.classList.toggle("is-running", activeTasks.length > 0);
+  elements.activeTaskCard.classList.toggle("is-single-task", activeTasks.length === 1);
+  elements.activeTaskCard.classList.toggle("is-unavailable", !activeTasksAvailable);
+  elements.activeTaskCount.textContent = activeTasksAvailable ? String(activeTasks.length) : "—";
+  elements.activeTaskElapsed.textContent = activeTasks.length
+    ? formatTaskDuration(getTaskElapsedSeconds(activeTasks[0]))
+    : "—";
+  elements.activeTaskTotalCost.textContent = activeTasksAvailable
+    ? formatActiveTaskAggregateCost(activeTasks)
+    : "—";
+  const hiddenTaskCount = Math.max(0, activeTasks.length - 2);
+  elements.activeTaskMoreIndicator.hidden = hiddenTaskCount === 0;
+  elements.activeTaskMoreIndicator.textContent = hiddenTaskCount
+    ? t("activeTaskMore", { count: hiddenTaskCount })
+    : "";
+  elements.autoRefreshLabel.textContent = t(activeTasks.length ? "autoRefreshActive" : "autoRefresh");
+  renderActiveTaskPreview();
+
+  if (activeTasks.length) renderActiveTaskClock();
+
+  if (!elements.activeTaskModal.hidden) renderActiveTaskDetails();
+}
+
+function openActiveTasks() {
+  renderActiveTaskDetails();
+  openSecondaryModal(elements.activeTaskModal, elements.activeTaskClose);
+}
+
+function closeActiveTasks() {
+  closeSecondaryModal(elements.activeTaskModal, elements.activeTaskCard);
+}
+
+function openResetCredits() {
+  openSecondaryModal(elements.resetCreditModal, elements.resetCreditClose);
+}
+
+function closeResetCredits() {
+  closeSecondaryModal(elements.resetCreditModal, elements.resetCreditButton);
+}
+
 function openTokenUsage() {
-  elements.tokenUsageModal.hidden = false;
   tokenChartSeries = [];
+  openSecondaryModal(elements.tokenUsageModal, elements.tokenUsageClose);
   requestAnimationFrame(() => renderTokenUsageModal(false));
-  elements.tokenUsageClose.focus();
 }
 
 function closeTokenUsage() {
-  elements.tokenUsageModal.hidden = true;
-  cancelAnimationFrame(tokenChartAnimationFrame);
-  elements.tokenOverview.focus();
+  closeSecondaryModal(elements.tokenUsageModal, elements.tokenOverview, {
+    onClose() {
+      cancelAnimationFrame(tokenChartAnimationFrame);
+      tokenChartAnimationActive = false;
+      hideTokenChartTooltip(false);
+    }
+  });
 }
 
 function openOfficialResetHistory() {
-  elements.officialResetHistoryModal.hidden = false;
-  elements.officialResetHistoryClose.focus();
+  openSecondaryModal(elements.officialResetHistoryModal, elements.officialResetHistoryClose);
 }
 
 function closeOfficialResetHistory() {
-  elements.officialResetHistoryModal.hidden = true;
-  elements.officialResetButton.focus();
+  closeSecondaryModal(elements.officialResetHistoryModal, elements.officialResetButton);
+}
+
+function openClientUpdateHistory() {
+  renderClientUpdateHistory();
+  openSecondaryModal(elements.clientUpdateHistoryModal, elements.clientUpdateHistoryClose);
+}
+
+function closeClientUpdateHistory() {
+  closeSecondaryModal(elements.clientUpdateHistoryModal, elements.clientUpdateCard);
 }
 
 function renderOnline(snapshot) {
@@ -1022,16 +1883,7 @@ function renderOnline(snapshot) {
     data.windows.weekly
   );
 
-  renderResetCredits(data.resets);
-
-  setSignal(
-    elements.newResetStatus,
-    elements.newResetCheck,
-    elements.newResetIcon,
-    data.events.newReset.detected,
-    t("detectedCount", { count: data.events.newReset.count }),
-    t("notDetected")
-  );
+  renderResetCredits(data.resets, data.events.newReset);
   renderOfficialResetHistory(data.events.officialReset, data.events.manualReset);
   renderClientUpdate(snapshot.clientUpdate);
 }
@@ -1047,7 +1899,7 @@ function renderOffline(snapshot) {
     TIMEOUT: "timeout"
   }[snapshot.errorCode] || "offlineMessage";
   elements.offlineMessage.textContent = t(messageKey);
-  updateUsageSectionBalance(0, true);
+  renderResetCredits({}, { history: snapshot.receivedResetHistory });
   renderClientUpdate(snapshot.clientUpdate);
 }
 
@@ -1064,13 +1916,35 @@ function render(snapshot) {
   if (snapshot.online) renderOnline(snapshot);
   else renderOffline(snapshot);
   renderTokenUsage(snapshot.tokenUsage);
+  renderTokenCost(snapshot.tokenCost);
+  renderActiveTasks(snapshot.activeTasks);
   updateLastChecked();
 }
 
-async function refresh({ initial = false } = {}) {
-  if (isRefreshing) return;
+function scheduleNextRefresh() {
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(
+    () => refresh({ silent: true }),
+    getRefreshDelay(latestSnapshot?.activeTasks)
+  );
+}
+
+async function probeForActiveTask() {
+  if (isRefreshing || latestSnapshot?.activeTasks?.count > 0) return;
+  try {
+    const status = await window.codexMonitor.readActiveTaskStatus();
+    if (shouldWakeForActiveTask(latestSnapshot?.activeTasks, status)) {
+      await refresh({ silent: true });
+    }
+  } catch {}
+}
+
+async function refresh({ initial = false, silent = false } = {}) {
+  if (isRefreshing) return false;
   isRefreshing = true;
-  elements.refreshButton.classList.add("is-spinning");
+  clearTimeout(refreshTimer);
+  refreshTimer = null;
+  if (!silent) elements.refreshButton.classList.add("is-spinning");
   if (initial) elements.loadingLayer.classList.remove("is-hidden");
   try {
     latestSnapshot = await window.codexMonitor.readQuota();
@@ -1087,7 +1961,9 @@ async function refresh({ initial = false } = {}) {
     isRefreshing = false;
     elements.refreshButton.classList.remove("is-spinning");
     elements.loadingLayer.classList.add("is-hidden");
+    scheduleNextRefresh();
   }
+  return true;
 }
 
 function normalizeWindowModeResult(result, fallbackCollapsed, fallbackAnchor) {
@@ -1183,6 +2059,8 @@ async function initialize() {
   renderOfficialResetHistory();
   renderClientUpdate();
   renderTokenUsage();
+  renderTokenCost();
+  renderActiveTasks();
 
   elements.languageButton.addEventListener("click", async () => {
     language = language === "zh" ? "en" : "zh";
@@ -1219,8 +2097,21 @@ async function initialize() {
   elements.officialResetHistoryModal.addEventListener("click", event => {
     if (event.target === elements.officialResetHistoryModal) closeOfficialResetHistory();
   });
+  elements.clientUpdateCard.addEventListener("click", openClientUpdateHistory);
+  elements.clientUpdateCard.addEventListener("keydown", event => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openClientUpdateHistory();
+    }
+  });
+  elements.clientUpdateHistoryClose.addEventListener("click", closeClientUpdateHistory);
+  elements.clientUpdateHistoryDone.addEventListener("click", closeClientUpdateHistory);
+  elements.clientUpdateHistoryModal.addEventListener("click", event => {
+    if (event.target === elements.clientUpdateHistoryModal) closeClientUpdateHistory();
+  });
   elements.tokenOverview.addEventListener("click", openTokenUsage);
   elements.tokenOverview.addEventListener("keydown", event => {
+    if (event.target !== elements.tokenOverview) return;
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       openTokenUsage();
@@ -1231,12 +2122,44 @@ async function initialize() {
   elements.tokenUsageModal.addEventListener("click", event => {
     if (event.target === elements.tokenUsageModal) closeTokenUsage();
   });
+  elements.resetCreditButton.addEventListener("click", openResetCredits);
+  elements.resetCreditButton.addEventListener("keydown", event => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openResetCredits();
+    }
+  });
+  elements.resetCreditClose.addEventListener("click", closeResetCredits);
+  elements.resetCreditDone.addEventListener("click", closeResetCredits);
+  elements.resetCreditModal.addEventListener("click", event => {
+    if (event.target === elements.resetCreditModal) closeResetCredits();
+  });
+  elements.tokenCostHelp.addEventListener("click", openTokenCost);
+  elements.tokenCostClose.addEventListener("click", closeTokenCost);
+  elements.tokenCostDone.addEventListener("click", closeTokenCost);
+  elements.tokenCostModal.addEventListener("click", event => {
+    if (event.target === elements.tokenCostModal) closeTokenCost();
+  });
+  elements.activeTaskCard.addEventListener("click", openActiveTasks);
+  elements.activeTaskCard.addEventListener("keydown", event => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openActiveTasks();
+    }
+  });
+  elements.activeTaskClose.addEventListener("click", closeActiveTasks);
+  elements.activeTaskDone.addEventListener("click", closeActiveTasks);
+  elements.activeTaskModal.addEventListener("click", event => {
+    if (event.target === elements.activeTaskModal) closeActiveTasks();
+  });
   elements.tokenPeriodSwitch.addEventListener("click", event => {
     const button = event.target.closest("[data-token-period]");
     if (!button || button.dataset.tokenPeriod === tokenPeriod) return;
     tokenPeriod = button.dataset.tokenPeriod;
     renderTokenUsageModal(true);
   });
+  elements.tokenUsageChart.addEventListener("pointermove", updateTokenChartTooltip);
+  elements.tokenUsageChart.addEventListener("pointerleave", () => hideTokenChartTooltip());
   elements.backgroundButton.addEventListener("click", () => {
     const shouldOpen = elements.backgroundPopover.hidden;
     elements.backgroundPopover.hidden = !shouldOpen;
@@ -1309,21 +2232,28 @@ async function initialize() {
   });
   document.addEventListener("keydown", event => {
     if (event.key !== "Escape") return;
-    if (!elements.tokenUsageModal.hidden) closeTokenUsage();
+    if (!elements.tokenCostModal.hidden) closeTokenCost();
+    else if (!elements.activeTaskModal.hidden) closeActiveTasks();
+    else if (!elements.tokenUsageModal.hidden) closeTokenUsage();
+    else if (!elements.resetCreditModal.hidden) closeResetCredits();
+    else if (!elements.clientUpdateHistoryModal.hidden) closeClientUpdateHistory();
     else if (!elements.officialResetHistoryModal.hidden) closeOfficialResetHistory();
   });
 
   await refresh({ initial: true });
-  refreshTimer = setInterval(refresh, AUTO_REFRESH_MS);
+  activeTaskProbeTimer = setInterval(probeForActiveTask, ACTIVE_TASK_PROBE_MS);
   clockTimer = setInterval(() => {
     if (latestSnapshot?.online) renderOnline(latestSnapshot);
     updateLastChecked();
   }, 30_000);
+  activeTaskTimer = setInterval(renderActiveTaskClock, 1_000);
 }
 
 window.addEventListener("DOMContentLoaded", initialize);
 window.addEventListener("beforeunload", () => {
-  clearInterval(refreshTimer);
+  clearTimeout(refreshTimer);
+  clearInterval(activeTaskProbeTimer);
   clearInterval(clockTimer);
+  clearInterval(activeTaskTimer);
   cancelAnimationFrame(tokenChartAnimationFrame);
 });

@@ -1,6 +1,6 @@
 {
   "name": "codex-quota-monitor",
-  "version": "1.0.5",
+  "version": "1.1.0",
   "description": "A bilingual liquid-glass desktop monitor for Codex rate limits and reset credits.",
   "main": "src/main.js",
   "author": "Codex Quota Monitor",
@@ -16,7 +16,7 @@
   },
   "build": {
     "appId": "com.codex.quota-monitor",
-    "productName": "Codex 额度检测器",
+    "productName": "Codex监测台",
     "electronDist": "node_modules/electron/dist",
     "asar": true,
     "files": [
@@ -52,7 +52,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "Codex 额度检测器"
+      "shortcutName": "Codex监测台"
     },
     "portable": {
       "artifactName": "${productName}-${version}-portable-${arch}.${ext}"

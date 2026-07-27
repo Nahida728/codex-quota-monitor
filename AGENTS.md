@@ -27,12 +27,20 @@ The monitor must:
 - Handle the official special state in which the 5-hour window is not returned.
 - Show every available reset credit, with localized type and its own expiry.
 - Detect newly received reset credits without treating the first run as an event.
+- Permanently retain newly received reset-credit history and expose it together
+  with the current available-credit list in a clickable detail view.
 - distinguish a user-consumed reset credit from an official remote reset.
 - Permanently retain official-reset history and show the latest event on the card.
 - Detect both a Codex client update ready to install and a newly installed version.
-- Show the account lifetime Token total and current consecutive-work-day streak.
+- Permanently retain observed installed-version changes and expose them as a
+  clickable client update timeline.
+- Show the account lifetime Token total and cumulative days with recorded work.
 - Show an animated Token usage line chart switchable between daily, weekly, and
   monthly aggregation.
+- Estimate the standard API-equivalent USD cost of locally recorded Codex model
+  calls and show model-level input, cached input, output, and cache-hit details.
+- Show all currently active local Codex tasks, live elapsed time, and each
+  project's API-equivalent cost in a clickable detail view.
 - Report Codex online only when the local app-server can reach the OpenAI service
   and return quota data.
 - Give an offline VPN/network/sign-in hint, including the mainland-China case.
@@ -40,7 +48,7 @@ The monitor must:
 - Support click-to-upload and drag-to-upload backgrounds, manual fixed-ratio
   cropping, and background opacity.
 - Support native window movement, position lock, always-on-top, tray hide/show,
-  manual refresh, and 60-second auto-refresh.
+  manual refresh, 60-second idle refresh, and 5-second refresh while tasks run.
 - Support immediate collapse to a freely movable floating orb and restoration to
   the full card without a cross-window snapshot animation.
 
@@ -64,6 +72,14 @@ Do not remove or weaken an existing function while implementing a visual change.
 - `src/token-usage.js`
   - Normalizes account Token summaries and daily buckets, restores the last safe
     snapshot when needed, and performs deterministic day/week/month aggregation.
+- `src/codex-cost-usage.js`
+  - Reads only model and Token-count events from bounded local Codex rollouts,
+    de-duplicates replayed counters, and calculates standard API-equivalent cost.
+- `src/codex-active-tasks.js`
+  - Identifies active turns from explicit lifecycle events and exposes only the
+    project basename, elapsed time, normalized model usage, and estimated cost.
+- `src/refresh-policy.js`
+  - Pure active/idle refresh timing and lightweight task-probe wake-up policy.
 - `src/store.js`
   - Local JSON persistence.
 - `src/renderer/index.html`
@@ -251,14 +267,21 @@ Do not call a dragging change complete from static inspection. Manually verify:
 
 - The two quota panels are equal-width cards in one left/right row.
 - The three status cards are one row immediately below the quota row, ordered:
-  new reset credit, official reset, Codex client update.
-- The reset-credit section is last, above the footer.
-- The compact Token overview sits between the three status cards and the final
-  reset-credit section; selecting it opens the full chart dialog.
+  available reset credits, official reset, Codex client update.
+- The available-reset card is the entry point to a secondary detail view that
+  shows both current credit details and permanent newly received history.
+- The Token overview sits below the three status cards and opens the full chart
+  dialog. The active-task card occupies the final content area below it and opens
+  a scrollable concurrent-task detail view.
+- The active-task card uses its full height: one compact title row, a three-part
+  summary for running count, longest elapsed time, and aggregate API-equivalent
+  cost, then previews at most two project rows with model, elapsed time, and cost.
+  Additional tasks use a localized “more” count and remain available in details.
 - Keep only one refresh control: the refresh button in the connection strip.
   The removed top-left refresh button must not return.
-- The footer must remain visible in online and offline states with no unexplained
-  bottom blank area.
+- The footer must remain visible in online and offline states. The active-task
+  card keeps the former reserved area's full layout budget online and may shrink
+  only enough to accommodate the offline warning without moving the title bar.
 - Default body text must be comfortably readable at 460 × 690. Do not reduce text
   merely to make a layout fit.
 - English strings must wrap or reflow. Do not use `text-overflow: ellipsis` for
@@ -268,21 +291,27 @@ Do not call a dragging change complete from static inspection. Manually verify:
   and readable contrast over both light and dark custom backgrounds.
 - Secondary dialogs must remain translucent enough for the user's custom
   background to stay visibly continuous behind them.
+- Secondary dialogs enter and exit through one interruptible renderer-only
+  opacity/translate/scale state machine, including a bounded close fallback.
+  Entrance content may stagger, but all motion must honor reduced motion. Do not
+  resize, hide, or replace the native window to animate a dialog.
 
 ### Reset-list capacity
 
 - Show each returned credit as its own row.
-- One through six rows must fit without moving the window boundary.
+- Current credit details live in the reset-credit secondary dialog, not on the
+  main card.
+- One through six rows must fit inside that dialog without moving the window
+  boundary.
 - Reset rows use a compact fixed height and must never stretch vertically just
   because only one or two credits are available.
 - More than six rows must scroll inside the reset list.
-- Large counts must not stretch the card, overlap the footer, or squeeze the quota
-  and status rows.
+- Large counts must not stretch the window or squeeze the main quota and status
+  rows.
 - If the service returns a total count but temporarily omits some details, render
   the known rows plus one localized missing-details row.
-- The Token overview and reset section share a fixed vertical budget: unused
-  reset-list height expands the Token trend area, while up to six reset rows take
-  back only the space they need.
+- Newly received history has its own bounded scroll area in the same dialog so
+  current details and the close action remain reachable.
 
 ## Quota normalization
 
@@ -304,9 +333,17 @@ Do not call a dragging change complete from static inspection. Manually verify:
 - The first successful snapshot establishes the baseline and must not report old
   credits as newly received.
 - Prefer stable item IDs for comparison.
-- A later unseen ID may create a new-credit event.
+- When an item ID is absent, use a deterministic fingerprint of normalized reset
+  metadata so an unchanged credit is not repeatedly reported.
+- A later unseen identity may create a new-credit event.
 - The UI notice is retained for seven days.
 - Persist the seen baseline in `quota-state.json`.
+- Append detected grants to permanent `receivedResetHistory` with the observation
+  time, count, and normalized credit details.
+- Migrate the legacy `lastNewResetAt` and `lastNewResetCount` values into one
+  permanent history entry without inventing unavailable item details.
+- Display received history newest-first and do not clear it merely because a
+  later quota read is offline.
 
 ### User manual resets
 
@@ -383,6 +420,10 @@ Pending update rules:
 - Detecting a higher installed version creates an installed-update notice retained
   for seven days.
 - The first observed installed version is a baseline, not an update event.
+- Each later higher installed version appends one permanent timeline record with
+  the previous version, new version, and the time this monitor first observed it.
+- Migrate the legacy single installed-update record into the timeline, de-duplicate
+  adjacent refreshes, and never create timeline entries for rollbacks.
 
 Performance and privacy:
 
@@ -401,20 +442,75 @@ client's visible “Update” button before installation. Do not regress to that
 
 - Read account usage only through the local app-server `account/usage/read`
   request with protocol `params: null`.
-- Use `summary.lifetimeTokens` as the cumulative account total and
-  `summary.currentStreakDays` as the current consecutive-work-day value. Do not
-  infer either value from local conversations or quota percentages.
+- Use `summary.lifetimeTokens` as the cumulative account total. Derive cumulative
+  work days deterministically from normalized non-zero `dailyUsageBuckets`; do
+  not infer either value from local conversations or quota percentages.
 - Normalize `dailyUsageBuckets` by validated `YYYY-MM-DD` dates and non-negative
   integer Token counts. Treat the response as untrusted input.
 - Daily aggregation fills missing dates with zero. Weekly aggregation starts on
   Monday. Monthly aggregation uses calendar months.
 - The day/week/month chart switch must animate and remain keyboard accessible.
+- The full Token chart draws every statistical node. Hovering a node shows its
+  localized day, week range, or month plus the exact Token count; the tooltip
+  must stay inside the chart boundary.
+- API-equivalent cost pricing must cover the current native Codex catalog and
+  historical native Codex model IDs that can remain in rollout history:
+  `codex-mini-latest`, GPT-5/Codex/Codex-Mini, GPT-5.1 and its Codex variants,
+  GPT-5.2/Codex, GPT-5.3-Codex, GPT-5.4/mini, GPT-5.5/Cyber, and the GPT-5.6
+  family. Match official dated snapshot suffixes without treating arbitrary
+  provider suffixes as an OpenAI model.
+- `codex-auto-review` uses the documented GPT-5.3-Codex code-review rate.
+- Models without a published standard API-equivalent rate, including research
+  previews and third-party providers, remain visibly unpriced rather than
+  borrowing a similarly named model's price.
 - A Token usage endpoint failure must not make an otherwise successful quota read
   appear offline. Preserve and clearly identify the last normalized Token usage
   snapshot instead.
 - Expose only normalized summary numbers and dated Token buckets to the renderer.
   Never expose raw account responses, authentication data, prompts, conversation
   content, or unrelated thread metadata.
+- `account/usage/read` does not expose a model breakdown. Model cost details come
+  from a bounded scan of local Codex rollout JSONL files instead.
+- Before parsing a rollout line, reject every record except `turn_context` and
+  `event_msg` records tagged `token_count`. From accepted records retain only the
+  normalized model slug and Token counters. Never retain or expose prompts,
+  messages, tool payloads, workspace paths, thread titles, or rollout filenames.
+- De-duplicate replayed `token_count` records by their cumulative and last-usage
+  counters before aggregation. Ignore synthetic counter events with no input,
+  output, or cache-write usage.
+- Estimate cost with the checked-in, dated standard OpenAI API price table. Use
+  uncached input, cached input, cache-write input, and output rates separately;
+  apply documented long-context multipliers per call where applicable.
+- The estimate is not a Codex subscription charge. Unknown, third-party, and
+  otherwise unpriced model slugs remain visible but do not contribute to the USD
+  total; the UI must make partial pricing explicit.
+- Cache the expensive rollout scan for 15 minutes and reuse the last normalized
+  persisted snapshot across restarts and temporary scan failures. Do not rescan
+  multi-gigabyte rollout history every 60-second quota refresh.
+
+### Active task monitoring
+
+- A task is active only when the most recent explicit lifecycle event in its
+  rollout is `task_started`; `task_complete` excludes it immediately. Do not infer
+  active work from file modification time alone.
+- Support multiple simultaneous active rollouts and keep their timers updating
+  once per second between the normal 60-second data refreshes.
+- Tail reads must remain bounded by file count, age, bytes per turn, total bytes,
+  and task count. Expand a tail only until the last lifecycle event is found.
+- From active rollouts expose only the validated turn ID, project directory
+  basename, start time, normalized model Token totals, and estimated cost. Never
+  expose the full workspace path, prompt, task title, message, or tool payload.
+- Active-task state is volatile and must not be persisted. A completed turn must
+  disappear on the next refresh; stale records must never be shown as running
+  merely because a previous read succeeded.
+- While at least one task is active, the complete monitor refresh interval is
+  five seconds; after the last task completes it returns to sixty seconds.
+- While idle, a five-second lightweight local task-status probe may wake the full
+  refresh when a new task appears. That probe must not call quota, account usage,
+  Store update, or model-cost endpoints and exposes only availability, count, and
+  observation time through preload.
+- The main-card and per-task elapsed time visually pulses only while at least one
+  task is active. Respect the operating system's reduced-motion preference.
 
 ## Background workflow
 
@@ -435,6 +531,8 @@ client's visible “Update” button before installation. Do not regress to that
 
 Chinese and English are equally supported product modes.
 
+- The Chinese product and window title is `Codex监测台`; the English title
+  remains `Codex Quota Monitor`.
 - Every user-visible string must have both `zh` and `en` entries.
 - The dictionaries must expose exactly the same keys.
 - Localize dynamic statuses, reset types, errors, dates, dialog text, tray menu
@@ -481,6 +579,10 @@ Historical language/readability failures:
   stored in `quota-state.json`.
 - The last normalized Token usage summary and daily buckets are also stored in
   `quota-state.json` for temporary endpoint failures.
+- The last normalized model Token totals and API-equivalent cost snapshot are
+  stored in `quota-state.json`; rollout paths and raw records are never stored.
+- Active-task snapshots are not stored; only the current normalized read reaches
+  the renderer.
 - Cropped background is stored in the Electron user-data directory.
 - Write sensitive local state with restrictive file permissions where supported.
 - Never ask the user for an OpenAI API key.
@@ -506,10 +608,19 @@ the fix. At minimum, automated tests must continue covering:
 - manual reset exclusion;
 - permanent history migration and de-duplication;
 - Store updater log parsing, pending persistence/clearing, and installed updates;
-- account lifetime Token and streak normalization, cached fallback, and
+- permanent client-version timeline append, migration, de-duplication, and
+  rollback exclusion;
+- account lifetime Token and cumulative-work-day normalization, cached fallback, and
   day/week/month aggregation;
+- local model usage de-duplication, cached-input rate, unknown-model handling,
+  API-equivalent cost, long-context pricing, and persisted scan reuse;
+- exact task lifecycle classification, completed-task exclusion, concurrent
+  active tasks, project-path sanitization, and task-level cost isolation;
+- active five-second versus idle sixty-second refresh policy and lightweight
+  task-probe wake-up behavior;
 - crop containment, movement, resize, ratio, and source-to-output mapping;
-- side-by-side quota cards, three-card status row, reset section ordering;
+- side-by-side quota cards, the clickable reset entry in the three-card status
+  row, reset-detail/history dialog, and the reserved bottom area;
 - bilingual key parity and dynamic accessibility labels;
 - development-file package exclusion.
 
@@ -522,8 +633,10 @@ visual/manual matrix:
 - zero credits, one credit, six credits, and more than six credits;
 - no official history and multiple history records;
 - current client, update ready, and update installed;
+- empty and multi-entry client update timelines, including a pending target;
 - Token data available/unavailable, day/week/month chart modes, and chart dialog
   transitions in Chinese and English;
+- zero, one, and multiple active tasks; live timer pulse; task detail scrolling;
 - default background and light/dark custom backgrounds;
 - background popover, crop dialog, and reset-history dialog;
 - unlocked/locked title and four-edge movement;

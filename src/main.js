@@ -16,7 +16,7 @@ let isWindowCollapsed = false;
 let isChangingWindowMode = false;
 let orbMoveSettledTimer = null;
 
-const APP_NAME = "Codex 额度检测器";
+const APP_NAME = "Codex监测台";
 const WINDOW_WIDTH = 460;
 const WINDOW_HEIGHT = 690;
 const ORB_SIZE = 76;
@@ -420,6 +420,14 @@ function getBackgroundDataUrl() {
 
 function registerIpc() {
   ipcMain.handle("quota:read", () => quotaService.read());
+  ipcMain.handle("tasks:active-status", async () => {
+    const result = await quotaService.readActiveTasks();
+    return {
+      available: Boolean(result.available),
+      count: Number.isFinite(result.count) ? result.count : 0,
+      observedAt: Number.isFinite(result.observedAt) ? result.observedAt : null
+    };
+  });
   ipcMain.handle("settings:read", () => ({
     language: store.get("language", "zh"),
     alwaysOnTop: store.get("alwaysOnTop", true),

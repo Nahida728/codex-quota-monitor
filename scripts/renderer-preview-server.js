@@ -28,6 +28,7 @@ http.createServer((request, response) => {
       .replace("./styles.css", "/src/renderer/styles.css")
       .replace("./crop-geometry.js", "/src/renderer/crop-geometry.js")
       .replace("../token-usage.js", "/src/token-usage.js")
+      .replace("../refresh-policy.js", "/src/refresh-policy.js")
       .replace(
         '<script src="./renderer.js"></script>',
         '<script src="/scripts/renderer-preview-mock.js"></script><script src="/src/renderer/renderer.js"></script>'

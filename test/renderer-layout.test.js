@@ -25,13 +25,17 @@ test("renders every reset credit into a dedicated list row", () => {
   assert.match(renderer, /className\s*=\s*"reset-credit-item"/);
 });
 
-test("places three status cards between quota cards and reset credits", () => {
+test("places the reset-credit entry in the three-card status row", () => {
   const quotaIndex = html.indexOf('class="quota-section"');
   const signalsIndex = html.indexOf('class="signals"');
-  const resetIndex = html.indexOf('class="reset-section"');
+  const tokenIndex = html.indexOf('class="token-overview');
+  const taskIndex = html.indexOf('class="active-task-card');
   assert.ok(quotaIndex >= 0 && quotaIndex < signalsIndex);
-  assert.ok(signalsIndex < resetIndex);
+  assert.ok(signalsIndex < tokenIndex && tokenIndex < taskIndex);
   assert.equal((html.match(/class="status-card(?:\s[^"]*)?"/g) || []).length, 3);
+  assert.match(html, /id="resetCreditButton"/);
+  assert.match(html, /id="resetStatusCount"/);
+  assert.doesNotMatch(html, /class="reset-section"/);
   assert.match(html, /id="clientUpdateStatus"/);
   assert.match(html, /id="clientUpdateVersion"/);
   assert.match(
@@ -40,15 +44,69 @@ test("places three status cards between quota cards and reset credits", () => {
   );
 });
 
-test("places a compact token overview before the final reset-credit section", () => {
+test("places the expanded token overview before the active-task card", () => {
   const signalsIndex = html.indexOf('class="signals"');
   const tokenIndex = html.indexOf('class="token-overview');
-  const resetIndex = html.indexOf('class="reset-section"');
+  const taskIndex = html.indexOf('class="active-task-card');
   assert.ok(signalsIndex >= 0 && signalsIndex < tokenIndex);
-  assert.ok(tokenIndex < resetIndex);
+  assert.ok(tokenIndex < taskIndex);
   assert.match(html, /id="lifetimeTokenValue"/);
-  assert.match(html, /id="currentStreakValue"/);
-  assert.match(css, /\.token-overview\s*\{[\s\S]*?height:\s*var\(--token-overview-height,\s*56px\)/);
+  assert.match(html, /id="totalWorkDaysValue"/);
+  assert.match(html, /id="tokenModalTotalWorkDays"/);
+  assert.match(renderer, /usage\.totalWorkDays/);
+  assert.match(html, /id="estimatedCostValue"/);
+  assert.match(html, /id="tokenCostHelp"/);
+  assert.match(css, /\.token-overview\s*\{[\s\S]*?height:\s*190px/);
+  assert.match(css, /\.active-task-card\s*\{[\s\S]*?height:\s*126px/);
+  assert.match(
+    css,
+    /\.is-offline-state \.active-task-card\s*\{[\s\S]*?height:\s*70px[\s\S]*?flex-basis:\s*70px/
+  );
+});
+
+test("shows concurrent Codex tasks with live elapsed time and per-project API estimates", () => {
+  assert.match(html, /id="activeTaskCard"/);
+  assert.match(html, /id="activeTaskCount"/);
+  assert.match(html, /id="activeTaskElapsed"/);
+  assert.match(html, /id="activeTaskTotalCost"/);
+  assert.match(html, /id="activeTaskPreviewList"/);
+  assert.match(html, /id="activeTaskMoreIndicator"/);
+  assert.match(html, /id="activeTaskModal"/);
+  assert.match(html, /id="activeTaskList"/);
+  assert.match(renderer, /function renderActiveTasks/);
+  assert.match(renderer, /function renderActiveTaskPreview/);
+  assert.match(renderer, /function renderActiveTaskDetails/);
+  assert.match(renderer, /formatActiveTaskAggregateCost\(activeTasks\)/);
+  assert.match(renderer, /activeTasks\.slice\(0,\s*2\)/);
+  assert.match(renderer, /formatActiveTaskCost\(task\)/);
+  assert.match(renderer, /setInterval\(renderActiveTaskClock,\s*1_000\)/);
+  assert.match(renderer, /activeTaskCard\.addEventListener\("click",\s*openActiveTasks\)/);
+  assert.match(css, /@keyframes active-task-time-pulse/);
+  assert.match(
+    css,
+    /\.active-task-card\.is-running \.active-task-metric-longest strong\s*\{[\s\S]*?animation:\s*active-task-time-pulse/
+  );
+  assert.match(css, /\.active-task-preview-row\s*\{[\s\S]*?grid-template-columns:/);
+  assert.match(css, /\.active-task-preview-list\.is-single \.active-task-preview-row/);
+});
+
+test("shows API-equivalent cost with an independent model-detail dialog", () => {
+  assert.match(html, /id="tokenCostModal"/);
+  assert.match(html, /id="modelCostList"/);
+  assert.match(renderer, /function renderTokenCostDetails/);
+  assert.match(renderer, /model\.inputTokens/);
+  assert.match(renderer, /model\.cachedInputTokens/);
+  assert.match(renderer, /model\.outputTokens/);
+  assert.match(renderer, /model\.cacheHitRate/);
+  assert.match(renderer, /tokenCostHelp\.addEventListener\("click",\s*openTokenCost\)/);
+  assert.match(renderer, /event\?\.stopPropagation\(\)/);
+  assert.match(css, /\.token-cost-help\s*\{[\s\S]*?border-radius:\s*50%/);
+});
+
+test("keeps the Token Pulse brand on one line in compact and expanded layouts", () => {
+  assert.match(css, /\.token-overview-heading \.eyebrow\s*\{[\s\S]*?white-space:\s*nowrap/);
+  assert.match(css, /\.token-overview\s*\{[\s\S]*?grid-template-columns:\s*84px/);
+  assert.match(css, /\.token-overview\.is-expanded\s*\{[\s\S]*?grid-template-columns:\s*88px/);
 });
 
 test("token chart supports animated day, week, and month aggregation", () => {
@@ -61,6 +119,17 @@ test("token chart supports animated day, week, and month aggregation", () => {
   assert.match(renderer, /\(now\s*-\s*startedAt\)\s*\/\s*360/);
 });
 
+test("token chart exposes every node through a bounded hover tooltip", () => {
+  assert.match(html, /id="tokenChartTooltip"/);
+  assert.match(css, /\.token-chart-tooltip\s*\{[\s\S]*?pointer-events:\s*none/);
+  assert.match(renderer, /function updateTokenChartTooltip/);
+  assert.match(renderer, /Math\.hypot\(point\.x - pointer\.x,\s*point\.y - pointer\.y\)/);
+  assert.match(renderer, /addEventListener\("pointermove",\s*updateTokenChartTooltip\)/);
+  assert.match(renderer, /highlighted \? 4\.5/);
+  assert.match(renderer, /end\.setUTCDate\(end\.getUTCDate\(\) \+ 6\)/);
+  assert.match(renderer, /if \(period === "month"\)/);
+});
+
 test("client update copy is bilingual and does not rely on ellipsis", () => {
   assert.match(renderer, /clientUpdateDetected:\s*"检测到新版已安装"/);
   assert.match(renderer, /clientUpdateDetected:\s*"New version installed"/);
@@ -70,6 +139,22 @@ test("client update copy is bilingual and does not rely on ellipsis", () => {
     css,
     /\.status-card[\s\S]{0,1200}text-overflow:\s*ellipsis/
   );
+});
+
+test("client update card opens a permanent installed-version timeline", () => {
+  assert.match(
+    html,
+    /class="status-card status-card-button no-drag" id="clientUpdateCard" role="button" tabindex="0"/
+  );
+  assert.match(html, /id="clientUpdateHistoryModal"/);
+  assert.match(html, /id="clientUpdateHistoryCurrent"/);
+  assert.match(html, /id="clientUpdateHistoryPending"/);
+  assert.match(html, /id="clientUpdateHistoryList"/);
+  assert.match(renderer, /function renderClientUpdateHistory/);
+  assert.match(renderer, /clientUpdateHistoryChange/);
+  assert.match(renderer, /record\.detectedAt\s*\/\s*1_000/);
+  assert.match(renderer, /clientUpdateCard\.addEventListener\("click",\s*openClientUpdateHistory\)/);
+  assert.match(css, /\.client-update-history-list\s*\{[\s\S]*?overflow-y:\s*auto/);
 });
 
 test("caps the visible reset list at six rows and scrolls larger counts", () => {
@@ -89,22 +174,25 @@ test("caps the visible reset list at six rows and scrolls larger counts", () => 
   );
 });
 
-test("keeps sparse reset rows compact and gives their unused height to token usage", () => {
+test("keeps reset details in a scrollable secondary view", () => {
   assert.match(
     css,
     /\.reset-credit-list\s*\{[\s\S]*?grid-template-rows:\s*repeat\(var\(--reset-visible-count\),\s*28px\)/
   );
   assert.match(css, /\.reset-credit-list\s*\{[\s\S]*?align-content:\s*start/);
-  assert.match(renderer, /66\s*\+\s*visibleRows\s*\*\s*28\s*\+\s*\(visibleRows\s*-\s*1\)\s*\*\s*4/);
-  assert.match(renderer, /const tokenHeight\s*=\s*\(offline\s*\?\s*232\s*:\s*316\)\s*-\s*resetHeight/);
-  assert.match(renderer, /classList\.toggle\("is-expanded",\s*tokenHeight\s*>=\s*124\)/);
+  assert.match(html, /id="resetCreditModal"/);
+  assert.match(html, /id="receivedResetHistoryList"/);
+  assert.match(renderer, /function renderReceivedResetHistory/);
+  assert.match(renderer, /resetCreditButton\.addEventListener\("click",\s*openResetCredits\)/);
+  assert.match(css, /\.reset-detail-list\s*\{[\s\S]*?max-height:\s*186px/);
+  assert.doesNotMatch(renderer, /updateUsageSectionBalance/);
 });
 
 test("secondary views preserve glass backgrounds and native drag regions", () => {
-  assert.doesNotMatch(html, /class="(?:crop|history|token)-modal no-drag"/);
+  assert.doesNotMatch(html, /class="(?:crop|reset|history|token|cost|task)-modal no-drag"/);
   assert.match(
     css,
-    /\.crop-modal,[\s\S]*?\.token-modal\s*\{[\s\S]*?background:\s*rgba\(4,11,18,.26\)/
+    /\.crop-modal,[\s\S]*?\.task-modal\s*\{[\s\S]*?background:\s*rgba\(4,11,18,.26\)/
   );
   assert.match(
     css,
@@ -115,6 +203,44 @@ test("secondary views preserve glass backgrounds and native drag regions", () =>
     /\.is-position-locked \.crop-heading,[\s\S]*?\.is-position-locked \.history-heading:active\s*\{[\s\S]*?-webkit-app-region:\s*no-drag/
   );
   assert.match(css, /\.drag-edge\s*\{[\s\S]*?z-index:\s*80/);
+});
+
+test("secondary dialogs use interruptible reduced-motion-safe entrance and exit animations", () => {
+  assert.match(
+    css,
+    /\.crop-modal\.is-entering:not\(\[hidden\]\),[\s\S]*?\.task-modal\.is-entering:not\(\[hidden\]\)\s*\{[\s\S]*?animation:\s*secondary-overlay-enter/
+  );
+  assert.match(
+    css,
+    /\.crop-modal\.is-entering:not\(\[hidden\]\) \.crop-dialog,[\s\S]*?\.task-modal\.is-entering:not\(\[hidden\]\) \.task-dialog\s*\{[\s\S]*?animation:\s*secondary-dialog-enter/
+  );
+  assert.match(css, /@keyframes secondary-dialog-enter\s*\{[\s\S]*?translateY\(14px\) scale\(\.965\)[\s\S]*?translateY\(-2px\) scale\(1\.006\)/);
+  assert.match(css, /@keyframes secondary-content-enter/);
+  assert.match(css, /\.task-modal\.is-entering:not\(\[hidden\]\) \.task-dialog > \*\s*\{[\s\S]*?secondary-content-enter/);
+  assert.match(css, /\.crop-modal\.is-closing:not\(\[hidden\]\),[\s\S]*?\.task-modal\.is-closing:not\(\[hidden\]\)\s*\{[\s\S]*?secondary-overlay-exit/);
+  assert.match(css, /@keyframes secondary-dialog-exit\s*\{[\s\S]*?translateY\(8px\) scale\(\.982\)/);
+  assert.match(renderer, /function openSecondaryModal\(modal,\s*focusTarget\)/);
+  assert.match(renderer, /function closeSecondaryModal\(modal,\s*restoreFocus/);
+  assert.match(renderer, /setTimeout\(finish,\s*SECONDARY_MODAL_ENTER_FALLBACK_MS\)/);
+  assert.match(renderer, /event\.animationName === "secondary-dialog-exit"/);
+  assert.match(renderer, /setTimeout\(finish,\s*SECONDARY_MODAL_EXIT_FALLBACK_MS\)/);
+  assert.match(renderer, /modal\.inert = true/);
+  assert.match(renderer, /openSecondaryModal\(elements\.cropModal,\s*elements\.cropClose\)/);
+  assert.match(renderer, /closeSecondaryModal\(elements\.tokenUsageModal,\s*elements\.tokenOverview/);
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)/);
+});
+
+test("uses five-second full refreshes during tasks and a lightweight idle probe", () => {
+  assert.match(html, /<script src="\.\.\/refresh-policy\.js"><\/script>/);
+  assert.match(renderer, /getRefreshDelay\(latestSnapshot\?\.activeTasks\)/);
+  assert.match(renderer, /setInterval\(probeForActiveTask,\s*ACTIVE_TASK_PROBE_MS\)/);
+  assert.match(renderer, /readActiveTaskStatus\(\)/);
+  assert.match(renderer, /shouldWakeForActiveTask\(latestSnapshot\?\.activeTasks,\s*status\)/);
+  assert.match(renderer, /autoRefreshActive:\s*"任务期间每 5 秒自动刷新"/);
+  assert.match(renderer, /autoRefreshActive:\s*"Auto-refresh every 5s during tasks"/);
+  assert.doesNotMatch(renderer, /setInterval\(refresh,\s*AUTO_REFRESH_MS\)/);
+  assert.match(main, /ipcMain\.handle\("tasks:active-status"/);
+  assert.match(preload, /readActiveTaskStatus:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("tasks:active-status"\)/);
 });
 
 test("collapse and expand clip one persistent native window without a surface swap", () => {

@@ -1,4 +1,4 @@
-# Codex 额度检测器
+# Codex监测台
 
 一款面向 Windows 的 Codex 桌面额度监视器。应用以 460 × 690 的液态玻璃悬浮卡片呈现 Codex 额度、恢复时间、重置次数和连接状态，支持中英文、自定义背景、系统托盘与位置锁定。
 
@@ -100,7 +100,7 @@
 
 1. 启动并登录 Codex。
 2. 确认 Codex 可以正常访问 OpenAI。
-3. 运行额度检测器。
+3. 运行 Codex监测台。
 4. 等待首次检测完成。
 5. 根据需要切换语言、锁定位置或设置背景。
 
@@ -292,8 +292,8 @@ npm run build
 
 ```text
 release/
-├─ Codex 额度检测器-1.0.4-portable-x64.exe
-├─ Codex 额度检测器-1.0.4-setup-x64.exe
+├─ Codex监测台-1.1.0-portable-x64.exe
+├─ Codex监测台-1.1.0-setup-x64.exe
 └─ win-unpacked/
 ```
 

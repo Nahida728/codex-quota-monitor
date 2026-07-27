@@ -5,6 +5,7 @@ const {
   UPDATE_NOTICE_MS,
   compareVersions,
   evaluateClientUpdate,
+  normalizeClientUpdateHistory,
   normalizeVersion,
   parseInstalledPackageInfo,
   parseInstalledVersion,
@@ -54,8 +55,18 @@ test("a higher installed version creates a persistent seven-day reminder", () =>
     codexClientPreviousVersion: "26.715.2305.0",
     codexClientUpdatedVersion: "26.716.10.0",
     codexClientUpdateAt: now,
+    codexClientUpdateHistory: [{
+      fromVersion: "26.715.2305.0",
+      toVersion: "26.716.10.0",
+      detectedAt: now
+    }],
     codexClientVersion: "26.716.10.0"
   });
+  assert.deepEqual(result.history, [{
+    fromVersion: "26.715.2305.0",
+    toVersion: "26.716.10.0",
+    detectedAt: now
+  }]);
 
   const persisted = { codexClientVersion: "26.716.10.0", ...result.persistence };
   assert.equal(
@@ -76,6 +87,60 @@ test("a rollback changes the baseline without being reported as a new update", (
   assert.deepEqual(result.persistence, {
     codexClientVersion: "26.714.1.0"
   });
+});
+
+test("keeps a permanent newest-first installed-version timeline", () => {
+  const result = evaluateClientUpdate("26.717.2.0", {
+    codexClientVersion: "26.716.10.0",
+    codexClientUpdateHistory: [{
+      fromVersion: "26.715.2305.0",
+      toVersion: "26.716.10.0",
+      detectedAt: 2_000
+    }]
+  }, 4_000);
+
+  assert.deepEqual(result.history, [{
+    fromVersion: "26.716.10.0",
+    toVersion: "26.717.2.0",
+    detectedAt: 4_000
+  }, {
+    fromVersion: "26.715.2305.0",
+    toVersion: "26.716.10.0",
+    detectedAt: 2_000
+  }]);
+  assert.deepEqual(result.persistence.codexClientUpdateHistory, [...result.history].reverse());
+
+  const expiredNotice = evaluateClientUpdate(null, {
+    codexClientVersion: "26.717.2.0",
+    codexClientPreviousVersion: "26.716.10.0",
+    codexClientUpdatedVersion: "26.717.2.0",
+    codexClientUpdateAt: 4_000,
+    codexClientUpdateHistory: result.persistence.codexClientUpdateHistory
+  }, 4_000 + UPDATE_NOTICE_MS + 1);
+  assert.equal(expiredNotice.installedUpdateDetected, false);
+  assert.equal(expiredNotice.history.length, 2);
+});
+
+test("migrates the legacy latest update into history without duplicates", () => {
+  const state = {
+    codexClientVersion: "26.716.10.0",
+    codexClientPreviousVersion: "26.715.2305.0",
+    codexClientUpdatedVersion: "26.716.10.0",
+    codexClientUpdateAt: 2_000
+  };
+  const migrated = evaluateClientUpdate(null, state, 3_000);
+  assert.deepEqual(migrated.persistence.codexClientUpdateHistory, [{
+    fromVersion: "26.715.2305.0",
+    toVersion: "26.716.10.0",
+    detectedAt: 2_000
+  }]);
+  assert.deepEqual(normalizeClientUpdateHistory({
+    ...state,
+    codexClientUpdateHistory: [
+      migrated.persistence.codexClientUpdateHistory[0],
+      migrated.persistence.codexClientUpdateHistory[0]
+    ]
+  }), migrated.history);
 });
 
 test("parses the same Windows Store update-ready signal used by the Codex client", () => {

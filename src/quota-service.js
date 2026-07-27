@@ -4,8 +4,19 @@ const os = require("node:os");
 const path = require("node:path");
 const { version: appVersion } = require("../package.json");
 const { JsonStore } = require("./store");
-const { normalizeQuotaResponse } = require("./quota-normalizer");
+const {
+  normalizeQuotaResponse,
+  normalizeReceivedResetHistory
+} = require("./quota-normalizer");
 const { normalizeTokenUsageResponse } = require("./token-usage");
+const {
+  CodexCostUsageReader,
+  normalizeCodexCostUsageResult
+} = require("./codex-cost-usage");
+const {
+  CodexActiveTaskReader,
+  normalizeActiveTaskResult
+} = require("./codex-active-tasks");
 const {
   CodexDesktopVersionDetector,
   evaluateClientUpdate
@@ -136,11 +147,20 @@ class AppServerClient {
 }
 
 class QuotaService {
-  constructor({ appStatePath, client, versionDetector } = {}) {
+  constructor({
+    appStatePath,
+    client,
+    versionDetector,
+    costUsageReader,
+    activeTaskReader
+  } = {}) {
     this.client = client || new AppServerClient();
     this.versionDetector = versionDetector || new CodexDesktopVersionDetector();
+    this.costUsageReader = costUsageReader || new CodexCostUsageReader();
+    this.activeTaskReader = activeTaskReader || new CodexActiveTaskReader();
     this.state = new JsonStore(appStatePath);
     this.inFlight = null;
+    this.activeTaskInFlight = null;
   }
 
   async read() {
@@ -151,40 +171,75 @@ class QuotaService {
     return this.inFlight;
   }
 
+  async readActiveTasks(now = Date.now()) {
+    if (this.activeTaskInFlight) return this.activeTaskInFlight;
+    this.activeTaskInFlight = Promise.resolve()
+      .then(() => this.activeTaskReader?.read?.(now))
+      .then(raw => normalizeActiveTaskResult(raw, now))
+      .catch(() => normalizeActiveTaskResult(null, now))
+      .finally(() => {
+        this.activeTaskInFlight = null;
+      });
+    return this.activeTaskInFlight;
+  }
+
   async performRead() {
     const checkedAt = Date.now();
     const versionPromise = this.versionDetector.read(checkedAt).catch(() => null);
     const tokenUsagePromise = typeof this.client.readTokenUsage === "function"
       ? Promise.resolve().then(() => this.client.readTokenUsage()).catch(() => null)
       : Promise.resolve(null);
+    const tokenCostPromise = typeof this.costUsageReader?.read === "function"
+      ? Promise.resolve()
+        .then(() => this.costUsageReader.read(checkedAt, this.state.data.tokenCostSnapshot))
+        .catch(() => null)
+      : Promise.resolve(null);
+    const activeTasksPromise = this.readActiveTasks(checkedAt);
     try {
-      const [raw, tokenUsageRaw, installedVersion] = await Promise.all([
+      const [raw, tokenUsageRaw, tokenCostRaw, activeTasksRaw, installedVersion] = await Promise.all([
         this.client.readRateLimits(),
         tokenUsagePromise,
+        tokenCostPromise,
+        activeTasksPromise,
         versionPromise
       ]);
       const normalized = normalizeQuotaResponse(raw, this.state.data);
       const persisted = normalized.persistence;
       delete normalized.persistence;
       const tokenUsage = normalizeTokenUsageResponse(tokenUsageRaw, this.state.data, checkedAt);
+      const tokenCost = normalizeCodexCostUsageResult(tokenCostRaw, this.state.data, checkedAt);
+      const activeTasks = activeTasksRaw;
       const clientUpdate = evaluateClientUpdate(installedVersion, this.state.data, checkedAt);
-      Object.assign(this.state.data, persisted, tokenUsage.persistence, clientUpdate.persistence);
+      Object.assign(
+        this.state.data,
+        persisted,
+        tokenUsage.persistence,
+        tokenCost.persistence,
+        clientUpdate.persistence
+      );
       this.state.set("lastSuccessfulAt", checkedAt);
       return {
         online: true,
         checkedAt,
         lastSuccessfulAt: checkedAt,
         data: normalized,
+        receivedResetHistory: normalized.events.newReset.history,
         tokenUsage: withoutPersistence(tokenUsage),
+        tokenCost: withoutPersistence(tokenCost),
+        activeTasks,
         clientUpdate,
         errorCode: null
       };
     } catch (error) {
       this.client.dispose();
       const tokenUsage = normalizeTokenUsageResponse(null, this.state.data, checkedAt);
+      const tokenCostRaw = await tokenCostPromise;
+      const tokenCost = normalizeCodexCostUsageResult(tokenCostRaw, this.state.data, checkedAt);
+      const activeTasksRaw = await activeTasksPromise;
+      const activeTasks = activeTasksRaw;
       const installedVersion = await versionPromise;
       const clientUpdate = evaluateClientUpdate(installedVersion, this.state.data, checkedAt);
-      Object.assign(this.state.data, clientUpdate.persistence);
+      Object.assign(this.state.data, tokenCost.persistence, clientUpdate.persistence);
       this.state.set("lastClientVersionCheckAt", checkedAt);
       const message = String(error?.message || error);
       let errorCode = "NETWORK_ERROR";
@@ -196,7 +251,10 @@ class QuotaService {
         checkedAt,
         lastSuccessfulAt: this.state.get("lastSuccessfulAt", null),
         data: null,
+        receivedResetHistory: normalizeReceivedResetHistory(this.state.data),
         tokenUsage: withoutPersistence(tokenUsage),
+        tokenCost: withoutPersistence(tokenCost),
+        activeTasks,
         clientUpdate,
         errorCode
       };

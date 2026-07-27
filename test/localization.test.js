@@ -24,6 +24,10 @@ test("Chinese and English dictionaries expose exactly the same keys", () => {
 });
 
 test("language switching updates document and accessibility-only copy", () => {
+  assert.match(renderer, /appTitle:\s*"Codex监测台"/);
+  assert.match(renderer, /title:\s*"Codex监测台"/);
+  assert.match(main, /const APP_NAME = "Codex监测台"/);
+  assert.match(html, /<title>Codex监测台<\/title>/);
   for (const key of [
     "appTitle",
     "switchLanguage",
@@ -31,6 +35,7 @@ test("language switching updates document and accessibility-only copy", () => {
     "quotaRegion",
     "statusRegion",
     "tokenUsageRegion",
+    "openCostDetails",
     "tokenPeriodGroup",
     "tokenChartLabel",
     "cropResize"
@@ -43,6 +48,7 @@ test("language switching updates document and accessibility-only copy", () => {
   assert.match(renderer, /quotaSection\.setAttribute\("aria-label",\s*t\("quotaRegion"\)\)/);
   assert.match(renderer, /statusSection\.setAttribute\("aria-label",\s*t\("statusRegion"\)\)/);
   assert.match(renderer, /tokenOverview\.setAttribute\("aria-label",\s*t\("openTokenUsage"\)\)/);
+  assert.match(renderer, /tokenCostHelp\.setAttribute\("aria-label",\s*t\("openCostDetails"\)\)/);
   assert.match(renderer, /tokenPeriodSwitch\.setAttribute\("aria-label",\s*t\("tokenPeriodGroup"\)\)/);
   assert.match(renderer, /tokenUsageChart\.setAttribute\("aria-label",\s*t\("tokenChartLabel"\)\)/);
   assert.match(renderer, /cropResizeHandle\.setAttribute\("aria-label",\s*t\("cropResize"\)\)/);

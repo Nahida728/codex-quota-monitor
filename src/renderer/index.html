@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:">
-    <title>Codex 额度检测器</title>
+    <title>Codex监测台</title>
     <link rel="stylesheet" href="./styles.css">
   </head>
   <body>
@@ -21,7 +21,7 @@
         <div class="brand">
           <div>
             <div class="eyebrow">CODEX PULSE</div>
-            <h1 data-i18n="title">额度检测器</h1>
+            <h1 data-i18n="title">Codex监测台</h1>
           </div>
         </div>
         <div class="window-actions no-drag">
@@ -129,19 +129,18 @@
       </section>
 
       <section class="signals" id="statusSection" aria-label="状态提醒">
-        <article class="status-card">
+        <article class="status-card status-card-button no-drag" id="resetCreditButton" role="button" tabindex="0">
           <div class="status-card-top">
-            <div class="signal-icon" id="newResetIcon">
+            <div class="signal-icon" id="resetCreditIcon">
             <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18"></path></svg>
             </div>
-            <div class="signal-check" id="newResetCheck">
-              <svg viewBox="0 0 24 24"><path d="m6.5 12.5 3.3 3.3 7.7-7.7"></path></svg>
-            </div>
+            <span class="status-count" id="resetStatusCount">--</span>
           </div>
           <div class="signal-copy">
-            <span data-i18n="newResetQuestion">收到新的重置次数</span>
-            <strong id="newResetStatus">--</strong>
+            <span data-i18n="resetCreditTitle">额度重置次数</span>
+            <strong id="resetCreditStatus">--</strong>
           </div>
+          <small class="status-card-detail" id="resetCreditDetail" data-i18n="resetCreditCardHint">点击查看列表与收到记录</small>
         </article>
         <article class="status-card status-card-button no-drag" id="officialResetButton" role="button" tabindex="0">
           <div class="status-card-top">
@@ -157,7 +156,7 @@
             <strong id="officialResetStatus">--</strong>
           </div>
         </article>
-        <article class="status-card" id="clientUpdateCard">
+        <article class="status-card status-card-button no-drag" id="clientUpdateCard" role="button" tabindex="0" aria-label="查看客户端版本更新时间线">
           <div class="status-card-top">
             <div class="signal-icon" id="clientUpdateIcon">
               <svg viewBox="0 0 24 24"><path d="M12 4v11m0 0-4-4m4 4 4-4"></path><path d="M5 18v2h14v-2"></path></svg>
@@ -174,7 +173,7 @@
         </article>
       </section>
 
-      <section class="token-overview no-drag" id="tokenOverview" role="button" tabindex="0" aria-label="查看 Token 使用趋势">
+      <section class="token-overview no-drag is-expanded" id="tokenOverview" role="button" tabindex="0" aria-label="查看 Token 使用趋势">
         <div class="token-overview-heading">
           <span class="eyebrow">TOKEN PULSE</span>
           <strong id="tokenOverviewTitle" data-i18n="tokenUsageTitle">Token 使用量</strong>
@@ -183,31 +182,53 @@
           <span data-i18n="lifetimeTokens">累计 Token</span>
           <strong id="lifetimeTokenValue">--</strong>
         </div>
-        <div class="token-stat token-streak-stat">
-          <span data-i18n="currentStreak">连续工作</span>
-          <strong id="currentStreakValue">--</strong>
+        <div class="token-stat token-work-stat">
+          <span data-i18n="totalWorkDays">累计工作</span>
+          <strong id="totalWorkDaysValue">--</strong>
+        </div>
+        <div class="token-stat token-cost-stat">
+          <span class="token-cost-label">
+            <span data-i18n="estimatedApiCostShort">API 等价金额</span>
+            <button class="token-cost-help no-drag" id="tokenCostHelp" type="button" aria-label="查看模型用量与 API 成本明细" title="查看模型用量与 API 成本明细">?</button>
+          </span>
+          <strong id="estimatedCostValue">--</strong>
         </div>
         <canvas class="token-sparkline" id="tokenSparkline" aria-hidden="true"></canvas>
         <svg class="token-overview-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"></path></svg>
       </section>
 
-      <section class="reset-section" id="resetSection">
-        <div class="section-title-row">
-          <div>
-            <div class="eyebrow" data-i18n="resetCreditEyebrow">RESET CREDITS</div>
-            <h2 data-i18n="resetCreditTitle">额度重置次数</h2>
+      <section class="active-task-card no-drag" id="activeTaskCard" role="button" tabindex="0" aria-label="查看进行中任务详情">
+        <div class="active-task-heading">
+          <div class="active-task-title">
+            <span class="eyebrow">LIVE TASKS</span>
+            <strong data-i18n="activeTasksTitle">进行中任务</strong>
           </div>
-          <span class="count-badge" id="resetCount">--</span>
+          <div class="active-task-heading-actions">
+            <span class="active-task-more" id="activeTaskMoreIndicator" hidden></span>
+            <svg class="active-task-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"></path></svg>
+          </div>
         </div>
-        <div class="reset-credit-list" id="resetCreditList" aria-live="polite">
-          <div class="reset-credit-empty" data-i18n="noCredits">暂无可用次数</div>
+        <div class="active-task-metrics">
+          <div class="active-task-metric active-task-metric-count">
+            <span data-i18n="activeTaskRunningMetric">正在运行</span>
+            <strong id="activeTaskCount">--</strong>
+          </div>
+          <div class="active-task-metric active-task-metric-longest">
+            <span data-i18n="activeTaskLongestLabel">最长</span>
+            <strong id="activeTaskElapsed">--</strong>
+          </div>
+          <div class="active-task-metric active-task-metric-cost">
+            <span data-i18n="activeTaskTotalCostLabel">API 等价</span>
+            <strong id="activeTaskTotalCost">--</strong>
+          </div>
         </div>
+        <div class="active-task-preview-list" id="activeTaskPreviewList" aria-live="polite"></div>
       </section>
 
       <footer>
         <span id="lastChecked" data-i18n="waiting">等待首次检测</span>
         <span class="footer-separator">·</span>
-        <span data-i18n="autoRefresh">每 60 秒自动刷新</span>
+        <span id="autoRefreshLabel" data-i18n="autoRefresh">每 60 秒自动刷新</span>
       </footer>
 
       <div class="drag-edge drag-edge-top" data-drag-edge="top" aria-hidden="true"></div>
@@ -241,6 +262,29 @@
         </div>
       </section>
 
+      <section class="reset-modal" id="resetCreditModal" hidden aria-modal="true" role="dialog" aria-labelledby="resetCreditModalTitle">
+        <div class="reset-dialog">
+          <div class="history-heading">
+            <div>
+              <span class="eyebrow">RESET CREDITS</span>
+              <h2 id="resetCreditModalTitle" data-i18n="resetCreditTitle">额度重置次数</h2>
+            </div>
+            <button class="popover-close" id="resetCreditClose" type="button" aria-label="关闭">×</button>
+          </div>
+          <div class="reset-detail-summary">
+            <span data-i18n="availableResetListTitle">当前可用</span>
+            <strong id="resetDetailCount">--</strong>
+          </div>
+          <h3 class="reset-detail-heading" data-i18n="availableResetListTitle">当前可用</h3>
+          <div class="reset-credit-list reset-detail-list" id="resetCreditList" aria-live="polite">
+            <div class="reset-credit-empty" data-i18n="noCredits">暂无可用次数</div>
+          </div>
+          <h3 class="reset-detail-heading received-heading" data-i18n="receivedResetHistoryTitle">收到记录</h3>
+          <div class="received-reset-history" id="receivedResetHistoryList"></div>
+          <button class="glass-button primary reset-detail-done" id="resetCreditDone" type="button" data-i18n="close">关闭</button>
+        </div>
+      </section>
+
       <section class="history-modal" id="officialResetHistoryModal" hidden aria-modal="true" role="dialog" aria-labelledby="officialResetHistoryTitle">
         <div class="history-dialog">
           <div class="history-heading">
@@ -253,6 +297,31 @@
           <p data-i18n="officialResetHistoryHint">记录检测器观察到双额度在正常恢复时间前同时恢复 100% 的时间，数据永久保存在本机。</p>
           <div class="official-reset-history" id="officialResetHistoryList"></div>
           <button class="glass-button primary history-done" id="officialResetHistoryDone" type="button" data-i18n="close">关闭</button>
+        </div>
+      </section>
+
+      <section class="history-modal client-update-history-modal" id="clientUpdateHistoryModal" hidden aria-modal="true" role="dialog" aria-labelledby="clientUpdateHistoryTitle">
+        <div class="history-dialog client-update-history-dialog">
+          <div class="history-heading">
+            <div>
+              <span class="eyebrow">CLIENT UPDATE TIMELINE</span>
+              <h2 id="clientUpdateHistoryTitle" data-i18n="clientUpdateHistoryTitle">版本更新时间线</h2>
+            </div>
+            <button class="popover-close" id="clientUpdateHistoryClose" type="button" aria-label="关闭">×</button>
+          </div>
+          <p data-i18n="clientUpdateHistoryHint">记录检测器观察到的 Codex 客户端版本升级，时间为本机首次检测到新版本的时间。</p>
+          <div class="client-update-summary">
+            <article>
+              <span data-i18n="clientUpdateCurrentLabel">当前版本</span>
+              <strong id="clientUpdateHistoryCurrent">--</strong>
+            </article>
+            <article>
+              <span data-i18n="clientUpdatePendingLabel">待安装版本</span>
+              <strong id="clientUpdateHistoryPending">--</strong>
+            </article>
+          </div>
+          <div class="client-update-history-list" id="clientUpdateHistoryList"></div>
+          <button class="glass-button primary history-done" id="clientUpdateHistoryDone" type="button" data-i18n="close">关闭</button>
         </div>
       </section>
 
@@ -271,8 +340,8 @@
               <strong id="tokenModalLifetime">--</strong>
             </article>
             <article>
-              <span data-i18n="currentStreak">连续工作</span>
-              <strong id="tokenModalStreak">--</strong>
+              <span data-i18n="totalWorkDays">累计工作</span>
+              <strong id="tokenModalTotalWorkDays">--</strong>
             </article>
           </div>
           <div class="token-chart-toolbar">
@@ -286,12 +355,56 @@
           <div class="token-chart-shell">
             <canvas id="tokenUsageChart" role="img" aria-label="Token 使用量折线图"></canvas>
             <div class="token-chart-empty" id="tokenChartEmpty" hidden data-i18n="tokenChartEmpty">暂无 Token 历史数据</div>
+            <div class="token-chart-tooltip" id="tokenChartTooltip" role="tooltip" hidden>
+              <span id="tokenChartTooltipDate"></span>
+              <strong id="tokenChartTooltipValue"></strong>
+            </div>
           </div>
           <div class="token-chart-footer">
             <span id="tokenChartRange">--</span>
             <strong id="tokenChartLatest">--</strong>
           </div>
           <button class="glass-button primary token-chart-done" id="tokenUsageDone" type="button" data-i18n="close">关闭</button>
+        </div>
+      </section>
+
+      <section class="cost-modal" id="tokenCostModal" hidden aria-modal="true" role="dialog" aria-labelledby="tokenCostModalTitle">
+        <div class="cost-dialog">
+          <div class="history-heading">
+            <div>
+              <span class="eyebrow">API COST ESTIMATE</span>
+              <h2 id="tokenCostModalTitle" data-i18n="estimatedApiCost">API 等价金额</h2>
+            </div>
+            <button class="popover-close" id="tokenCostClose" type="button" aria-label="关闭">×</button>
+          </div>
+          <div class="cost-total-card">
+            <span data-i18n="estimatedTotalCost">本机可统计调用</span>
+            <strong id="tokenCostTotal">--</strong>
+            <small id="tokenCostCoverage">--</small>
+          </div>
+          <p class="cost-explanation" data-i18n="costEstimateHint">按 OpenAI 标准 API 价格估算，不代表 Codex 订阅的实际收费。只读取本机 Codex 使用记录中的模型与 Token 统计。</p>
+          <div class="model-cost-list" id="modelCostList"></div>
+          <button class="glass-button primary cost-done" id="tokenCostDone" type="button" data-i18n="close">关闭</button>
+        </div>
+      </section>
+
+      <section class="task-modal" id="activeTaskModal" hidden aria-modal="true" role="dialog" aria-labelledby="activeTaskModalTitle">
+        <div class="task-dialog">
+          <div class="history-heading">
+            <div>
+              <span class="eyebrow">LIVE TASKS</span>
+              <h2 id="activeTaskModalTitle" data-i18n="activeTasksTitle">进行中任务</h2>
+            </div>
+            <button class="popover-close" id="activeTaskClose" type="button" aria-label="关闭">×</button>
+          </div>
+          <div class="active-task-detail-summary">
+            <span data-i18n="activeTaskRunningStatus">进行中</span>
+            <strong id="activeTaskDetailCount">--</strong>
+            <small id="activeTaskDetailLongest">--</small>
+          </div>
+          <p class="active-task-explanation" data-i18n="activeTaskDetailsHint">按本机 Codex 当前回合的 Token 使用量与标准 API 价格估算，不代表 Codex 订阅实际收费。</p>
+          <div class="active-task-list" id="activeTaskList" aria-live="polite"></div>
+          <button class="glass-button primary active-task-done" id="activeTaskDone" type="button" data-i18n="close">关闭</button>
         </div>
       </section>
 
@@ -302,10 +415,11 @@
     </main>
     <div class="floating-orb" id="floatingOrb">
       <img id="floatingOrbIcon" alt="" aria-hidden="true">
-      <button class="floating-orb-open" id="floatingOrbOpen" type="button" aria-label="展开额度检测器" title="展开额度检测器"></button>
+      <button class="floating-orb-open" id="floatingOrbOpen" type="button" aria-label="展开 Codex监测台" title="展开 Codex监测台"></button>
     </div>
     <script src="./crop-geometry.js"></script>
     <script src="../token-usage.js"></script>
+    <script src="../refresh-policy.js"></script>
     <script src="./renderer.js"></script>
   </body>
 </html>

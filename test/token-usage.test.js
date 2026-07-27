@@ -7,7 +7,7 @@ const {
   normalizeTokenUsageResponse
 } = require("../src/token-usage");
 
-test("normalizes account lifetime tokens, streak, and sorted daily buckets", () => {
+test("normalizes account lifetime tokens, cumulative work days, and sorted daily buckets", () => {
   const result = normalizeTokenUsageResponse({
     summary: {
       lifetimeTokens: 671910282,
@@ -25,6 +25,7 @@ test("normalizes account lifetime tokens, streak, and sorted daily buckets", () 
   assert.equal(result.available, true);
   assert.equal(result.cached, false);
   assert.equal(result.lifetimeTokens, 671910282);
+  assert.equal(result.totalWorkDays, 2);
   assert.equal(result.currentStreakDays, 16);
   assert.deepEqual(result.dailyUsageBuckets, [
     { startDate: "2026-07-19", tokens: 10 },
@@ -46,6 +47,7 @@ test("retains the last normalized usage snapshot when the endpoint is temporaril
   assert.equal(result.available, true);
   assert.equal(result.cached, true);
   assert.equal(result.lifetimeTokens, 42);
+  assert.equal(result.totalWorkDays, 1);
   assert.equal(result.observedAt, 1000);
   assert.deepEqual(result.persistence, {});
 });

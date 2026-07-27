@@ -54,9 +54,17 @@ function normalizeDailyBuckets(value) {
 
 function normalizeSnapshot(value) {
   if (!value || typeof value !== "object") return null;
+  const hasDailyUsageBuckets = Array.isArray(value.dailyUsageBuckets);
   const dailyUsageBuckets = normalizeDailyBuckets(value.dailyUsageBuckets);
+  const derivedTotalWorkDays = hasDailyUsageBuckets
+    ? dailyUsageBuckets.reduce(
+        (count, bucket) => count + (bucket.tokens > 0 ? 1 : 0),
+        0
+      )
+    : null;
   const snapshot = {
     lifetimeTokens: normalizeCount(value.lifetimeTokens),
+    totalWorkDays: normalizeCount(value.totalWorkDays) ?? derivedTotalWorkDays,
     currentStreakDays: normalizeCount(value.currentStreakDays),
     longestStreakDays: normalizeCount(value.longestStreakDays),
     peakDailyTokens: normalizeCount(value.peakDailyTokens),
@@ -66,6 +74,7 @@ function normalizeSnapshot(value) {
   };
   const hasSummary = [
     snapshot.lifetimeTokens,
+    snapshot.totalWorkDays,
     snapshot.currentStreakDays,
     snapshot.longestStreakDays,
     snapshot.peakDailyTokens,
@@ -104,6 +113,7 @@ function normalizeTokenUsageResponse(raw, previousState = {}, now = Date.now()) 
     available: false,
     cached: false,
     lifetimeTokens: null,
+    totalWorkDays: null,
     currentStreakDays: null,
     longestStreakDays: null,
     peakDailyTokens: null,

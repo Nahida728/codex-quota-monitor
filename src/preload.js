@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("codexMonitor", {
   readQuota: () => ipcRenderer.invoke("quota:read"),
+  readActiveTaskStatus: () => ipcRenderer.invoke("tasks:active-status"),
   readSettings: () => ipcRenderer.invoke("settings:read"),
   setLanguage: language => ipcRenderer.invoke("settings:language", language),
   setAlwaysOnTop: enabled => ipcRenderer.invoke("settings:alwaysOnTop", enabled),

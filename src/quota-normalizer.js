@@ -156,11 +156,67 @@ function normalizeOfficialResetHistory(previousState) {
   return [...uniqueByDetectedAt.values()].sort((a, b) => a.detectedAt - b.detectedAt);
 }
 
+function normalizeReceivedResetHistory(previousState) {
+  const rawHistory = Array.isArray(previousState?.receivedResetHistory)
+    ? previousState.receivedResetHistory
+    : [];
+  const migratedHistory = rawHistory.length
+    ? rawHistory
+    : (Number.isFinite(previousState?.lastNewResetAt)
+        ? [{
+            detectedAt: previousState.lastNewResetAt,
+            count: previousState.lastNewResetCount,
+            items: []
+          }]
+        : []);
+  const normalized = [];
+  const seenEvents = new Set();
+
+  for (const entry of migratedHistory) {
+    const detectedAt = Number.isFinite(entry?.detectedAt) ? entry.detectedAt : null;
+    if (!detectedAt || detectedAt <= 0) continue;
+    const items = Array.isArray(entry.items)
+      ? entry.items.filter(Boolean).map(item => ({
+          id: item.id ?? null,
+          resetType: typeof item.resetType === "string" ? item.resetType : "unknown",
+          grantedAt: Number.isFinite(item.grantedAt) ? item.grantedAt : null,
+          expiresAt: Number.isFinite(item.expiresAt) ? item.expiresAt : null,
+          title: typeof item.title === "string" ? item.title : null
+        }))
+      : [];
+    const count = Number.isFinite(entry.count)
+      ? Math.max(1, Math.floor(entry.count))
+      : Math.max(1, items.length);
+    const itemIds = items.map(item => item.id).filter(id => id !== null).sort();
+    const eventKey = `${detectedAt}:${itemIds.join("|")}:${count}`;
+    if (seenEvents.has(eventKey)) continue;
+    seenEvents.add(eventKey);
+    normalized.push({ detectedAt, count, items });
+  }
+
+  return normalized.sort((a, b) => a.detectedAt - b.detectedAt);
+}
+
+function creditIdentity(item) {
+  if (item?.id !== null && item?.id !== undefined) return String(item.id);
+  return [
+    "fallback",
+    item?.resetType || "unknown",
+    Number.isFinite(item?.grantedAt) ? item.grantedAt : "",
+    Number.isFinite(item?.expiresAt) ? item.expiresAt : "",
+    item?.title || ""
+  ].join(":");
+}
+
 function deriveEvents(previousState, normalized, nowSeconds) {
   const knownIds = new Set(previousState?.knownCreditIds || []);
-  const currentIds = normalized.resets.items.map(item => item.id);
+  const currentIds = normalized.resets.items.map(creditIdentity);
   const isFirstSnapshot = !previousState?.hasBaseline;
-  const newlyGranted = isFirstSnapshot ? [] : normalized.resets.items.filter(item => !knownIds.has(item.id));
+  const newlyGranted = isFirstSnapshot
+    ? []
+    : normalized.resets.items.filter(item => (
+        !knownIds.has(item.id) && !knownIds.has(creditIdentity(item))
+      ));
   const previousWindows = previousState?.lastSnapshot?.windows || {};
   const previousResetCount = previousState?.lastSnapshot?.resets?.availableCount;
   const resetCreditCountDecreased = Number.isFinite(previousResetCount) &&
@@ -172,6 +228,20 @@ function deriveEvents(previousState, normalized, nowSeconds) {
 
   const lastNewResetAt = newlyGranted.length ? nowSeconds : previousState?.lastNewResetAt || null;
   const lastNewResetCount = newlyGranted.length ? newlyGranted.length : previousState?.lastNewResetCount || 0;
+  const receivedResetHistory = normalizeReceivedResetHistory(previousState);
+  if (newlyGranted.length) {
+    receivedResetHistory.push({
+      detectedAt: nowSeconds,
+      count: newlyGranted.length,
+      items: newlyGranted.map(item => ({
+        id: item.id ?? null,
+        resetType: item.resetType || "unknown",
+        grantedAt: Number.isFinite(item.grantedAt) ? item.grantedAt : null,
+        expiresAt: Number.isFinite(item.expiresAt) ? item.expiresAt : null,
+        title: item.title || null
+      }))
+    });
+  }
   const officialResetHistory = normalizeOfficialResetHistory(previousState);
   const lastOfficialReset = officialResetHistory.at(-1);
   const isDuplicateOfficialReset = lastOfficialReset &&
@@ -196,7 +266,8 @@ function deriveEvents(previousState, normalized, nowSeconds) {
     newReset: {
       detected: Boolean(lastNewResetAt && nowSeconds - lastNewResetAt <= NEW_RESET_EVENT_TTL_SECONDS),
       count: lastNewResetAt && nowSeconds - lastNewResetAt <= NEW_RESET_EVENT_TTL_SECONDS ? lastNewResetCount : 0,
-      detectedAt: lastNewResetAt
+      detectedAt: lastNewResetAt,
+      history: receivedResetHistory
     },
     officialReset: {
       detected: Boolean(officialResetHistory.length),
@@ -214,6 +285,7 @@ function deriveEvents(previousState, normalized, nowSeconds) {
       knownCreditIds: [...new Set([...(previousState?.knownCreditIds || []), ...currentIds])],
       lastNewResetAt,
       lastNewResetCount,
+      receivedResetHistory,
       officialResetAt,
       officialResetHistory,
       resetCreditDetails: normalized.resets.items.length === normalized.resets.availableCount
@@ -257,6 +329,7 @@ module.exports = {
   identifyWindows,
   normalizeCredits,
   restoreCachedCreditDetails,
+  normalizeReceivedResetHistory,
   normalizeQuotaResponse,
   didUnexpectedReset,
   didOfficialFullReset,

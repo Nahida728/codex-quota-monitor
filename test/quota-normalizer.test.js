@@ -98,6 +98,7 @@ test("does not label the initial reset credits as newly received", () => {
     }
   }, {}, 1000);
   assert.equal(normalized.events.newReset.detected, false);
+  assert.deepEqual(normalized.events.newReset.history, []);
 });
 
 test("detects a newly granted reset after a baseline exists", () => {
@@ -120,6 +121,66 @@ test("detects a newly granted reset after a baseline exists", () => {
   }, 1000);
   assert.equal(normalized.events.newReset.detected, true);
   assert.equal(normalized.events.newReset.count, 1);
+  assert.equal(normalized.events.newReset.history.length, 1);
+  assert.equal(normalized.events.newReset.history[0].detectedAt, 1000);
+  assert.equal(normalized.events.newReset.history[0].items[0].id, "two");
+  assert.deepEqual(
+    normalized.persistence.receivedResetHistory,
+    normalized.events.newReset.history
+  );
+});
+
+test("permanently retains received-reset history and migrates the legacy latest event", () => {
+  const normalized = normalizeQuotaResponse({
+    rateLimits: {
+      primary: { usedPercent: 10, windowDurationMins: 10080, resetsAt: 9000 },
+      secondary: null
+    },
+    rateLimitResetCredits: {
+      availableCount: 1,
+      credits: [{ id: "one", resetType: "codexRateLimits", status: "available" }]
+    }
+  }, {
+    hasBaseline: true,
+    knownCreditIds: ["one"],
+    lastNewResetAt: 500,
+    lastNewResetCount: 2,
+    lastSnapshot: { windows: {}, resets: { availableCount: 1 } }
+  }, 10_000_000);
+
+  assert.equal(normalized.events.newReset.detected, false);
+  assert.deepEqual(normalized.events.newReset.history, [{
+    detectedAt: 500,
+    count: 2,
+    items: []
+  }]);
+  assert.deepEqual(
+    normalized.persistence.receivedResetHistory,
+    normalized.events.newReset.history
+  );
+});
+
+test("uses a stable fallback identity when reset credit IDs are absent", () => {
+  const raw = {
+    rateLimits: {
+      primary: { usedPercent: 10, windowDurationMins: 10080, resetsAt: 9000 },
+      secondary: null
+    },
+    rateLimitResetCredits: {
+      availableCount: 1,
+      credits: [{
+        resetType: "codexRateLimits",
+        status: "available",
+        grantedAt: 900,
+        expiresAt: 5000
+      }]
+    }
+  };
+  const baseline = normalizeQuotaResponse(raw, {}, 1000);
+  const refreshed = normalizeQuotaResponse(raw, baseline.persistence, 1100);
+
+  assert.equal(refreshed.events.newReset.detected, false);
+  assert.deepEqual(refreshed.events.newReset.history, []);
 });
 
 test("detects a usage drop before the scheduled reset as unexpected", () => {
