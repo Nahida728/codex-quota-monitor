@@ -583,6 +583,27 @@ Historical language/readability failures:
   stored in `quota-state.json`; rollout paths and raw records are never stored.
 - Active-task snapshots are not stored; only the current normalized read reaches
   the renderer.
+- Keep versioned, immutable quota-state archives in the adjacent
+  `quota-state.json.archive` directory. Archive at least every 15 minutes while
+  state writes continue and immediately whenever a permanent history or the
+  seen-credit identity set changes.
+- Write the primary state and every archive through a same-directory temporary
+  file or exclusive archive creation, flush the file before rename, and never
+  overwrite an existing archive generation.
+- On startup, inspect the primary state, interrupted-write temporary files, and a
+  bounded set of newest archives. Ignore corrupt generations, reconcile all
+  permanent monotonic histories, and repair the primary automatically.
+- A missing, unreadable, truncated, syntactically invalid, or valid-but-reset
+  primary file must not erase richer official-reset, received-reset, or
+  client-update history held by an archive. These histories and seen identities
+  may only grow.
+- Recovery must not block legitimate changes to volatile state, including an
+  installed-version rollback baseline, clearing a completed pending update, or
+  dropping stale reset-credit details.
+- Retention counts only validated archives. Corrupt files must never cause valid
+  recovery generations to be pruned.
+- Offline startup must still expose recovered official-reset, received-reset,
+  and client-update histories to the renderer.
 - Cropped background is stored in the Electron user-data directory.
 - Write sensitive local state with restrictive file permissions where supported.
 - Never ask the user for an OpenAI API key.
@@ -610,6 +631,8 @@ the fix. At minimum, automated tests must continue covering:
 - Store updater log parsing, pending persistence/clearing, and installed updates;
 - permanent client-version timeline append, migration, de-duplication, and
   rollback exclusion;
+- periodic immutable state archives, corrupt-primary recovery, corrupt-archive
+  fallback, valid-but-reset primary repair, and permanent-history anti-rollback;
 - account lifetime Token and cumulative-work-day normalization, cached fallback, and
   day/week/month aggregation;
 - local model usage de-duplication, cached-input rate, unknown-model handling,

@@ -175,6 +175,43 @@ test("keeps normalized received-reset history available while quota service is o
   service.dispose();
 });
 
+test("keeps official-reset history available while quota service is offline", async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codex-quota-monitor-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const appStatePath = path.join(directory, "quota-state.json");
+  fs.writeFileSync(appStatePath, JSON.stringify({
+    officialResetHistory: [{
+      detectedAt: 1234,
+      detectionMode: "all-limits",
+      previousFiveHourResetAt: 5678,
+      previousWeeklyResetAt: 9012
+    }]
+  }));
+
+  const service = new QuotaService({
+    appStatePath,
+    client: {
+      readRateLimits: async () => {
+        throw new Error("CODEX_REQUEST_TIMEOUT");
+      },
+      dispose: () => {}
+    },
+    versionDetector: { read: async () => null },
+    costUsageReader: emptyCostUsageReader,
+    activeTaskReader: emptyActiveTaskReader
+  });
+
+  const snapshot = await service.read();
+  assert.equal(snapshot.online, false);
+  assert.deepEqual(snapshot.officialResetHistory, [{
+    detectedAt: 1234,
+    detectionMode: "all-limits",
+    previousFiveHourResetAt: 5678,
+    previousWeeklyResetAt: 9012
+  }]);
+  service.dispose();
+});
+
 test("returns normalized account token usage and retains it when only the usage endpoint fails", async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codex-quota-monitor-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));

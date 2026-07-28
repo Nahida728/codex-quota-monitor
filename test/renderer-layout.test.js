@@ -157,6 +157,13 @@ test("client update card opens a permanent installed-version timeline", () => {
   assert.match(css, /\.client-update-history-list\s*\{[\s\S]*?overflow-y:\s*auto/);
 });
 
+test("offline rendering restores permanent official-reset history", () => {
+  assert.match(
+    renderer,
+    /renderOfficialResetHistory\(\{\s*history:\s*snapshot\.officialResetHistory\s*\}\)/
+  );
+});
+
 test("caps the visible reset list at six rows and scrolls larger counts", () => {
   assert.match(renderer, /renderedRowCount\s*>\s*6/);
   assert.match(renderer, /Math\.min\(renderedRowCount,\s*6\)/);

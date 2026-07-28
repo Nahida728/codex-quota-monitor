@@ -3,9 +3,10 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { version: appVersion } = require("../package.json");
-const { JsonStore } = require("./store");
+const { createQuotaStateStore } = require("./store");
 const {
   normalizeQuotaResponse,
+  normalizeOfficialResetHistory,
   normalizeReceivedResetHistory
 } = require("./quota-normalizer");
 const { normalizeTokenUsageResponse } = require("./token-usage");
@@ -158,7 +159,7 @@ class QuotaService {
     this.versionDetector = versionDetector || new CodexDesktopVersionDetector();
     this.costUsageReader = costUsageReader || new CodexCostUsageReader();
     this.activeTaskReader = activeTaskReader || new CodexActiveTaskReader();
-    this.state = new JsonStore(appStatePath);
+    this.state = createQuotaStateStore(appStatePath);
     this.inFlight = null;
     this.activeTaskInFlight = null;
   }
@@ -252,6 +253,7 @@ class QuotaService {
         lastSuccessfulAt: this.state.get("lastSuccessfulAt", null),
         data: null,
         receivedResetHistory: normalizeReceivedResetHistory(this.state.data),
+        officialResetHistory: normalizeOfficialResetHistory(this.state.data),
         tokenUsage: withoutPersistence(tokenUsage),
         tokenCost: withoutPersistence(tokenCost),
         activeTasks,

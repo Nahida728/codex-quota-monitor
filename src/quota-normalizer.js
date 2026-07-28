@@ -328,6 +328,7 @@ function normalizeQuotaResponse(raw, previousState = {}, nowSeconds = Math.floor
 module.exports = {
   identifyWindows,
   normalizeCredits,
+  normalizeOfficialResetHistory,
   restoreCachedCreditDetails,
   normalizeReceivedResetHistory,
   normalizeQuotaResponse,

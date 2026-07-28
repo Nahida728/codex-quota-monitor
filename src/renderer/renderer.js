@@ -1900,6 +1900,7 @@ function renderOffline(snapshot) {
   }[snapshot.errorCode] || "offlineMessage";
   elements.offlineMessage.textContent = t(messageKey);
   renderResetCredits({}, { history: snapshot.receivedResetHistory });
+  renderOfficialResetHistory({ history: snapshot.officialResetHistory });
   renderClientUpdate(snapshot.clientUpdate);
 }
 
