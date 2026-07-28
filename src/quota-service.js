@@ -11,6 +11,10 @@ const {
 } = require("./quota-normalizer");
 const { normalizeTokenUsageResponse } = require("./token-usage");
 const {
+  CodexSubscriptionReader,
+  normalizeSubscriptionDetails
+} = require("./subscription-service");
+const {
   CodexCostUsageReader,
   normalizeCodexCostUsageResult
 } = require("./codex-cost-usage");
@@ -153,12 +157,14 @@ class QuotaService {
     client,
     versionDetector,
     costUsageReader,
-    activeTaskReader
+    activeTaskReader,
+    subscriptionReader
   } = {}) {
     this.client = client || new AppServerClient();
     this.versionDetector = versionDetector || new CodexDesktopVersionDetector();
     this.costUsageReader = costUsageReader || new CodexCostUsageReader();
     this.activeTaskReader = activeTaskReader || new CodexActiveTaskReader();
+    this.subscriptionReader = subscriptionReader || new CodexSubscriptionReader();
     this.state = createQuotaStateStore(appStatePath);
     this.inFlight = null;
     this.activeTaskInFlight = null;
@@ -196,13 +202,24 @@ class QuotaService {
         .catch(() => null)
       : Promise.resolve(null);
     const activeTasksPromise = this.readActiveTasks(checkedAt);
+    const subscriptionPromise = typeof this.subscriptionReader?.read === "function"
+      ? Promise.resolve().then(() => this.subscriptionReader.read()).catch(() => null)
+      : Promise.resolve(null);
     try {
-      const [raw, tokenUsageRaw, tokenCostRaw, activeTasksRaw, installedVersion] = await Promise.all([
+      const [
+        raw,
+        tokenUsageRaw,
+        tokenCostRaw,
+        activeTasksRaw,
+        installedVersion,
+        subscriptionRaw
+      ] = await Promise.all([
         this.client.readRateLimits(),
         tokenUsagePromise,
         tokenCostPromise,
         activeTasksPromise,
-        versionPromise
+        versionPromise,
+        subscriptionPromise
       ]);
       const normalized = normalizeQuotaResponse(raw, this.state.data);
       const persisted = normalized.persistence;
@@ -211,6 +228,10 @@ class QuotaService {
       const tokenCost = normalizeCodexCostUsageResult(tokenCostRaw, this.state.data, checkedAt);
       const activeTasks = activeTasksRaw;
       const clientUpdate = evaluateClientUpdate(installedVersion, this.state.data, checkedAt);
+      const subscription = normalizeSubscriptionDetails(subscriptionRaw, {
+        planType: normalized.planType,
+        totalWorkDays: tokenUsage.totalWorkDays
+      }, Math.floor(checkedAt / 1000));
       Object.assign(
         this.state.data,
         persisted,
@@ -228,6 +249,7 @@ class QuotaService {
         tokenUsage: withoutPersistence(tokenUsage),
         tokenCost: withoutPersistence(tokenCost),
         activeTasks,
+        subscription,
         clientUpdate,
         errorCode: null
       };
@@ -239,7 +261,11 @@ class QuotaService {
       const activeTasksRaw = await activeTasksPromise;
       const activeTasks = activeTasksRaw;
       const installedVersion = await versionPromise;
+      const subscriptionRaw = await subscriptionPromise;
       const clientUpdate = evaluateClientUpdate(installedVersion, this.state.data, checkedAt);
+      const subscription = normalizeSubscriptionDetails(subscriptionRaw, {
+        totalWorkDays: tokenUsage.totalWorkDays
+      }, Math.floor(checkedAt / 1000));
       Object.assign(this.state.data, tokenCost.persistence, clientUpdate.persistence);
       this.state.set("lastClientVersionCheckAt", checkedAt);
       const message = String(error?.message || error);
@@ -257,6 +283,7 @@ class QuotaService {
         tokenUsage: withoutPersistence(tokenUsage),
         tokenCost: withoutPersistence(tokenCost),
         activeTasks,
+        subscription,
         clientUpdate,
         errorCode
       };

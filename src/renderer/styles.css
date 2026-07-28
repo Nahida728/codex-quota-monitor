@@ -879,6 +879,11 @@ h2 {
   z-index: 65;
 }
 
+.subscription-modal {
+  z-index: 67;
+  padding: 18px;
+}
+
 .reset-modal {
   z-index: 63;
   padding: 18px;
@@ -927,6 +932,90 @@ h2 {
 
 .task-dialog {
   min-height: 550px;
+}
+
+.subscription-dialog {
+  min-height: 465px;
+}
+
+.subscription-plan-card {
+  display: grid;
+  min-height: 94px;
+  place-content: center;
+  margin-top: 18px;
+  padding: 15px;
+  text-align: center;
+  border: 1px solid rgba(var(--mint-rgb),.16);
+  border-radius: 18px;
+  background:
+    radial-gradient(80% 140% at 50% 100%, rgba(var(--mint-rgb),.12), transparent 70%),
+    linear-gradient(120deg, rgba(255,255,255,.065), rgba(255,255,255,.018));
+  box-shadow: inset 0 1px rgba(255,255,255,.08);
+}
+
+.subscription-plan-card span,
+.subscription-time-grid span {
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.subscription-plan-card strong {
+  margin-top: 5px;
+  color: #dffff8;
+  font-size: 25px;
+  font-weight: 720;
+  letter-spacing: .06em;
+}
+
+.subscription-assisted {
+  margin: 14px 0 0;
+  color: rgba(232,246,249,.86);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.subscription-time-grid {
+  display: grid;
+  gap: 9px;
+  margin-top: 13px;
+}
+
+.subscription-time-grid article {
+  display: grid;
+  min-height: 62px;
+  align-content: center;
+  padding: 10px 13px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 14px;
+  background: linear-gradient(115deg, rgba(255,255,255,.055), rgba(255,255,255,.017));
+}
+
+.subscription-time-grid strong {
+  margin-top: 4px;
+  color: rgba(246,253,255,.94);
+  font-size: 15px;
+  font-weight: 680;
+  font-variant-numeric: tabular-nums;
+}
+
+.subscription-countdown-card strong {
+  color: var(--mint);
+  font-size: 19px;
+  letter-spacing: .025em;
+}
+
+.subscription-note {
+  min-height: 34px;
+  margin: 11px 2px 0;
+  color: var(--faint);
+  font-size: 10px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.subscription-dialog .history-done {
+  margin-top: auto;
 }
 
 .reset-dialog {
@@ -1734,9 +1823,38 @@ h2 {
 }
 
 .connection-label {
+  min-width: 0;
+  padding: 3px 5px;
   color: var(--muted);
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
   font-size: 13px;
   white-space: nowrap;
+  cursor: default;
+  transition: color .18s ease, background .18s ease, box-shadow .18s ease;
+}
+
+.connection-label:enabled {
+  color: rgba(213,234,239,.82);
+  cursor: pointer;
+}
+
+.connection-label:enabled::after {
+  content: "›";
+  display: inline-block;
+  margin-left: 5px;
+  color: var(--mint);
+  font-size: 15px;
+  line-height: 0;
+  transform: translateY(1px);
+}
+
+.connection-label:enabled:hover,
+.connection-label:enabled:focus-visible {
+  color: #f1fffc;
+  background: rgba(var(--mint-rgb),.08);
+  box-shadow: inset 0 0 0 1px rgba(var(--mint-rgb),.12);
 }
 
 .status-dot {

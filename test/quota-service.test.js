@@ -238,6 +238,14 @@ test("returns normalized account token usage and retains it when only the usage 
       dispose: () => {}
     },
     versionDetector: { read: async () => null },
+    subscriptionReader: {
+      read: async () => ({
+        planType: "plus",
+        activeStart: "2098-07-20T00:00:00Z",
+        activeUntil: "2099-07-20T00:00:00Z",
+        lastCheckedAt: "2098-07-20T00:00:00Z"
+      })
+    },
     activeTaskReader: {
       read: async now => ({
         available: true,
@@ -274,6 +282,10 @@ test("returns normalized account token usage and retains it when only the usage 
   assert.equal(live.tokenUsage.totalWorkDays, 1);
   assert.equal(live.tokenUsage.currentStreakDays, 9);
   assert.equal(live.tokenUsage.cached, false);
+  assert.equal(live.subscription.planType, "plus");
+  assert.equal(live.subscription.assistedWorkDays, 1);
+  assert.equal(live.subscription.expiresAt, Math.floor(Date.parse("2099-07-20T00:00:00Z") / 1000));
+  assert.equal(live.subscription.projected, false);
   assert.equal(live.tokenCost.models[0].model, "gpt-5.6-sol");
   assert.equal(live.tokenCost.estimatedCostUsd, 0.0025);
   assert.equal(live.activeTasks.count, 1);

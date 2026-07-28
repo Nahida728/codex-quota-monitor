@@ -123,11 +123,30 @@ test("token chart exposes every node through a bounded hover tooltip", () => {
   assert.match(html, /id="tokenChartTooltip"/);
   assert.match(css, /\.token-chart-tooltip\s*\{[\s\S]*?pointer-events:\s*none/);
   assert.match(renderer, /function updateTokenChartTooltip/);
-  assert.match(renderer, /Math\.hypot\(point\.x - pointer\.x,\s*point\.y - pointer\.y\)/);
+  assert.match(renderer, /function chartBars/);
+  assert.match(renderer, /Math\.abs\(bar\.x - pointer\.x\)/);
+  assert.match(renderer, /bar\.slotWidth\s*\/\s*2/);
   assert.match(renderer, /addEventListener\("pointermove",\s*updateTokenChartTooltip\)/);
-  assert.match(renderer, /highlighted \? 4\.5/);
+  assert.match(renderer, /context\.roundRect\(/);
+  assert.doesNotMatch(renderer, /function drawTokenLine/);
   assert.match(renderer, /end\.setUTCDate\(end\.getUTCDate\(\) \+ 6\)/);
   assert.match(renderer, /if \(period === "month"\)/);
+});
+
+test("recognized subscription plan opens assisted-days, expiry, and renewal countdown details", () => {
+  assert.match(
+    html,
+    /<button class="connection-label no-drag" id="connectionLabel"[\s\S]*?disabled/
+  );
+  assert.match(html, /id="subscriptionModal"/);
+  assert.match(html, /id="subscriptionAssistedDays"/);
+  assert.match(html, /id="subscriptionExpiry"/);
+  assert.match(html, /id="subscriptionCountdown"/);
+  assert.match(renderer, /connectionLabel\.addEventListener\("click",\s*openSubscription\)/);
+  assert.match(renderer, /setInterval\(renderSubscriptionCountdown,\s*1_000\)/);
+  assert.match(renderer, /subscription\.assistedWorkDays/);
+  assert.match(renderer, /subscription\.renewalAt/);
+  assert.match(css, /\.subscription-dialog\s*\{[\s\S]*?min-height:\s*465px/);
 });
 
 test("client update copy is bilingual and does not rely on ellipsis", () => {

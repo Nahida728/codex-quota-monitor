@@ -14,6 +14,18 @@ const i18n = {
     statusRegion: "状态提醒",
     checking: "正在连接 Codex…",
     connected: "Codex 已连接 · {plan}",
+    openSubscription: "查看 Codex 订阅详情",
+    subscriptionTitle: "订阅详情",
+    subscriptionPlanLabel: "当前订阅套餐",
+    subscriptionAssistedDays: "订阅服务累计已协助开发 {count} 天",
+    subscriptionAssistedUnavailable: "订阅服务累计协助开发天数暂不可用",
+    subscriptionExpiryLabel: "订阅到期时间",
+    subscriptionCountdownLabel: "距离下次续费还有：",
+    subscriptionCountdownValue: "{days}天 {hours}:{minutes}:{seconds}",
+    subscriptionRenewalDue: "续费时间已到，等待 Codex 更新状态",
+    subscriptionTimeUnavailable: "Codex 暂未提供订阅时间",
+    subscriptionExactNote: "到期时间来自本机 Codex 的订阅声明。",
+    subscriptionProjectedNote: "Codex 当前仅提供上个账期时间，已按原月度周期推算；实际续费时间以订阅平台为准。",
     offlineTitle: "Codex 当前离线",
     offlineMessage: "若你在中国大陆，请开启 VPN，并检查网络连接与 Codex 登录状态。",
     notInstalled: "未找到本机 Codex。请先安装并登录 Codex。",
@@ -141,7 +153,7 @@ const i18n = {
     tokenPeriodDay: "日",
     tokenPeriodWeek: "周",
     tokenPeriodMonth: "月",
-    tokenChartLabel: "Token 使用量折线图",
+    tokenChartLabel: "Token 使用量柱状图",
     tokenChartEmpty: "暂无 Token 历史数据",
     tokenChartTooltipValue: "{tokens} Token",
     tokenLive: "已同步账号数据",
@@ -189,6 +201,18 @@ const i18n = {
     statusRegion: "Status alerts",
     checking: "Connecting to Codex…",
     connected: "Codex connected · {plan}",
+    openSubscription: "View Codex subscription details",
+    subscriptionTitle: "Subscription details",
+    subscriptionPlanLabel: "Current plan",
+    subscriptionAssistedDays: "Your subscription has assisted development on {count} days",
+    subscriptionAssistedUnavailable: "Assisted development days are unavailable",
+    subscriptionExpiryLabel: "Subscription expiry",
+    subscriptionCountdownLabel: "Time until next renewal:",
+    subscriptionCountdownValue: "{days}d {hours}:{minutes}:{seconds}",
+    subscriptionRenewalDue: "Renewal is due; waiting for Codex to update",
+    subscriptionTimeUnavailable: "Codex has not provided subscription timing",
+    subscriptionExactNote: "The expiry time comes from the local Codex subscription claim.",
+    subscriptionProjectedNote: "Codex currently exposes the previous billing period, so this is projected using its monthly cycle. Check your subscription platform for the final renewal time.",
     offlineTitle: "Codex is offline",
     offlineMessage: "If you are in mainland China, enable your VPN and check your network and Codex sign-in.",
     notInstalled: "Codex was not found. Install and sign in to Codex first.",
@@ -316,7 +340,7 @@ const i18n = {
     tokenPeriodDay: "Day",
     tokenPeriodWeek: "Week",
     tokenPeriodMonth: "Month",
-    tokenChartLabel: "Token usage line chart",
+    tokenChartLabel: "Token usage bar chart",
     tokenChartEmpty: "No token history available",
     tokenChartTooltipValue: "{tokens} Tokens",
     tokenLive: "Account data synced",
@@ -374,6 +398,8 @@ const elements = Object.fromEntries([
   "clientUpdateCard", "clientUpdateStatus", "clientUpdateVersion", "clientUpdateCheck", "clientUpdateIcon",
   "clientUpdateHistoryModal", "clientUpdateHistoryClose", "clientUpdateHistoryDone",
   "clientUpdateHistoryCurrent", "clientUpdateHistoryPending", "clientUpdateHistoryList",
+  "subscriptionModal", "subscriptionClose", "subscriptionDone", "subscriptionPlan",
+  "subscriptionAssistedDays", "subscriptionExpiry", "subscriptionCountdown", "subscriptionNote",
   "tokenOverview", "tokenOverviewTitle", "lifetimeTokenValue", "totalWorkDaysValue",
   "estimatedCostValue", "tokenCostHelp", "tokenSparkline",
   "tokenUsageModal", "tokenUsageClose", "tokenUsageDone", "tokenModalLifetime", "tokenModalTotalWorkDays",
@@ -417,6 +443,7 @@ let activeTasks = [];
 let activeTasksAvailable = false;
 let activeTaskObservedAt = null;
 let activeTaskTimer = null;
+let subscriptionTimer = null;
 
 const TOKEN_CHART_PADDING = Object.freeze({ left: 43, right: 13, top: 17, bottom: 28 });
 const SECONDARY_DIALOG_SELECTOR = [
@@ -534,6 +561,7 @@ function applyLanguage() {
   elements.languageButton.textContent = language === "zh" ? "EN" : "中";
   elements.languageButton.title = t("switchLanguage");
   elements.languageButton.setAttribute("aria-label", t("switchLanguage"));
+  elements.connectionLabel.setAttribute("aria-label", t("openSubscription"));
   elements.refreshButton.title = t("refreshNow");
   elements.refreshButton.setAttribute("aria-label", t("refreshNow"));
   elements.quotaSection.setAttribute("aria-label", t("quotaRegion"));
@@ -563,6 +591,7 @@ function applyLanguage() {
   elements.cropResizeHandle.setAttribute("aria-label", t("cropResize"));
   elements.officialResetHistoryClose.setAttribute("aria-label", t("close"));
   elements.clientUpdateHistoryClose.setAttribute("aria-label", t("close"));
+  elements.subscriptionClose.setAttribute("aria-label", t("close"));
   elements.resetCreditClose.setAttribute("aria-label", t("close"));
   elements.tokenUsageClose.setAttribute("aria-label", t("close"));
   elements.tokenCostClose.setAttribute("aria-label", t("close"));
@@ -1238,21 +1267,32 @@ function prepareCanvas(canvas) {
   return { context, width, height };
 }
 
-function chartPoints(series, width, height, padding, maximum) {
+function chartBars(series, width, height, padding, maximum, compact = false) {
   const usableWidth = Math.max(1, width - padding.left - padding.right);
   const usableHeight = Math.max(1, height - padding.top - padding.bottom);
+  const slotWidth = usableWidth / Math.max(1, series.length);
+  const barWidth = Math.max(
+    compact ? 2 : 3,
+    Math.min(compact ? 8 : 16, slotWidth * (compact ? .62 : .58))
+  );
+  const bottom = height - padding.bottom;
   return series.map((item, index) => ({
-    x: padding.left + (series.length === 1 ? usableWidth / 2 : usableWidth * index / (series.length - 1)),
-    y: padding.top + usableHeight * (1 - item.tokens / maximum)
+    x: padding.left + slotWidth * (index + .5),
+    y: bottom - Math.max(2, usableHeight * item.tokens / maximum),
+    width: barWidth,
+    height: Math.max(2, usableHeight * item.tokens / maximum),
+    bottom,
+    slotWidth
   }));
 }
 
-function drawTokenLine(
+function drawTokenBars(
   context,
   series,
   width,
   height,
   alpha = 1,
+  growth = 1,
   compact = false,
   overview = false,
   highlightedIndex = null
@@ -1264,83 +1304,41 @@ function drawTokenLine(
     ? { left: 2, right: 2, top: 4, bottom: 4 }
     : TOKEN_CHART_PADDING);
   const maximum = Math.max(1, ...series.map(item => item.tokens));
-  const points = chartPoints(series, width, height, padding, maximum);
+  const bars = chartBars(series, width, height, padding, maximum, compact);
   context.save();
   context.globalAlpha = alpha;
-  context.lineCap = "round";
-  context.lineJoin = "round";
+  const gradient = context.createLinearGradient(0, padding.top, 0, height - padding.bottom);
+  gradient.addColorStop(0, "rgba(157,168,255,.96)");
+  gradient.addColorStop(.52, "rgba(120,234,213,.9)");
+  gradient.addColorStop(1, "rgba(120,234,213,.48)");
 
-  if (!compact || overview) {
-    const area = context.createLinearGradient(0, padding.top, 0, height - padding.bottom);
-    area.addColorStop(0, "rgba(120,234,213,.24)");
-    area.addColorStop(1, "rgba(120,234,213,0)");
+  bars.forEach((bar, index) => {
+    const highlighted = index === highlightedIndex;
+    const animatedHeight = Math.max(1.5, bar.height * Math.max(0, Math.min(1, growth)));
+    const animatedY = bar.bottom - animatedHeight;
+    const widthBoost = highlighted && !compact ? 2 : 0;
+    const renderedWidth = bar.width + widthBoost;
+    context.shadowColor = highlighted
+      ? "rgba(207,255,246,.62)"
+      : "rgba(120,234,213,.28)";
+    context.shadowBlur = highlighted ? 13 : (compact ? (overview ? 6 : 3) : 7);
+    context.fillStyle = highlighted ? "#dffff8" : gradient;
     context.beginPath();
-    if (points.length === 1) {
-      context.moveTo(padding.left, height - padding.bottom);
-      context.lineTo(padding.left, points[0].y);
-      context.lineTo(width - padding.right, points[0].y);
-      context.lineTo(width - padding.right, height - padding.bottom);
-    } else {
-      context.moveTo(points[0].x, height - padding.bottom);
-      points.forEach(point => context.lineTo(point.x, point.y));
-      context.lineTo(points.at(-1).x, height - padding.bottom);
+    context.roundRect(
+      bar.x - renderedWidth / 2,
+      animatedY,
+      renderedWidth,
+      animatedHeight,
+      Math.min(renderedWidth / 2, compact ? 2.5 : 4)
+    );
+    context.fill();
+    if (highlighted && !compact) {
+      context.shadowBlur = 0;
+      context.strokeStyle = "rgba(223,255,248,.48)";
+      context.lineWidth = 1.2;
+      context.stroke();
     }
-    context.closePath();
-    context.fillStyle = area;
-    context.fill();
-  }
-
-  const gradient = context.createLinearGradient(padding.left, 0, width - padding.right, 0);
-  gradient.addColorStop(0, "rgba(120,234,213,.72)");
-  gradient.addColorStop(.68, "rgba(157,168,255,.92)");
-  gradient.addColorStop(1, "rgba(120,234,213,1)");
-  context.beginPath();
-  if (points.length === 1) {
-    context.moveTo(padding.left, points[0].y);
-    context.lineTo(width - padding.right, points[0].y);
-  } else {
-    points.forEach((point, index) => {
-      if (index === 0) context.moveTo(point.x, point.y);
-      else context.lineTo(point.x, point.y);
-    });
-  }
-  context.strokeStyle = gradient;
-  context.lineWidth = compact ? (overview ? 2 : 1.7) : 2.2;
-  context.shadowColor = "rgba(120,234,213,.32)";
-  context.shadowBlur = compact ? 5 : 9;
-  context.stroke();
-
-  if (!compact) {
-    points.forEach((point, index) => {
-      const highlighted = index === highlightedIndex;
-      context.shadowBlur = highlighted ? 14 : 7;
-      context.fillStyle = highlighted ? "#e5fff9" : "#8ff1de";
-      context.beginPath();
-      context.arc(
-        point.x,
-        point.y,
-        highlighted ? 4.5 : (index === points.length - 1 ? 3.2 : 2.1),
-        0,
-        Math.PI * 2
-      );
-      context.fill();
-      if (highlighted) {
-        context.shadowBlur = 0;
-        context.strokeStyle = "rgba(143,241,222,.42)";
-        context.lineWidth = 2;
-        context.beginPath();
-        context.arc(point.x, point.y, 7.5, 0, Math.PI * 2);
-        context.stroke();
-      }
-    });
-  } else if (overview) {
-    const last = points.at(-1);
-    context.shadowBlur = 10;
-    context.fillStyle = "#8ff1de";
-    context.beginPath();
-    context.arc(last.x, last.y, 3.2, 0, Math.PI * 2);
-    context.fill();
-  }
+  });
   context.restore();
 }
 
@@ -1359,11 +1357,10 @@ function drawTokenAxes(context, series, width, height) {
   }
 
   context.textBaseline = "alphabetic";
+  const bars = chartBars(series, width, height, padding, maximum);
   const labelIndexes = [...new Set([0, Math.floor((series.length - 1) / 2), series.length - 1])];
   labelIndexes.forEach((index, labelIndex) => {
-    const x = padding.left + (series.length === 1
-      ? (width - padding.left - padding.right) / 2
-      : (width - padding.left - padding.right) * index / (series.length - 1));
+    const x = bars[index].x;
     context.textAlign = labelIndex === 0 ? "left" : (labelIndex === labelIndexes.length - 1 ? "right" : "center");
     context.fillText(formatTokenDate(series[index].startDate, tokenPeriod), x, height - 8);
   });
@@ -1375,12 +1372,13 @@ function drawTokenChartFrame(previousSeries, currentSeries, progress) {
   context.clearRect(0, 0, width, height);
   drawTokenAxes(context, currentSeries, width, height);
   const eased = 1 - Math.pow(1 - progress, 3);
-  drawTokenLine(context, previousSeries, width, height, 1 - eased);
-  drawTokenLine(
+  drawTokenBars(context, previousSeries, width, height, 1 - eased, 1);
+  drawTokenBars(
     context,
     currentSeries,
     width,
     height,
+    eased,
     eased,
     false,
     false,
@@ -1413,7 +1411,7 @@ function updateTokenChartTooltip(event) {
   const width = Math.max(1, Math.round(rect.width));
   const height = Math.max(1, Math.round(rect.height));
   const maximum = Math.max(1, ...tokenChartSeries.map(item => item.tokens));
-  const points = chartPoints(
+  const bars = chartBars(
     tokenChartSeries,
     width,
     height,
@@ -1422,10 +1420,12 @@ function updateTokenChartTooltip(event) {
   );
   const pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top };
   let nearestIndex = null;
-  let nearestDistance = 15;
-  points.forEach((point, index) => {
-    const distance = Math.hypot(point.x - pointer.x, point.y - pointer.y);
-    if (distance <= nearestDistance) {
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  bars.forEach((bar, index) => {
+    const distance = Math.abs(bar.x - pointer.x);
+    const withinHorizontalSlot = distance <= Math.max(8, bar.slotWidth / 2);
+    const withinVerticalRange = pointer.y >= bar.y - 10 && pointer.y <= bar.bottom + 8;
+    if (withinHorizontalSlot && withinVerticalRange && distance < nearestDistance) {
       nearestDistance = distance;
       nearestIndex = index;
     }
@@ -1435,7 +1435,7 @@ function updateTokenChartTooltip(event) {
     return;
   }
 
-  const point = points[nearestIndex];
+  const point = bars[nearestIndex];
   const item = tokenChartSeries[nearestIndex];
   const hoverChanged = tokenChartHoverIndex !== nearestIndex;
   tokenChartHoverIndex = nearestIndex;
@@ -1507,11 +1507,12 @@ function drawTokenSparkline() {
   const series = getTokenSeries("day").slice(-16);
   const { context, width, height } = prepareCanvas(elements.tokenSparkline);
   context.clearRect(0, 0, width, height);
-  drawTokenLine(
+  drawTokenBars(
     context,
     series,
     width,
     height,
+    1,
     1,
     true,
     elements.tokenOverview.classList.contains("is-expanded")
@@ -1858,11 +1859,81 @@ function closeClientUpdateHistory() {
   closeSecondaryModal(elements.clientUpdateHistoryModal, elements.clientUpdateCard);
 }
 
+function formatSubscriptionPlan(planType) {
+  const normalized = String(planType || "unknown").toLowerCase();
+  const names = {
+    prolite: "PRO LITE",
+    self_serve_business_usage_based: "BUSINESS",
+    enterprise_cbp_usage_based: "ENTERPRISE"
+  };
+  return names[normalized] || normalized.replaceAll("_", " ").toUpperCase();
+}
+
+function renderSubscriptionCountdown() {
+  if (elements.subscriptionModal.hidden) return;
+  const subscription = latestSnapshot?.subscription || {};
+  const renewalAt = subscription.renewalAt;
+  if (!Number.isFinite(renewalAt)) {
+    elements.subscriptionCountdown.textContent = t("subscriptionTimeUnavailable");
+    return;
+  }
+  const remainingSeconds = Math.max(0, Math.floor(renewalAt - Date.now() / 1000));
+  if (remainingSeconds <= 0) {
+    elements.subscriptionCountdown.textContent = t("subscriptionRenewalDue");
+    return;
+  }
+  const days = Math.floor(remainingSeconds / 86_400);
+  const hours = Math.floor((remainingSeconds % 86_400) / 3_600);
+  const minutes = Math.floor((remainingSeconds % 3_600) / 60);
+  const seconds = remainingSeconds % 60;
+  elements.subscriptionCountdown.textContent = t("subscriptionCountdownValue", {
+    days,
+    hours: String(hours).padStart(2, "0"),
+    minutes: String(minutes).padStart(2, "0"),
+    seconds: String(seconds).padStart(2, "0")
+  });
+}
+
+function renderSubscriptionDetails() {
+  const subscription = latestSnapshot?.subscription || {};
+  const planType = subscription.planType || latestSnapshot?.data?.planType || "unknown";
+  elements.subscriptionPlan.textContent = formatSubscriptionPlan(planType);
+  elements.subscriptionAssistedDays.textContent = Number.isFinite(subscription.assistedWorkDays)
+    ? t("subscriptionAssistedDays", { count: formatTokenCount(subscription.assistedWorkDays) })
+    : t("subscriptionAssistedUnavailable");
+  elements.subscriptionExpiry.textContent = Number.isFinite(subscription.expiresAt)
+    ? formatDate(subscription.expiresAt, true)
+    : t("subscriptionTimeUnavailable");
+  elements.subscriptionNote.textContent = Number.isFinite(subscription.expiresAt)
+    ? t(subscription.projected ? "subscriptionProjectedNote" : "subscriptionExactNote")
+    : t("subscriptionTimeUnavailable");
+  renderSubscriptionCountdown();
+}
+
+function openSubscription() {
+  if (!latestSnapshot?.online || elements.connectionLabel.disabled) return;
+  renderSubscriptionDetails();
+  openSecondaryModal(elements.subscriptionModal, elements.subscriptionClose);
+  requestAnimationFrame(renderSubscriptionCountdown);
+}
+
+function closeSubscription() {
+  closeSecondaryModal(elements.subscriptionModal, elements.connectionLabel);
+}
+
 function renderOnline(snapshot) {
   const { data } = snapshot;
   elements.app.classList.remove("is-offline-state");
   elements.connectionStrip.className = "connection-strip is-online";
-  elements.connectionLabel.textContent = t("connected", { plan: String(data.planType).toUpperCase() });
+  elements.connectionLabel.textContent = t("connected", {
+    plan: formatSubscriptionPlan(data.planType)
+  });
+  elements.connectionLabel.disabled = snapshot.subscription?.available !== true;
+  elements.connectionLabel.title = elements.connectionLabel.disabled ? "" : t("openSubscription");
+  elements.connectionLabel.setAttribute(
+    "aria-label",
+    elements.connectionLabel.disabled ? elements.connectionLabel.textContent : t("openSubscription")
+  );
   elements.offlineNotice.hidden = true;
 
   setQuota(
@@ -1886,12 +1957,16 @@ function renderOnline(snapshot) {
   renderResetCredits(data.resets, data.events.newReset);
   renderOfficialResetHistory(data.events.officialReset, data.events.manualReset);
   renderClientUpdate(snapshot.clientUpdate);
+  if (!elements.subscriptionModal.hidden) renderSubscriptionDetails();
 }
 
 function renderOffline(snapshot) {
   elements.app.classList.add("is-offline-state");
   elements.connectionStrip.className = "connection-strip is-offline";
   elements.connectionLabel.textContent = t("offlineTitle");
+  elements.connectionLabel.disabled = true;
+  elements.connectionLabel.removeAttribute("title");
+  elements.connectionLabel.setAttribute("aria-label", t("offlineTitle"));
   elements.offlineNotice.hidden = false;
   const messageKey = {
     CODEX_NOT_INSTALLED: "notInstalled",
@@ -2086,6 +2161,12 @@ async function initialize() {
   elements.minimizeButton.addEventListener("click", () => window.codexMonitor.minimize());
   elements.closeButton.addEventListener("click", () => window.codexMonitor.hide());
   elements.refreshButton.addEventListener("click", () => refresh());
+  elements.connectionLabel.addEventListener("click", openSubscription);
+  elements.subscriptionClose.addEventListener("click", closeSubscription);
+  elements.subscriptionDone.addEventListener("click", closeSubscription);
+  elements.subscriptionModal.addEventListener("click", event => {
+    if (event.target === elements.subscriptionModal) closeSubscription();
+  });
   elements.officialResetButton.addEventListener("click", openOfficialResetHistory);
   elements.officialResetButton.addEventListener("keydown", event => {
     if (event.key === "Enter" || event.key === " ") {
@@ -2233,7 +2314,8 @@ async function initialize() {
   });
   document.addEventListener("keydown", event => {
     if (event.key !== "Escape") return;
-    if (!elements.tokenCostModal.hidden) closeTokenCost();
+    if (!elements.subscriptionModal.hidden) closeSubscription();
+    else if (!elements.tokenCostModal.hidden) closeTokenCost();
     else if (!elements.activeTaskModal.hidden) closeActiveTasks();
     else if (!elements.tokenUsageModal.hidden) closeTokenUsage();
     else if (!elements.resetCreditModal.hidden) closeResetCredits();
@@ -2248,6 +2330,7 @@ async function initialize() {
     updateLastChecked();
   }, 30_000);
   activeTaskTimer = setInterval(renderActiveTaskClock, 1_000);
+  subscriptionTimer = setInterval(renderSubscriptionCountdown, 1_000);
 }
 
 window.addEventListener("DOMContentLoaded", initialize);
@@ -2256,5 +2339,6 @@ window.addEventListener("beforeunload", () => {
   clearInterval(activeTaskProbeTimer);
   clearInterval(clockTimer);
   clearInterval(activeTaskTimer);
+  clearInterval(subscriptionTimer);
   cancelAnimationFrame(tokenChartAnimationFrame);
 });

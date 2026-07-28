@@ -76,6 +76,16 @@ const snapshot = {
   checkedAt: Date.now(),
   lastSuccessfulAt: offline ? Date.now() - 60_000 : Date.now(),
   errorCode: offline ? "NETWORK_ERROR" : null,
+  subscription: {
+    available: !offline,
+    planType: "plus",
+    assistedWorkDays: 24,
+    activeStart: nowSeconds - 32 * 86_400,
+    expiresAt: nowSeconds + 28 * 86_400,
+    renewalAt: nowSeconds + 28 * 86_400,
+    projected: false,
+    sourceCheckedAt: nowSeconds
+  },
   clientUpdate: {
     available: true,
     detected: updatePending || updateDetected,

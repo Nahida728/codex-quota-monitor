@@ -35,8 +35,10 @@ The monitor must:
 - Permanently retain observed installed-version changes and expose them as a
   clickable client update timeline.
 - Show the account lifetime Token total and cumulative days with recorded work.
-- Show an animated Token usage line chart switchable between daily, weekly, and
+- Show an animated Token usage bar chart switchable between daily, weekly, and
   monthly aggregation.
+- Make a recognized Codex subscription plan clickable and show cumulative work
+  days, subscription expiry, and a live countdown to the next renewal.
 - Estimate the standard API-equivalent USD cost of locally recorded Codex model
   calls and show model-level input, cached input, output, and cache-hit details.
 - Show all currently active local Codex tasks, live elapsed time, and each
@@ -488,6 +490,25 @@ client's visible “Update” button before installation. Do not regress to that
   persisted snapshot across restarts and temporary scan failures. Do not rescan
   multi-gigabyte rollout history every 60-second quota refresh.
 
+### Subscription details
+
+- The plan shown in the online connection strip is a keyboard-accessible,
+  clickable entry to a bilingual subscription-detail dialog.
+- Use normalized non-zero account usage days for “assisted development days”;
+  do not substitute calendar age, conversation counts, or local file dates.
+- The public app-server account and rate-limit methods do not expose subscription
+  expiry. Read only the signed ID-token payload's plan and subscription
+  start/end/check timestamps from the bounded local Codex auth file.
+- Never expose, persist, or log the ID token, access token, refresh token, API
+  key, email, account ID, user ID, or unrelated claims.
+- Validate the auth file size, JWT structure, claim namespace, plan enum, and
+  timestamps. API-key login and malformed or missing claims are unavailable
+  states, not guessed subscriptions.
+- When Codex still reports a paid plan but the signed claim contains the previous
+  billing period, project the next renewal using that period's calendar-month
+  cadence and label the displayed date as estimated.
+- Keep the renewal countdown live to the second while its dialog is open.
+
 ### Active task monitoring
 
 - A task is active only when the most recent explicit lifecycle event in its
@@ -635,6 +656,8 @@ the fix. At minimum, automated tests must continue covering:
   fallback, valid-but-reset primary repair, and permanent-history anti-rollback;
 - account lifetime Token and cumulative-work-day normalization, cached fallback, and
   day/week/month aggregation;
+- bounded subscription-claim extraction without credential leakage, stale monthly
+  period projection, clickable plan details, and bilingual renewal countdown;
 - local model usage de-duplication, cached-input rate, unknown-model handling,
   API-equivalent cost, long-context pricing, and persisted scan reuse;
 - exact task lifecycle classification, completed-task exclusion, concurrent

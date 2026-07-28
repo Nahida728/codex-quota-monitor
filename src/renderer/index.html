@@ -69,7 +69,7 @@
       <section class="connection-strip" id="connectionStrip">
         <div class="connection-state">
           <span class="status-dot" id="statusDot"></span>
-          <span class="connection-label" id="connectionLabel" data-i18n="checking">正在连接 Codex…</span>
+          <button class="connection-label no-drag" id="connectionLabel" type="button" disabled data-i18n="checking">正在连接 Codex…</button>
         </div>
         <div class="connection-actions no-drag">
           <button class="language-button" id="languageButton" type="button" aria-label="切换语言">EN</button>
@@ -262,6 +262,35 @@
         </div>
       </section>
 
+      <section class="history-modal subscription-modal" id="subscriptionModal" hidden aria-modal="true" role="dialog" aria-labelledby="subscriptionModalTitle">
+        <div class="history-dialog subscription-dialog">
+          <div class="history-heading">
+            <div>
+              <span class="eyebrow">CODEX SUBSCRIPTION</span>
+              <h2 id="subscriptionModalTitle" data-i18n="subscriptionTitle">订阅详情</h2>
+            </div>
+            <button class="popover-close" id="subscriptionClose" type="button" aria-label="关闭">×</button>
+          </div>
+          <div class="subscription-plan-card">
+            <span data-i18n="subscriptionPlanLabel">当前订阅套餐</span>
+            <strong id="subscriptionPlan">--</strong>
+          </div>
+          <p class="subscription-assisted" id="subscriptionAssistedDays">订阅服务累计已协助开发 -- 天</p>
+          <div class="subscription-time-grid">
+            <article>
+              <span data-i18n="subscriptionExpiryLabel">订阅到期时间</span>
+              <strong id="subscriptionExpiry">--</strong>
+            </article>
+            <article class="subscription-countdown-card">
+              <span data-i18n="subscriptionCountdownLabel">距离下次续费还有：</span>
+              <strong id="subscriptionCountdown">--</strong>
+            </article>
+          </div>
+          <p class="subscription-note" id="subscriptionNote"></p>
+          <button class="glass-button primary history-done" id="subscriptionDone" type="button" data-i18n="close">关闭</button>
+        </div>
+      </section>
+
       <section class="reset-modal" id="resetCreditModal" hidden aria-modal="true" role="dialog" aria-labelledby="resetCreditModalTitle">
         <div class="reset-dialog">
           <div class="history-heading">
@@ -353,7 +382,7 @@
             <span id="tokenUsageFreshness">--</span>
           </div>
           <div class="token-chart-shell">
-            <canvas id="tokenUsageChart" role="img" aria-label="Token 使用量折线图"></canvas>
+            <canvas id="tokenUsageChart" role="img" aria-label="Token 使用量柱状图"></canvas>
             <div class="token-chart-empty" id="tokenChartEmpty" hidden data-i18n="tokenChartEmpty">暂无 Token 历史数据</div>
             <div class="token-chart-tooltip" id="tokenChartTooltip" role="tooltip" hidden>
               <span id="tokenChartTooltipDate"></span>
