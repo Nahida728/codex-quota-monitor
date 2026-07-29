@@ -43,9 +43,16 @@ The monitor must:
   calls and show model-level input, cached input, output, and cache-hit details.
 - Show all currently active local Codex tasks, live elapsed time, and each
   project's API-equivalent cost in a clickable detail view.
+- Retain a newly completed task in that detail view until the user confirms it
+  or returns to Codex, and permanently retain the longest duration and highest
+  single-task API-equivalent cost as monotonic records.
 - Report Codex online only when the local app-server can reach the OpenAI service
   and return quota data.
-- Give an offline VPN/network/sign-in hint, including the mainland-China case.
+- Show a localized red-glass connection dialog on the first offline detection of
+  each app session, with client, sign-in, API-key mode, network, VPN, firewall,
+  proxy, OpenAI-service, and timeout checks.
+- Keep the breathing connection light clickable. It opens a green normal-status
+  dialog while online and reopens the red diagnostic dialog while offline.
 - Support complete Chinese and English UI.
 - Support click-to-upload and drag-to-upload backgrounds, manual fixed-ratio
   cropping, and background opacity.
@@ -80,6 +87,9 @@ Do not remove or weaken an existing function while implementing a visual change.
 - `src/codex-active-tasks.js`
   - Identifies active turns from explicit lifecycle events and exposes only the
     project basename, elapsed time, normalized model usage, and estimated cost.
+- `src/codex-window-focus.js`
+  - Finds only a visible window owned by the installed OpenAI Codex Store
+    package and brings it to the foreground for the completed-task handoff.
 - `src/refresh-policy.js`
   - Pure active/idle refresh timing and lightweight task-probe wake-up policy.
 - `src/store.js`
@@ -281,9 +291,9 @@ Do not call a dragging change complete from static inspection. Manually verify:
   Additional tasks use a localized “more” count and remain available in details.
 - Keep only one refresh control: the refresh button in the connection strip.
   The removed top-left refresh button must not return.
-- The footer must remain visible in online and offline states. The active-task
-  card keeps the former reserved area's full layout budget online and may shrink
-  only enough to accommodate the offline warning without moving the title bar.
+- The footer and full-height active-task card remain unchanged in online and
+  offline states. Offline guidance is an overlay dialog and must never be inserted
+  into or squeeze the main layout.
 - Default body text must be comfortably readable at 460 × 690. Do not reduce text
   merely to make a layout fit.
 - English strings must wrap or reflow. Do not use `text-overflow: ellipsis` for
@@ -521,9 +531,21 @@ client's visible “Update” button before installation. Do not regress to that
 - From active rollouts expose only the validated turn ID, project directory
   basename, start time, normalized model Token totals, and estimated cost. Never
   expose the full workspace path, prompt, task title, message, or tool payload.
-- Active-task state is volatile and must not be persisted. A completed turn must
-  disappear on the next refresh; stale records must never be shown as running
-  merely because a previous read succeeded.
+- Active-task snapshots remain volatile. When a previously observed active task
+  disappears from a complete, non-truncated read, expose one bounded completion
+  handoff entry without continuing its timer or treating it as running.
+- A completion handoff remains in renderer memory until its `Return to Codex` or
+  `Confirm` action is used. `Return to Codex` must foreground only the trusted
+  installed Codex Store window; both actions remove the completed entry.
+- Persist only monotonic numeric records for the longest observed single-task
+  duration and highest observed single-task API-equivalent cost. Do not persist
+  task IDs, project names, paths, models, or completion handoff entries.
+- Reconcile those records by maximum value across the primary state and archive
+  generations so a reset or older state cannot lower either record. A completed
+  task that raises a record forces an immutable archive immediately.
+- If the monitor is always-on-top, returning to Codex may temporarily yield that
+  native level. Restore the saved always-on-top preference only when the monitor
+  is focused or shown again.
 - While at least one task is active, the complete monitor refresh interval is
   five seconds; after the last task completes it returns to sixty seconds.
 - While idle, a five-second lightweight local task-status probe may wake the full
@@ -602,8 +624,8 @@ Historical language/readability failures:
   `quota-state.json` for temporary endpoint failures.
 - The last normalized model Token totals and API-equivalent cost snapshot are
   stored in `quota-state.json`; rollout paths and raw records are never stored.
-- Active-task snapshots are not stored; only the current normalized read reaches
-  the renderer.
+- Active-task snapshots and completion handoff entries are not stored; only the
+  numeric longest-duration and highest-cost records are persisted.
 - Keep versioned, immutable quota-state archives in the adjacent
   `quota-state.json.archive` directory. Archive at least every 15 minutes while
   state writes continue and immediately whenever a permanent history or the
@@ -632,8 +654,10 @@ Historical language/readability failures:
 - Do not persist raw protocol responses or app-server stderr.
 - Offline handling must distinguish at least not-installed, not-signed-in,
   timeout/network failure, and generic connection failure where evidence allows.
-- The mainland-China offline message must continue to mention VPN and network
-  checks in both languages.
+- The offline connection dialog must continue to mention mainland-China VPN and
+  network checks in both languages. It may auto-open only once per app session:
+  periodic refreshes, language redraws, and later online/offline flapping must not
+  reset that eligibility. The red breathing light can always reopen it manually.
 - Avoid destructive state migrations. Preserve prior reset and update history.
 
 ## Testing matrix
@@ -660,13 +684,18 @@ the fix. At minimum, automated tests must continue covering:
   period projection, clickable plan details, and bilingual renewal countdown;
 - local model usage de-duplication, cached-input rate, unknown-model handling,
   API-equivalent cost, long-context pricing, and persisted scan reuse;
-- exact task lifecycle classification, completed-task exclusion, concurrent
-  active tasks, project-path sanitization, and task-level cost isolation;
+- exact task lifecycle classification, one-shot completion handoff, both
+  completion actions, concurrent active tasks, project-path sanitization,
+  task-level cost isolation, and monotonic performance-record recovery;
 - active five-second versus idle sixty-second refresh policy and lightweight
   task-probe wake-up behavior;
 - crop containment, movement, resize, ratio, and source-to-output mapping;
 - side-by-side quota cards, the clickable reset entry in the three-card status
-  row, reset-detail/history dialog, and the reserved bottom area;
+  row, reset-detail/history dialog, the connection-status dialog, and the reserved
+  bottom area;
+- one-shot automatic offline-dialog display per app session, no eligibility reset
+  after connection flapping, manual reopening from the red breathing light, and
+  the green normal-status dialog;
 - bilingual key parity and dynamic accessibility labels;
 - development-file package exclusion.
 
@@ -682,7 +711,8 @@ visual/manual matrix:
 - empty and multi-entry client update timelines, including a pending target;
 - Token data available/unavailable, day/week/month chart modes, and chart dialog
   transitions in Chinese and English;
-- zero, one, and multiple active tasks; live timer pulse; task detail scrolling;
+- zero, one, and multiple active tasks; live timer pulse; completed-task actions;
+  persistent longest/highest records; task detail scrolling;
 - default background and light/dark custom backgrounds;
 - background popover, crop dialog, and reset-history dialog;
 - unlocked/locked title and four-edge movement;

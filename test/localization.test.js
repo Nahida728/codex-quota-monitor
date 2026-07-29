@@ -33,6 +33,10 @@ test("language switching updates document and accessibility-only copy", () => {
     "switchLanguage",
     "refreshNow",
     "openSubscription",
+    "openConnectionStatus",
+    "connectionDisconnectedTitle",
+    "connectionOnlineTitle",
+    "connectionAcknowledge",
     "quotaRegion",
     "statusRegion",
     "tokenUsageRegion",
@@ -47,6 +51,7 @@ test("language switching updates document and accessibility-only copy", () => {
   assert.match(renderer, /languageButton\.setAttribute\("aria-label",\s*t\("switchLanguage"\)\)/);
   assert.match(renderer, /refreshButton\.setAttribute\("aria-label",\s*t\("refreshNow"\)\)/);
   assert.match(renderer, /connectionLabel\.setAttribute\("aria-label",\s*t\("openSubscription"\)\)/);
+  assert.match(renderer, /connectionStatusButton\.setAttribute\("aria-label",\s*t\("openConnectionStatus"\)\)/);
   assert.match(renderer, /quotaSection\.setAttribute\("aria-label",\s*t\("quotaRegion"\)\)/);
   assert.match(renderer, /statusSection\.setAttribute\("aria-label",\s*t\("statusRegion"\)\)/);
   assert.match(renderer, /tokenOverview\.setAttribute\("aria-label",\s*t\("openTokenUsage"\)\)/);

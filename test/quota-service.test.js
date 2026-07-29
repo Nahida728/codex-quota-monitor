@@ -81,6 +81,57 @@ test("provides a lightweight normalized active-task probe without reading quota"
   service.dispose();
 });
 
+test("emits a completed-task handoff once and permanently keeps higher task records", async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codex-task-records-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const appStatePath = path.join(directory, "quota-state.json");
+  let tasks = [{
+    id: "turn-record",
+    projectName: "record-project",
+    startedAt: 90,
+    estimatedCostUsd: 3.25,
+    models: []
+  }];
+  const service = new QuotaService({
+    appStatePath,
+    client: { dispose: () => {} },
+    versionDetector: { read: async () => null },
+    costUsageReader: emptyCostUsageReader,
+    activeTaskReader: {
+      read: async now => ({
+        available: true,
+        tasks,
+        count: tasks.length,
+        observedAt: now
+      })
+    }
+  });
+
+  const active = await service.readActiveTasks(100_000);
+  assert.equal(active.completedTasks.length, 0);
+  assert.equal(active.records.longestElapsedSeconds, 10);
+  assert.equal(active.records.highestEstimatedCostUsd, 3.25);
+
+  tasks = [];
+  const completed = await service.readActiveTasks(110_000);
+  assert.equal(completed.completedTasks.length, 1);
+  assert.equal(completed.completedTasks[0].projectName, "record-project");
+  assert.equal(completed.completedTasks[0].elapsedSeconds, 20);
+  assert.equal(completed.records.longestElapsedSeconds, 20);
+  assert.equal(completed.records.highestEstimatedCostUsd, 3.25);
+
+  const adjacent = await service.readActiveTasks(115_000);
+  assert.equal(adjacent.completedTasks.length, 0);
+  assert.equal(adjacent.records.longestElapsedSeconds, 20);
+  assert.equal(adjacent.records.highestEstimatedCostUsd, 3.25);
+
+  const persisted = JSON.parse(fs.readFileSync(appStatePath, "utf8"));
+  assert.deepEqual(persisted.taskPerformanceRecords, completed.records);
+  const archives = fs.readdirSync(`${appStatePath}.archive`);
+  assert.ok(archives.some(name => name.endsWith(".json")));
+  service.dispose();
+});
+
 test("shares one app-server startup across parallel quota and usage reads", async () => {
   const client = new AppServerClient();
   let starts = 0;

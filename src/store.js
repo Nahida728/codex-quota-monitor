@@ -193,6 +193,45 @@ function newestSnapshot(states, key) {
     ))[0] || null;
 }
 
+function normalizeTaskPerformanceRecords(states) {
+  const result = {
+    longestElapsedSeconds: 0,
+    longestRecordedAt: null,
+    highestEstimatedCostUsd: 0,
+    highestCostRecordedAt: null
+  };
+  for (const state of states) {
+    const records = isPlainObject(state?.taskPerformanceRecords)
+      ? state.taskPerformanceRecords
+      : {};
+    const elapsed = Number(records.longestElapsedSeconds);
+    const elapsedRecordedAt = normalizeDetectedAt(records.longestRecordedAt);
+    if (
+      Number.isFinite(elapsed) &&
+      elapsed >= 0 &&
+      (elapsed > result.longestElapsedSeconds ||
+        (elapsed === result.longestElapsedSeconds &&
+          !result.longestRecordedAt && elapsedRecordedAt))
+    ) {
+      result.longestElapsedSeconds = Math.floor(elapsed);
+      result.longestRecordedAt = elapsedRecordedAt;
+    }
+    const cost = Number(records.highestEstimatedCostUsd);
+    const costRecordedAt = normalizeDetectedAt(records.highestCostRecordedAt);
+    if (
+      Number.isFinite(cost) &&
+      cost >= 0 &&
+      (cost > result.highestEstimatedCostUsd ||
+        (cost === result.highestEstimatedCostUsd &&
+          !result.highestCostRecordedAt && costRecordedAt))
+    ) {
+      result.highestEstimatedCostUsd = cost;
+      result.highestCostRecordedAt = costRecordedAt;
+    }
+  }
+  return result;
+}
+
 function reconcileQuotaStates(primary, candidates = []) {
   const states = [primary, ...candidates].filter(isPlainObject);
   const result = { ...(isPlainObject(primary) ? primary : (states[0] || {})) };
@@ -257,6 +296,7 @@ function reconcileQuotaStates(primary, candidates = []) {
     const snapshot = newestSnapshot(states, key);
     if (snapshot) result[key] = snapshot;
   }
+  result.taskPerformanceRecords = normalizeTaskPerformanceRecords(states);
 
   if (!isPlainObject(result.lastSnapshot)) {
     const source = states
@@ -439,14 +479,14 @@ class JsonStore {
     }
   }
 
-  set(key, value) {
+  set(key, value, { forceBackup = false } = {}) {
     this.data[key] = value;
     if (this.reconcile) {
       this.data = this.reconcile(this.data, [this.protectedState]);
       this.protectedState = this.reconcile({}, [this.protectedState, this.data]);
     }
     const now = this.now();
-    const backedUp = this.createBackup(now);
+    const backedUp = this.createBackup(now, forceBackup);
     writeJsonAtomically(this.filePath, this.data);
     if (backedUp) this.pruneBackups();
   }
@@ -468,6 +508,7 @@ module.exports = {
   DEFAULT_MAX_BACKUPS,
   JsonStore,
   createQuotaStateStore,
+  normalizeTaskPerformanceRecords,
   quotaHistoryFingerprint,
   readJsonObject,
   reconcileQuotaStates,

@@ -1,4 +1,10 @@
 const params = new URLSearchParams(location.search);
+if (params.get("fixed") === "1") {
+  document.documentElement.style.width = "460px";
+  document.documentElement.style.height = "690px";
+  document.body.style.width = "460px";
+  document.body.style.height = "690px";
+}
 const nowSeconds = Math.floor(Date.now() / 1000);
 const creditCount = Number.parseInt(params.get("credits") || "6", 10);
 const offline = params.get("offline") === "1";
@@ -6,6 +12,7 @@ const updateDetected = params.get("update") === "1";
 const updatePending = params.get("pending") === "1";
 const updateHistoryEmpty = params.get("history") === "0";
 const activeTaskCount = Math.max(0, Number.parseInt(params.get("tasks") || "2", 10) || 0);
+const showCompletedTask = params.get("completed") === "1";
 const previewBackground = params.get("bg") === "1"
   ? `data:image/svg+xml,${encodeURIComponent(`
       <svg xmlns="http://www.w3.org/2000/svg" width="460" height="690">
@@ -70,6 +77,25 @@ const previewActiveTasks = Array.from({ length: activeTaskCount }, (_, index) =>
     outputTokens: 8280 + index * 710
   }]
 }));
+const previewCompletedTasks = showCompletedTask ? [{
+  id: "preview-completed-turn",
+  projectName: "codex-quota-monitor",
+  startedAt: nowSeconds - 2_145,
+  elapsedSeconds: 2_145,
+  completedAt: Date.now() - 2_000,
+  estimatedCostUsd: 4.7281,
+  hasUnpricedModels: false,
+  partial: false,
+  pricingDate: "2026-07-26",
+  models: [{
+    model: "gpt-5.6-sol",
+    estimatedCostUsd: 4.7281,
+    priced: true,
+    inputTokens: 1_340_000,
+    cachedInputTokens: 1_201_000,
+    outputTokens: 18_400
+  }]
+}] : [];
 
 const snapshot = {
   online: !offline,
@@ -188,7 +214,12 @@ const snapshot = {
     count: previewActiveTasks.length,
     truncated: false,
     observedAt: Date.now(),
-    pricingDate: "2026-07-26"
+    pricingDate: "2026-07-26",
+    completedTasks: previewCompletedTasks,
+    records: {
+      longestElapsedSeconds: 2_145,
+      highestEstimatedCostUsd: 4.7281
+    }
   },
   receivedResetHistory: previewReceivedResetHistory,
   data: offline ? null : {
@@ -231,6 +262,7 @@ window.codexMonitor = {
     count: snapshot.activeTasks.count,
     observedAt: Date.now()
   }),
+  focusCodex: async () => true,
   readSettings: async () => ({
     language: params.get("lang") === "en" ? "en" : "zh",
     alwaysOnTop: true,

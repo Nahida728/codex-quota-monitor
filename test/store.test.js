@@ -6,7 +6,8 @@ const path = require("node:path");
 
 const {
   createQuotaStateStore,
-  readJsonObject
+  readJsonObject,
+  reconcileQuotaStates
 } = require("../src/store");
 
 function createWorkspace(t) {
@@ -41,7 +42,13 @@ function durableState() {
       fromVersion: "26.720.1000.0",
       toVersion: "26.721.4979.0",
       detectedAt: 2_000
-    }]
+    }],
+    taskPerformanceRecords: {
+      longestElapsedSeconds: 1_245,
+      longestRecordedAt: 2_100,
+      highestEstimatedCostUsd: 8.75,
+      highestCostRecordedAt: 2_200
+    }
   };
 }
 
@@ -54,6 +61,30 @@ function backupFiles(directory) {
     return [];
   }
 }
+
+test("reconciles task duration and cost records independently by their maxima", () => {
+  const reconciled = reconcileQuotaStates({
+    taskPerformanceRecords: {
+      longestElapsedSeconds: 900,
+      longestRecordedAt: 10_000,
+      highestEstimatedCostUsd: 12.5,
+      highestCostRecordedAt: 11_000
+    }
+  }, [{
+    taskPerformanceRecords: {
+      longestElapsedSeconds: 1_200,
+      longestRecordedAt: 12_000,
+      highestEstimatedCostUsd: 8.25,
+      highestCostRecordedAt: 13_000
+    }
+  }]);
+  assert.deepEqual(reconciled.taskPerformanceRecords, {
+    longestElapsedSeconds: 1_200,
+    longestRecordedAt: 12_000,
+    highestEstimatedCostUsd: 12.5,
+    highestCostRecordedAt: 11_000
+  });
+});
 
 test("periodically creates immutable quota-state archives", t => {
   const workspace = createWorkspace(t);
@@ -107,6 +138,8 @@ test("restores a corrupt primary file from the newest valid archive", t => {
   });
   assert.equal(recovered.data.officialResetHistory.length, 1);
   assert.equal(recovered.data.codexClientUpdateHistory.length, 1);
+  assert.equal(recovered.data.taskPerformanceRecords.longestElapsedSeconds, 1_245);
+  assert.equal(recovered.data.taskPerformanceRecords.highestEstimatedCostUsd, 8.75);
   assert.deepEqual(
     readJsonObject(workspace.filePath).officialResetHistory.map(record => ({
       detectedAt: record.detectedAt,
@@ -142,6 +175,8 @@ test("repairs a valid but reset primary without allowing histories to go backwar
   assert.equal(recovered.data.officialResetHistory.length, 1);
   assert.equal(recovered.data.receivedResetHistory.length, 1);
   assert.equal(recovered.data.codexClientUpdateHistory.length, 1);
+  assert.equal(recovered.data.taskPerformanceRecords.longestElapsedSeconds, 1_245);
+  assert.equal(recovered.data.taskPerformanceRecords.highestEstimatedCostUsd, 8.75);
 
   recovered.data.officialResetHistory = [];
   recovered.data.receivedResetHistory = [];
@@ -250,4 +285,6 @@ test("history protection does not block legitimate volatile state changes", t =>
   assert.deepEqual(persisted.resetCreditDetails, []);
   assert.equal(persisted.officialResetHistory.length, 1);
   assert.equal(persisted.codexClientUpdateHistory.length, 1);
+  assert.equal(persisted.taskPerformanceRecords.longestElapsedSeconds, 1_245);
+  assert.equal(persisted.taskPerformanceRecords.highestEstimatedCostUsd, 8.75);
 });

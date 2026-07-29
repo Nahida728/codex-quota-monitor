@@ -58,13 +58,10 @@ test("places the expanded token overview before the active-task card", () => {
   assert.match(html, /id="tokenCostHelp"/);
   assert.match(css, /\.token-overview\s*\{[\s\S]*?height:\s*190px/);
   assert.match(css, /\.active-task-card\s*\{[\s\S]*?height:\s*126px/);
-  assert.match(
-    css,
-    /\.is-offline-state \.active-task-card\s*\{[\s\S]*?height:\s*70px[\s\S]*?flex-basis:\s*70px/
-  );
+  assert.doesNotMatch(css, /\.is-offline-state \.active-task-card/);
 });
 
-test("shows concurrent Codex tasks with live elapsed time and per-project API estimates", () => {
+test("shows live tasks, completed handoffs, and permanent performance records", () => {
   assert.match(html, /id="activeTaskCard"/);
   assert.match(html, /id="activeTaskCount"/);
   assert.match(html, /id="activeTaskElapsed"/);
@@ -76,11 +73,18 @@ test("shows concurrent Codex tasks with live elapsed time and per-project API es
   assert.match(renderer, /function renderActiveTasks/);
   assert.match(renderer, /function renderActiveTaskPreview/);
   assert.match(renderer, /function renderActiveTaskDetails/);
-  assert.match(renderer, /formatActiveTaskAggregateCost\(activeTasks\)/);
-  assert.match(renderer, /activeTasks\.slice\(0,\s*2\)/);
+  assert.match(renderer, /completedTasks\.forEach\(\(task,\s*index\)\s*=>/);
+  assert.match(renderer, /dataset\.completedTaskAction/);
+  assert.match(renderer, /activeTaskReturnCodex/);
+  assert.match(renderer, /activeTaskConfirm/);
+  assert.match(renderer, /window\.codexMonitor\.focusCodex\(\)/);
+  assert.match(renderer, /activeTaskRecords\.longestElapsedSeconds/);
+  assert.match(renderer, /activeTaskRecords\.highestEstimatedCostUsd/);
   assert.match(renderer, /formatActiveTaskCost\(task\)/);
   assert.match(renderer, /setInterval\(renderActiveTaskClock,\s*1_000\)/);
   assert.match(renderer, /activeTaskCard\.addEventListener\("click",\s*openActiveTasks\)/);
+  assert.match(preload, /focusCodex:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("codex:focus"\)/);
+  assert.match(main, /ipcMain\.handle\("codex:focus"/);
   assert.match(css, /@keyframes active-task-time-pulse/);
   assert.match(
     css,
@@ -88,6 +92,7 @@ test("shows concurrent Codex tasks with live elapsed time and per-project API es
   );
   assert.match(css, /\.active-task-preview-row\s*\{[\s\S]*?grid-template-columns:/);
   assert.match(css, /\.active-task-preview-list\.is-single \.active-task-preview-row/);
+  assert.match(css, /\.active-task-completed-actions\s*\{[\s\S]*?grid-template-columns:/);
 });
 
 test("shows API-equivalent cost with an independent model-detail dialog", () => {
@@ -147,6 +152,26 @@ test("recognized subscription plan opens assisted-days, expiry, and renewal coun
   assert.match(renderer, /subscription\.assistedWorkDays/);
   assert.match(renderer, /subscription\.renewalAt/);
   assert.match(css, /\.subscription-dialog\s*\{[\s\S]*?min-height:\s*465px/);
+});
+
+test("connection state uses a clickable breathing light and a non-layout-blocking glass dialog", () => {
+  assert.match(html, /id="connectionStatusButton"[\s\S]*?id="statusDot"/);
+  assert.match(html, /id="connectionStatusModal"/);
+  assert.match(html, /id="connectionStatusTitle"/);
+  assert.match(html, /id="connectionStatusMessage"/);
+  assert.match(html, /id="connectionIssueList"/);
+  assert.match(html, /id="connectionStatusDone"[\s\S]*?data-i18n="connectionAcknowledge"/);
+  assert.doesNotMatch(html, /id="offlineNotice"/);
+  assert.match(renderer, /connectionStatusButton\.addEventListener\("click",\s*openConnectionStatus\)/);
+  assert.match(renderer, /connectionStatusDone\.addEventListener\("click",\s*closeConnectionStatus\)/);
+  assert.match(renderer, /let automaticOfflineAlertShown = false/);
+  assert.match(renderer, /if \(!automaticOfflineAlertShown\)\s*\{\s*automaticOfflineAlertShown = true;\s*openConnectionStatus\(\)/);
+  assert.equal((renderer.match(/automaticOfflineAlertShown = false/g) || []).length, 1);
+  assert.match(renderer, /connectionIssueList\.hidden = isOnline/);
+  assert.doesNotMatch(renderer, /app\.classList\.(?:add|remove)\("is-offline-state"\)/);
+  assert.match(css, /\.connection-status-button\s*\{[\s\S]*?cursor:\s*pointer/);
+  assert.match(css, /\.connection-dialog\s*\{[\s\S]*?rgba\(var\(--danger-rgb\),\.17\)/);
+  assert.match(css, /\.connection-modal\.is-online \.connection-dialog\s*\{[\s\S]*?rgba\(var\(--mint-rgb\),\.16\)/);
 });
 
 test("client update copy is bilingual and does not rely on ellipsis", () => {

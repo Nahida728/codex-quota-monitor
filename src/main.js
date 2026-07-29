@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { QuotaService } = require("./quota-service");
 const { JsonStore } = require("./store");
+const { focusCodexWindow } = require("./codex-window-focus");
 const { didWindowMove, startSystemWindowMove } = require("./native-window-drag");
 
 let window;
@@ -15,6 +16,7 @@ let windowPositionSaveTimer = null;
 let isWindowCollapsed = false;
 let isChangingWindowMode = false;
 let orbMoveSettledTimer = null;
+let alwaysOnTopYielded = false;
 
 const APP_NAME = "Codex监测台";
 const WINDOW_WIDTH = 460;
@@ -269,6 +271,7 @@ function showWindow() {
   isAppHidden = false;
   positionWindow(window, getWindowPosition(false));
   window.setAlwaysOnTop(store.get("alwaysOnTop", true), "floating");
+  alwaysOnTopYielded = false;
   if (window.isMinimized()) window.restore();
   window.showInactive();
   window.focus();
@@ -284,9 +287,29 @@ function hideAppWindows() {
 
 function setAlwaysOnTop(enabled) {
   store.set("alwaysOnTop", Boolean(enabled));
+  alwaysOnTopYielded = false;
   window?.setAlwaysOnTop(Boolean(enabled), "floating");
   window?.webContents.send("settings:alwaysOnTop", Boolean(enabled));
   updateTray();
+}
+
+function focusCodexFromMonitor() {
+  const shouldYieldAlwaysOnTop = Boolean(
+    window &&
+    !window.isDestroyed() &&
+    store.get("alwaysOnTop", true) &&
+    window.isAlwaysOnTop()
+  );
+  if (shouldYieldAlwaysOnTop) {
+    window.setAlwaysOnTop(false);
+    alwaysOnTopYielded = true;
+  }
+  const focused = focusCodexWindow();
+  if (!focused && shouldYieldAlwaysOnTop) {
+    window.setAlwaysOnTop(true, "floating");
+    alwaysOnTopYielded = false;
+  }
+  return focused;
 }
 
 function markOrbNativeMove() {
@@ -391,6 +414,11 @@ function createWindow() {
     }
   });
   window.on("show", updateTray);
+  window.on("focus", () => {
+    if (!alwaysOnTopYielded || !store.get("alwaysOnTop", true)) return;
+    window.setAlwaysOnTop(true, "floating");
+    alwaysOnTopYielded = false;
+  });
   window.on("hide", () => {
     updateTray();
   });
@@ -420,6 +448,7 @@ function getBackgroundDataUrl() {
 
 function registerIpc() {
   ipcMain.handle("quota:read", () => quotaService.read());
+  ipcMain.handle("codex:focus", () => focusCodexFromMonitor());
   ipcMain.handle("tasks:active-status", async () => {
     const result = await quotaService.readActiveTasks();
     return {

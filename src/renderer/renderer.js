@@ -15,6 +15,19 @@ const i18n = {
     checking: "正在连接 Codex…",
     connected: "Codex 已连接 · {plan}",
     openSubscription: "查看 Codex 订阅详情",
+    openConnectionStatus: "查看当前连接状态",
+    connectionDisconnectedLabel: "连接断开",
+    connectionDisconnectedTitle: "连接断开",
+    connectionDisconnectedIntro: "无法连接到 OpenAI 服务器与 Codex 客户端，请排查以下问题：",
+    connectionIssueClient: "Codex 客户端未安装、未启动、已崩溃，或正在更新、重启，本地 app-server 无法工作。",
+    connectionIssueAccount: "Codex 未登录、登录已过期、账户授权异常，或当前 API Key 登录无法提供订阅额度。",
+    connectionIssueNetwork: "网络中断，或 DNS、代理、路由异常，无法访问 OpenAI。",
+    connectionIssueVpn: "中国大陆网络未开启 VPN，或 VPN 节点不可用、不稳定。",
+    connectionIssueSecurity: "防火墙、安全软件或公司网络策略阻止了 Codex 进程或连接。",
+    connectionIssueServer: "OpenAI 服务临时故障、维护，或请求持续超时。",
+    connectionOnlineTitle: "连接正常",
+    connectionOnlineMessage: "与 OpenAI 服务器和 Codex 客户端之间的连接一切正常，快去开启你的 VibeCoding 工作吧！",
+    connectionAcknowledge: "我已知晓",
     subscriptionTitle: "订阅详情",
     subscriptionPlanLabel: "当前订阅套餐",
     subscriptionAssistedDays: "订阅服务累计已协助开发 {count} 天",
@@ -26,11 +39,6 @@ const i18n = {
     subscriptionTimeUnavailable: "Codex 暂未提供订阅时间",
     subscriptionExactNote: "到期时间来自本机 Codex 的订阅声明。",
     subscriptionProjectedNote: "Codex 当前仅提供上个账期时间，已按原月度周期推算；实际续费时间以订阅平台为准。",
-    offlineTitle: "Codex 当前离线",
-    offlineMessage: "若你在中国大陆，请开启 VPN，并检查网络连接与 Codex 登录状态。",
-    notInstalled: "未找到本机 Codex。请先安装并登录 Codex。",
-    notLoggedIn: "Codex 尚未登录，请先在 Codex 中完成登录。",
-    timeout: "连接 Codex 超时。若你在中国大陆，请开启 VPN 并检查网络。",
     fiveHour: "5 小时额度",
     weekly: "1 周额度",
     remaining: "剩余",
@@ -125,28 +133,31 @@ const i18n = {
     modelCostRequests: "{count} 次调用",
     modelCostCacheWrite: "缓存写入 {tokens}",
     modelCostLongContext: "{count} 次长上下文按官方倍率计价",
-    activeTasksTitle: "进行中任务",
-    activeTaskDetailsLabel: "查看进行中任务详情",
+    activeTasksTitle: "Codex 任务",
+    activeTaskDetailsLabel: "查看任务详情",
     activeTaskRunningCount: "{count} 个任务正在进行",
-    activeTaskNone: "当前没有进行中的任务",
+    activeTaskNone: "当前没有进行中或待确认的任务",
     activeTaskUnavailable: "任务状态暂不可用",
     activeTaskProjectFallback: "未命名项目",
     activeTaskProjectsMore: "{project} 等 {count} 个项目",
     activeTaskElapsedLabel: "已进行",
     activeTaskRunningStatus: "进行中",
     activeTaskRunningMetric: "正在运行",
-    activeTaskLongestLabel: "最长",
-    activeTaskTotalCostLabel: "API 等价",
+    activeTaskLongestLabel: "历史最长",
+    activeTaskTotalCostLabel: "最高消费",
     activeTaskMore: "另有 {count} 项",
     activeTaskCostLabel: "API 等价",
     activeTaskTimeLabel: "花费时间",
     activeTaskModelsLabel: "模型",
     activeTaskUnpriced: "含未定价模型",
     activeTaskPartialCost: "仅统计可读取部分",
-    activeTaskDetailsHint: "按本机 Codex 当前回合的 Token 使用量与标准 API 价格估算，不代表 Codex 订阅实际收费。",
-    activeTaskDetailCount: "当前 {count} 个任务",
-    activeTaskLongest: "最长已进行 {time}",
-    activeTaskEmptyDetail: "暂无正在进行的 Codex 任务",
+    activeTaskDetailsHint: "已完成任务会保留到确认或返回 Codex；最长耗时和最高 API 等价消费会永久保存。",
+    activeTaskDetailCount: "{count} 个进行中 · {completed} 个待处理",
+    activeTaskLongest: "历史最长 {time} · 最高消费 {cost}",
+    activeTaskEmptyDetail: "暂无进行中或待确认的 Codex 任务",
+    activeTaskCompletedStatus: "已完成",
+    activeTaskReturnCodex: "返回 Codex",
+    activeTaskConfirm: "确认",
     tokenUnavailable: "暂无数据",
     openTokenUsage: "查看 Token 使用趋势",
     tokenPeriodGroup: "统计周期",
@@ -202,6 +213,19 @@ const i18n = {
     checking: "Connecting to Codex…",
     connected: "Codex connected · {plan}",
     openSubscription: "View Codex subscription details",
+    openConnectionStatus: "View current connection status",
+    connectionDisconnectedLabel: "Connection lost",
+    connectionDisconnectedTitle: "Connection lost",
+    connectionDisconnectedIntro: "The monitor cannot connect to the OpenAI service and the Codex client. Check the following:",
+    connectionIssueClient: "The Codex client is missing, stopped, crashed, updating, or restarting, so its local app-server is unavailable.",
+    connectionIssueAccount: "Codex is signed out, the session or account authorization has expired, or API-key sign-in cannot provide subscription quota data.",
+    connectionIssueNetwork: "The network is offline, or DNS, proxy, or routing problems are blocking OpenAI.",
+    connectionIssueVpn: "In mainland China, the VPN is off or its route is unavailable or unstable.",
+    connectionIssueSecurity: "A firewall, security tool, or company network policy is blocking Codex or its connection.",
+    connectionIssueServer: "OpenAI is temporarily unavailable or under maintenance, or requests keep timing out.",
+    connectionOnlineTitle: "Connection normal",
+    connectionOnlineMessage: "The connection to the OpenAI service and Codex client is working normally. Time to get back to your VibeCoding work!",
+    connectionAcknowledge: "Got it",
     subscriptionTitle: "Subscription details",
     subscriptionPlanLabel: "Current plan",
     subscriptionAssistedDays: "Your subscription has assisted development on {count} days",
@@ -213,11 +237,6 @@ const i18n = {
     subscriptionTimeUnavailable: "Codex has not provided subscription timing",
     subscriptionExactNote: "The expiry time comes from the local Codex subscription claim.",
     subscriptionProjectedNote: "Codex currently exposes the previous billing period, so this is projected using its monthly cycle. Check your subscription platform for the final renewal time.",
-    offlineTitle: "Codex is offline",
-    offlineMessage: "If you are in mainland China, enable your VPN and check your network and Codex sign-in.",
-    notInstalled: "Codex was not found. Install and sign in to Codex first.",
-    notLoggedIn: "Codex is not signed in. Sign in through Codex first.",
-    timeout: "Codex timed out. Check your VPN and network connection.",
     fiveHour: "5-hour quota",
     weekly: "Weekly quota",
     remaining: "Remaining",
@@ -312,28 +331,31 @@ const i18n = {
     modelCostRequests: "{count} calls",
     modelCostCacheWrite: "Cache writes {tokens}",
     modelCostLongContext: "{count} long-context calls use official multipliers",
-    activeTasksTitle: "Active tasks",
-    activeTaskDetailsLabel: "View active task details",
+    activeTasksTitle: "Codex tasks",
+    activeTaskDetailsLabel: "View task details",
     activeTaskRunningCount: "{count} tasks running",
-    activeTaskNone: "No active tasks",
+    activeTaskNone: "No active or unconfirmed tasks",
     activeTaskUnavailable: "Task status unavailable",
     activeTaskProjectFallback: "Unnamed project",
     activeTaskProjectsMore: "{project} + {count} more",
     activeTaskElapsedLabel: "Elapsed",
     activeTaskRunningStatus: "Running",
     activeTaskRunningMetric: "Running",
-    activeTaskLongestLabel: "Longest",
-    activeTaskTotalCostLabel: "API equivalent",
+    activeTaskLongestLabel: "Longest ever",
+    activeTaskTotalCostLabel: "Highest cost",
     activeTaskMore: "{count} more",
     activeTaskCostLabel: "API equivalent",
     activeTaskTimeLabel: "Time spent",
     activeTaskModelsLabel: "Models",
     activeTaskUnpriced: "Includes unpriced models",
     activeTaskPartialCost: "Only the readable portion is counted",
-    activeTaskDetailsHint: "Estimated from current local Codex turn Token usage and standard API prices; this is not an actual Codex subscription charge.",
-    activeTaskDetailCount: "{count} active tasks",
-    activeTaskLongest: "Longest running {time}",
-    activeTaskEmptyDetail: "No Codex tasks are currently running",
+    activeTaskDetailsHint: "Completed tasks stay here until confirmed or returned to Codex. Longest duration and highest API-equivalent cost are saved permanently.",
+    activeTaskDetailCount: "{count} running · {completed} to review",
+    activeTaskLongest: "Longest ever {time} · Highest cost {cost}",
+    activeTaskEmptyDetail: "No active or unconfirmed Codex tasks",
+    activeTaskCompletedStatus: "Completed",
+    activeTaskReturnCodex: "Return to Codex",
+    activeTaskConfirm: "Confirm",
     tokenUnavailable: "Unavailable",
     openTokenUsage: "View token usage trend",
     tokenPeriodGroup: "Aggregation period",
@@ -381,7 +403,9 @@ const i18n = {
 };
 
 const elements = Object.fromEntries([
-  "app", "connectionStrip", "connectionLabel", "statusDot", "offlineNotice", "offlineMessage",
+  "app", "connectionStrip", "connectionLabel", "connectionStatusButton", "statusDot",
+  "connectionStatusModal", "connectionStatusTitle", "connectionStatusMessage",
+  "connectionIssueList", "connectionStatusDone",
   "languageButton", "refreshButton", "pinButton", "collapseButton", "minimizeButton", "closeButton", "titlebar",
   "quotaSection", "statusSection",
   "backgroundButton", "backgroundPopover", "backgroundClose", "chooseBackground", "clearBackground",
@@ -440,10 +464,18 @@ let tokenChartAnimationFrame = null;
 let tokenChartAnimationActive = false;
 let tokenChartHoverIndex = null;
 let activeTasks = [];
+let completedTasks = [];
+const dismissedCompletedTaskIds = new Set();
 let activeTasksAvailable = false;
 let activeTaskObservedAt = null;
+let activeTaskRecords = {
+  longestElapsedSeconds: 0,
+  highestEstimatedCostUsd: 0
+};
 let activeTaskTimer = null;
 let subscriptionTimer = null;
+let connectionState = "checking";
+let automaticOfflineAlertShown = false;
 
 const TOKEN_CHART_PADDING = Object.freeze({ left: 43, right: 13, top: 17, bottom: 28 });
 const SECONDARY_DIALOG_SELECTOR = [
@@ -452,6 +484,7 @@ const SECONDARY_DIALOG_SELECTOR = [
   ".history-dialog",
   ".token-dialog",
   ".cost-dialog",
+  ".connection-dialog",
   ".task-dialog"
 ].join(",");
 const SECONDARY_MODAL_ENTER_FALLBACK_MS = 460;
@@ -562,6 +595,8 @@ function applyLanguage() {
   elements.languageButton.title = t("switchLanguage");
   elements.languageButton.setAttribute("aria-label", t("switchLanguage"));
   elements.connectionLabel.setAttribute("aria-label", t("openSubscription"));
+  elements.connectionStatusButton.title = t("openConnectionStatus");
+  elements.connectionStatusButton.setAttribute("aria-label", t("openConnectionStatus"));
   elements.refreshButton.title = t("refreshNow");
   elements.refreshButton.setAttribute("aria-label", t("refreshNow"));
   elements.quotaSection.setAttribute("aria-label", t("quotaRegion"));
@@ -1658,12 +1693,77 @@ function appendActiveTaskStat(container, label, value, elapsedIndex = null) {
   container.append(item);
 }
 
-function renderActiveTaskClock() {
-  if (!activeTasksAvailable || !activeTasks.length) return;
-  elements.activeTaskElapsed.textContent = formatTaskDuration(getTaskElapsedSeconds(activeTasks[0]));
+function activeTaskIdentity(task) {
+  if (typeof task?.id === "string" && task.id) return `id:${task.id}`;
+  return `fallback:${Number(task?.startedAt) || 0}:${String(task?.projectName || "")}`;
+}
+
+function normalizeActiveTaskRecords(value = {}) {
+  return {
+    longestElapsedSeconds: Number.isFinite(value.longestElapsedSeconds)
+      ? Math.max(0, Math.floor(value.longestElapsedSeconds))
+      : 0,
+    highestEstimatedCostUsd: Number.isFinite(value.highestEstimatedCostUsd)
+      ? Math.max(0, value.highestEstimatedCostUsd)
+      : 0
+  };
+}
+
+function mergeCompletedTasks(incoming = []) {
+  const activeIdentities = new Set(activeTasks.map(activeTaskIdentity));
+  completedTasks = completedTasks.filter(task => !activeIdentities.has(activeTaskIdentity(task)));
+  const known = new Set(completedTasks.map(activeTaskIdentity));
+  for (const task of Array.isArray(incoming) ? incoming : []) {
+    const identity = activeTaskIdentity(task);
+    if (
+      known.has(identity) ||
+      activeIdentities.has(identity) ||
+      dismissedCompletedTaskIds.has(identity)
+    ) continue;
+    completedTasks.push({
+      ...task,
+      elapsedSeconds: Math.max(0, Math.floor(Number(task?.elapsedSeconds) || 0)),
+      completedAt: Number.isFinite(task?.completedAt) ? task.completedAt : Date.now()
+    });
+    known.add(identity);
+  }
+  completedTasks = completedTasks
+    .sort((left, right) => right.completedAt - left.completedAt)
+    .slice(0, 32);
+}
+
+function getDisplayedLongestTaskSeconds() {
+  const liveLongest = activeTasks.reduce(
+    (longest, task) => Math.max(longest, getTaskElapsedSeconds(task)),
+    0
+  );
+  return Math.max(activeTaskRecords.longestElapsedSeconds, liveLongest);
+}
+
+function getDisplayedHighestTaskCost() {
+  const visibleHighest = [...activeTasks, ...completedTasks].reduce(
+    (highest, task) => Number.isFinite(task?.estimatedCostUsd)
+      ? Math.max(highest, task.estimatedCostUsd)
+      : highest,
+    0
+  );
+  return Math.max(activeTaskRecords.highestEstimatedCostUsd, visibleHighest);
+}
+
+function renderActiveTaskRecords() {
+  const longest = getDisplayedLongestTaskSeconds();
+  const highestCost = getDisplayedHighestTaskCost();
+  elements.activeTaskElapsed.textContent = formatTaskDuration(longest);
+  elements.activeTaskTotalCost.textContent = formatUsd(highestCost);
   elements.activeTaskDetailLongest.textContent = t("activeTaskLongest", {
-    time: formatTaskDuration(getTaskElapsedSeconds(activeTasks[0]))
+    time: formatTaskDuration(longest),
+    cost: formatUsd(highestCost)
   });
+}
+
+function renderActiveTaskClock() {
+  renderActiveTaskRecords();
+  if (!activeTasksAvailable || !activeTasks.length) return;
   elements.activeTaskList.querySelectorAll("[data-task-elapsed-index]").forEach(node => {
     const task = activeTasks[Number(node.dataset.taskElapsedIndex)];
     if (task) node.textContent = formatTaskDuration(getTaskElapsedSeconds(task));
@@ -1676,21 +1776,25 @@ function renderActiveTaskClock() {
 
 function renderActiveTaskPreview() {
   elements.activeTaskPreviewList.replaceChildren();
-  elements.activeTaskPreviewList.classList.toggle("is-single", activeTasks.length === 1);
+  const previewTasks = [
+    ...activeTasks.map(task => ({ task, completed: false })),
+    ...completedTasks.map(task => ({ task, completed: true }))
+  ];
+  elements.activeTaskPreviewList.classList.toggle("is-single", previewTasks.length === 1);
 
-  if (!activeTasksAvailable || !activeTasks.length) {
+  if ((!activeTasksAvailable && !completedTasks.length) || !previewTasks.length) {
     const empty = document.createElement("div");
     empty.className = "active-task-preview-empty";
-    empty.textContent = activeTasksAvailable
+    empty.textContent = activeTasksAvailable || completedTasks.length
       ? t("activeTaskNone")
       : t("activeTaskUnavailable");
     elements.activeTaskPreviewList.append(empty);
     return;
   }
 
-  activeTasks.slice(0, 2).forEach((task, index) => {
+  previewTasks.slice(0, 2).forEach(({ task, completed }, index) => {
     const row = document.createElement("div");
-    row.className = "active-task-preview-row";
+    row.className = `active-task-preview-row${completed ? " is-completed" : ""}`;
     const dot = document.createElement("span");
     dot.className = "active-task-preview-dot";
     dot.setAttribute("aria-hidden", "true");
@@ -1701,13 +1805,17 @@ function renderActiveTaskPreview() {
     project.textContent = task.projectName || t("activeTaskProjectFallback");
     const model = document.createElement("span");
     const modelNames = getActiveTaskModelNames(task);
-    model.textContent = modelNames.length ? modelNames.slice(0, 2).join(" · ") : "—";
+    model.textContent = completed
+      ? t("activeTaskCompletedStatus")
+      : (modelNames.length ? modelNames.slice(0, 2).join(" · ") : "—");
     identity.append(project, model);
 
     const elapsed = document.createElement("strong");
     elapsed.className = "active-task-preview-elapsed";
-    elapsed.dataset.taskPreviewElapsedIndex = String(index);
-    elapsed.textContent = formatTaskDuration(getTaskElapsedSeconds(task));
+    if (!completed) elapsed.dataset.taskPreviewElapsedIndex = String(index);
+    elapsed.textContent = formatTaskDuration(
+      completed ? task.elapsedSeconds : getTaskElapsedSeconds(task)
+    );
 
     const cost = document.createElement("strong");
     cost.className = "active-task-preview-cost";
@@ -1719,19 +1827,19 @@ function renderActiveTaskPreview() {
 
 function renderActiveTaskDetails() {
   elements.activeTaskList.replaceChildren();
-  elements.activeTaskDetailCount.textContent = activeTasksAvailable
-    ? t("activeTaskDetailCount", { count: activeTasks.length })
-    : t("activeTaskUnavailable");
-  elements.activeTaskDetailLongest.textContent = activeTasks.length
-    ? t("activeTaskLongest", {
-        time: formatTaskDuration(getTaskElapsedSeconds(activeTasks[0]))
+  elements.activeTaskDetailCount.textContent = activeTasksAvailable || completedTasks.length
+    ? t("activeTaskDetailCount", {
+        count: activeTasks.length,
+        completed: completedTasks.length
       })
-    : "—";
+    : t("activeTaskUnavailable");
+  renderActiveTaskRecords();
 
-  if (!activeTasksAvailable || !activeTasks.length) {
+  if ((!activeTasksAvailable && !completedTasks.length) ||
+      (!activeTasks.length && !completedTasks.length)) {
     const empty = document.createElement("div");
     empty.className = "active-task-empty";
-    empty.textContent = activeTasksAvailable
+    empty.textContent = activeTasksAvailable || completedTasks.length
       ? t("activeTaskEmptyDetail")
       : t("activeTaskUnavailable");
     elements.activeTaskList.append(empty);
@@ -1777,6 +1885,46 @@ function renderActiveTaskDetails() {
     }
     elements.activeTaskList.append(item);
   });
+
+  completedTasks.forEach((task, index) => {
+    const item = document.createElement("article");
+    item.className = "active-task-item is-completed";
+
+    const heading = document.createElement("div");
+    heading.className = "active-task-item-heading";
+    const projectName = document.createElement("strong");
+    projectName.textContent = task.projectName || t("activeTaskProjectFallback");
+    const status = document.createElement("span");
+    status.textContent = t("activeTaskCompletedStatus");
+    heading.append(projectName, status);
+
+    const stats = document.createElement("div");
+    stats.className = "active-task-item-stats";
+    appendActiveTaskStat(
+      stats,
+      t("activeTaskTimeLabel"),
+      formatTaskDuration(task.elapsedSeconds)
+    );
+    appendActiveTaskStat(stats, t("activeTaskCostLabel"), formatActiveTaskCost(task));
+
+    const actions = document.createElement("div");
+    actions.className = "active-task-completed-actions";
+    const returnButton = document.createElement("button");
+    returnButton.className = "glass-button active-task-return";
+    returnButton.type = "button";
+    returnButton.dataset.completedTaskAction = "return";
+    returnButton.dataset.completedTaskIndex = String(index);
+    returnButton.textContent = t("activeTaskReturnCodex");
+    const confirmButton = document.createElement("button");
+    confirmButton.className = "glass-button primary active-task-confirm";
+    confirmButton.type = "button";
+    confirmButton.dataset.completedTaskAction = "confirm";
+    confirmButton.dataset.completedTaskIndex = String(index);
+    confirmButton.textContent = t("activeTaskConfirm");
+    actions.append(returnButton, confirmButton);
+    item.append(heading, stats, actions);
+    elements.activeTaskList.append(item);
+  });
 }
 
 function renderActiveTasks(result = {}) {
@@ -1784,19 +1932,22 @@ function renderActiveTasks(result = {}) {
   activeTasks = activeTasksAvailable && Array.isArray(result.tasks)
     ? result.tasks.slice().sort((left, right) => left.startedAt - right.startedAt)
     : [];
+  activeTaskRecords = normalizeActiveTaskRecords(result.records);
+  mergeCompletedTasks(result.completedTasks);
   activeTaskObservedAt = Number.isFinite(result.observedAt) ? result.observedAt : null;
 
   elements.activeTaskCard.classList.toggle("is-running", activeTasks.length > 0);
-  elements.activeTaskCard.classList.toggle("is-single-task", activeTasks.length === 1);
-  elements.activeTaskCard.classList.toggle("is-unavailable", !activeTasksAvailable);
+  elements.activeTaskCard.classList.toggle(
+    "is-single-task",
+    activeTasks.length + completedTasks.length === 1
+  );
+  elements.activeTaskCard.classList.toggle(
+    "is-unavailable",
+    !activeTasksAvailable && !completedTasks.length
+  );
   elements.activeTaskCount.textContent = activeTasksAvailable ? String(activeTasks.length) : "—";
-  elements.activeTaskElapsed.textContent = activeTasks.length
-    ? formatTaskDuration(getTaskElapsedSeconds(activeTasks[0]))
-    : "—";
-  elements.activeTaskTotalCost.textContent = activeTasksAvailable
-    ? formatActiveTaskAggregateCost(activeTasks)
-    : "—";
-  const hiddenTaskCount = Math.max(0, activeTasks.length - 2);
+  renderActiveTaskRecords();
+  const hiddenTaskCount = Math.max(0, activeTasks.length + completedTasks.length - 2);
   elements.activeTaskMoreIndicator.hidden = hiddenTaskCount === 0;
   elements.activeTaskMoreIndicator.textContent = hiddenTaskCount
     ? t("activeTaskMore", { count: hiddenTaskCount })
@@ -1816,6 +1967,28 @@ function openActiveTasks() {
 
 function closeActiveTasks() {
   closeSecondaryModal(elements.activeTaskModal, elements.activeTaskCard);
+}
+
+async function handleCompletedTaskAction(event) {
+  const button = event.target.closest("[data-completed-task-action]");
+  if (!button) return;
+  const index = Number(button.dataset.completedTaskIndex);
+  if (!Number.isInteger(index) || !completedTasks[index]) return;
+  const action = button.dataset.completedTaskAction;
+  dismissedCompletedTaskIds.add(activeTaskIdentity(completedTasks[index]));
+  completedTasks.splice(index, 1);
+  renderActiveTaskPreview();
+  renderActiveTaskDetails();
+  const hiddenTaskCount = Math.max(0, activeTasks.length + completedTasks.length - 2);
+  elements.activeTaskMoreIndicator.hidden = hiddenTaskCount === 0;
+  elements.activeTaskMoreIndicator.textContent = hiddenTaskCount
+    ? t("activeTaskMore", { count: hiddenTaskCount })
+    : "";
+  if (action === "return") {
+    try {
+      await window.codexMonitor.focusCodex();
+    } catch {}
+  }
 }
 
 function openResetCredits() {
@@ -1921,10 +2094,35 @@ function closeSubscription() {
   closeSecondaryModal(elements.subscriptionModal, elements.connectionLabel);
 }
 
+function renderConnectionStatusDialog(isOnline = connectionState === "online") {
+  elements.connectionStatusModal.classList.toggle("is-online", isOnline);
+  elements.connectionStatusModal.classList.toggle("is-offline", !isOnline);
+  elements.connectionStatusTitle.textContent = t(
+    isOnline ? "connectionOnlineTitle" : "connectionDisconnectedTitle"
+  );
+  elements.connectionStatusMessage.textContent = t(
+    isOnline ? "connectionOnlineMessage" : "connectionDisconnectedIntro"
+  );
+  elements.connectionIssueList.hidden = isOnline;
+}
+
+function openConnectionStatus() {
+  if (connectionState === "checking") return;
+  renderConnectionStatusDialog();
+  openSecondaryModal(elements.connectionStatusModal, elements.connectionStatusDone);
+}
+
+function closeConnectionStatus() {
+  closeSecondaryModal(elements.connectionStatusModal, elements.connectionStatusButton);
+}
+
 function renderOnline(snapshot) {
   const { data } = snapshot;
-  elements.app.classList.remove("is-offline-state");
+  connectionState = "online";
   elements.connectionStrip.className = "connection-strip is-online";
+  elements.connectionStatusButton.disabled = false;
+  elements.connectionStatusButton.title = t("openConnectionStatus");
+  elements.connectionStatusButton.setAttribute("aria-label", t("openConnectionStatus"));
   elements.connectionLabel.textContent = t("connected", {
     plan: formatSubscriptionPlan(data.planType)
   });
@@ -1934,7 +2132,7 @@ function renderOnline(snapshot) {
     "aria-label",
     elements.connectionLabel.disabled ? elements.connectionLabel.textContent : t("openSubscription")
   );
-  elements.offlineNotice.hidden = true;
+  if (!elements.connectionStatusModal.hidden) renderConnectionStatusDialog(true);
 
   setQuota(
     elements.fiveHourPanel,
@@ -1961,22 +2159,23 @@ function renderOnline(snapshot) {
 }
 
 function renderOffline(snapshot) {
-  elements.app.classList.add("is-offline-state");
+  connectionState = "offline";
   elements.connectionStrip.className = "connection-strip is-offline";
-  elements.connectionLabel.textContent = t("offlineTitle");
+  elements.connectionStatusButton.disabled = false;
+  elements.connectionStatusButton.title = t("openConnectionStatus");
+  elements.connectionStatusButton.setAttribute("aria-label", t("openConnectionStatus"));
+  elements.connectionLabel.textContent = t("connectionDisconnectedLabel");
   elements.connectionLabel.disabled = true;
   elements.connectionLabel.removeAttribute("title");
-  elements.connectionLabel.setAttribute("aria-label", t("offlineTitle"));
-  elements.offlineNotice.hidden = false;
-  const messageKey = {
-    CODEX_NOT_INSTALLED: "notInstalled",
-    NOT_LOGGED_IN: "notLoggedIn",
-    TIMEOUT: "timeout"
-  }[snapshot.errorCode] || "offlineMessage";
-  elements.offlineMessage.textContent = t(messageKey);
+  elements.connectionLabel.setAttribute("aria-label", t("connectionDisconnectedLabel"));
+  if (!elements.connectionStatusModal.hidden) renderConnectionStatusDialog(false);
   renderResetCredits({}, { history: snapshot.receivedResetHistory });
   renderOfficialResetHistory({ history: snapshot.officialResetHistory });
   renderClientUpdate(snapshot.clientUpdate);
+  if (!automaticOfflineAlertShown) {
+    automaticOfflineAlertShown = true;
+    openConnectionStatus();
+  }
 }
 
 function updateLastChecked() {
@@ -2161,6 +2360,11 @@ async function initialize() {
   elements.minimizeButton.addEventListener("click", () => window.codexMonitor.minimize());
   elements.closeButton.addEventListener("click", () => window.codexMonitor.hide());
   elements.refreshButton.addEventListener("click", () => refresh());
+  elements.connectionStatusButton.addEventListener("click", openConnectionStatus);
+  elements.connectionStatusDone.addEventListener("click", closeConnectionStatus);
+  elements.connectionStatusModal.addEventListener("click", event => {
+    if (event.target === elements.connectionStatusModal) closeConnectionStatus();
+  });
   elements.connectionLabel.addEventListener("click", openSubscription);
   elements.subscriptionClose.addEventListener("click", closeSubscription);
   elements.subscriptionDone.addEventListener("click", closeSubscription);
@@ -2231,6 +2435,7 @@ async function initialize() {
   });
   elements.activeTaskClose.addEventListener("click", closeActiveTasks);
   elements.activeTaskDone.addEventListener("click", closeActiveTasks);
+  elements.activeTaskList.addEventListener("click", handleCompletedTaskAction);
   elements.activeTaskModal.addEventListener("click", event => {
     if (event.target === elements.activeTaskModal) closeActiveTasks();
   });

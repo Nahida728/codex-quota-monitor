@@ -3,7 +3,10 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { version: appVersion } = require("../package.json");
-const { createQuotaStateStore } = require("./store");
+const {
+  createQuotaStateStore,
+  normalizeTaskPerformanceRecords
+} = require("./store");
 const {
   normalizeQuotaResponse,
   normalizeOfficialResetHistory,
@@ -28,6 +31,33 @@ const {
 } = require("./codex-update-service");
 
 const REQUEST_TIMEOUT_MS = 15_000;
+
+function activeTaskIdentity(task) {
+  if (typeof task?.id === "string" && task.id) return `id:${task.id}`;
+  return `fallback:${Number(task?.startedAt) || 0}:${String(task?.projectName || "")}`;
+}
+
+function updateTaskPerformanceRecords(previous, tasks, now) {
+  const records = normalizeTaskPerformanceRecords([{
+    taskPerformanceRecords: previous
+  }]);
+  let changed = false;
+  for (const task of tasks) {
+    const elapsed = Math.max(0, Math.floor(Number(task?.elapsedSeconds) || 0));
+    if (elapsed > records.longestElapsedSeconds) {
+      records.longestElapsedSeconds = elapsed;
+      records.longestRecordedAt = now;
+      changed = true;
+    }
+    const cost = Number(task?.estimatedCostUsd);
+    if (Number.isFinite(cost) && cost >= 0 && cost > records.highestEstimatedCostUsd) {
+      records.highestEstimatedCostUsd = cost;
+      records.highestCostRecordedAt = now;
+      changed = true;
+    }
+  }
+  return { records, changed };
+}
 
 class AppServerClient {
   constructor() {
@@ -168,6 +198,8 @@ class QuotaService {
     this.state = createQuotaStateStore(appStatePath);
     this.inFlight = null;
     this.activeTaskInFlight = null;
+    this.activeTaskBaselineEstablished = false;
+    this.previousActiveTasks = new Map();
   }
 
   async read() {
@@ -183,7 +215,56 @@ class QuotaService {
     this.activeTaskInFlight = Promise.resolve()
       .then(() => this.activeTaskReader?.read?.(now))
       .then(raw => normalizeActiveTaskResult(raw, now))
-      .catch(() => normalizeActiveTaskResult(null, now))
+      .then(result => {
+        const completedTasks = [];
+        if (result.available) {
+          const currentTasks = new Map(
+            result.tasks.map(task => [activeTaskIdentity(task), task])
+          );
+          if (this.activeTaskBaselineEstablished && !result.truncated) {
+            for (const [identity, previous] of this.previousActiveTasks) {
+              if (currentTasks.has(identity)) continue;
+              completedTasks.push({
+                ...previous,
+                elapsedSeconds: Math.max(
+                  Number(previous.elapsedSeconds) || 0,
+                  Math.floor(now / 1_000) - previous.startedAt
+                ),
+                completedAt: now
+              });
+            }
+          }
+          this.previousActiveTasks = result.truncated
+            ? new Map([...this.previousActiveTasks, ...currentTasks])
+            : currentTasks;
+          this.activeTaskBaselineEstablished = true;
+        }
+
+        const recordUpdate = updateTaskPerformanceRecords(
+          this.state.data.taskPerformanceRecords,
+          [...result.tasks, ...completedTasks],
+          now
+        );
+        if (recordUpdate.changed) {
+          try {
+            this.state.set(
+              "taskPerformanceRecords",
+              recordUpdate.records,
+              { forceBackup: completedTasks.length > 0 }
+            );
+          } catch {}
+        }
+        return {
+          ...result,
+          completedTasks,
+          records: recordUpdate.records
+        };
+      })
+      .catch(() => ({
+        ...normalizeActiveTaskResult(null, now),
+        completedTasks: [],
+        records: normalizeTaskPerformanceRecords([this.state.data])
+      }))
       .finally(() => {
         this.activeTaskInFlight = null;
       });
