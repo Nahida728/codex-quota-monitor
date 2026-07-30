@@ -1,6 +1,6 @@
 {
   "name": "codex-quota-monitor",
-  "version": "1.1.6",
+  "version": "1.2.0-Beta",
   "description": "A bilingual liquid-glass desktop monitor for Codex rate limits and reset credits.",
   "main": "src/main.js",
   "author": "Codex Quota Monitor",

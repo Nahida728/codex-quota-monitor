@@ -81,7 +81,7 @@ test("provides a lightweight normalized active-task probe without reading quota"
   service.dispose();
 });
 
-test("emits a completed-task handoff once and permanently keeps higher task records", async t => {
+test("emits an abnormal-interruption handoff once without extending its last known time", async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codex-task-records-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const appStatePath = path.join(directory, "quota-state.json");
@@ -108,27 +108,97 @@ test("emits a completed-task handoff once and permanently keeps higher task reco
   });
 
   const active = await service.readActiveTasks(100_000);
+  assert.equal(active.pendingTasks.length, 0);
   assert.equal(active.completedTasks.length, 0);
   assert.equal(active.records.longestElapsedSeconds, 10);
   assert.equal(active.records.highestEstimatedCostUsd, 3.25);
 
   tasks = [];
   const completed = await service.readActiveTasks(110_000);
+  assert.equal(completed.pendingTasks.length, 1);
   assert.equal(completed.completedTasks.length, 1);
   assert.equal(completed.completedTasks[0].projectName, "record-project");
-  assert.equal(completed.completedTasks[0].elapsedSeconds, 20);
-  assert.equal(completed.records.longestElapsedSeconds, 20);
+  assert.equal(completed.completedTasks[0].elapsedSeconds, 10);
+  assert.equal(completed.completedTasks[0].outcome, "abnormal-interrupted");
+  assert.equal(completed.records.longestElapsedSeconds, 10);
   assert.equal(completed.records.highestEstimatedCostUsd, 3.25);
+  assert.equal(completed.records.totalTaskCount, 1);
+  assert.equal(completed.records.timedTaskCount, 1);
+  assert.equal(completed.records.totalElapsedSeconds, 10);
+  assert.equal(completed.records.abnormalInterruptedTaskCount, 1);
 
   const adjacent = await service.readActiveTasks(115_000);
+  assert.equal(adjacent.pendingTasks.length, 0);
   assert.equal(adjacent.completedTasks.length, 0);
-  assert.equal(adjacent.records.longestElapsedSeconds, 20);
+  assert.equal(adjacent.records.longestElapsedSeconds, 10);
   assert.equal(adjacent.records.highestEstimatedCostUsd, 3.25);
 
   const persisted = JSON.parse(fs.readFileSync(appStatePath, "utf8"));
   assert.deepEqual(persisted.taskPerformanceRecords, completed.records);
   const archives = fs.readdirSync(`${appStatePath}.archive`);
   assert.ok(archives.some(name => name.endsWith(".json")));
+  service.dispose();
+});
+
+test("uses an explicit terminal event to classify a manual interruption", async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codex-task-manual-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const appStatePath = path.join(directory, "quota-state.json");
+  let phase = "active";
+  const activeTaskReader = {
+    read: async now => ({
+      available: true,
+      tasks: phase === "active" ? [{
+        id: "turn-manual",
+        projectName: "manual-project",
+        startedAt: 100,
+        estimatedCostUsd: 1.5,
+        models: []
+      }] : [],
+      terminalTasks: phase === "active" ? [] : [{
+        id: "turn-manual",
+        projectName: "manual-project",
+        startedAt: 100,
+        endedAt: 112,
+        elapsedSeconds: 12,
+        estimatedCostUsd: 1.5,
+        outcome: "manual-interrupted",
+        models: []
+      }],
+      history: phase === "active" ? null : {
+        available: true,
+        totalTaskCount: 1,
+        timedTaskCount: 1,
+        totalElapsedSeconds: 12,
+        totalEstimatedCostUsd: 1.5,
+        completedTaskCount: 0,
+        manualInterruptedTaskCount: 1,
+        abnormalInterruptedTaskCount: 0,
+        longestElapsedSeconds: 12,
+        highestEstimatedCostUsd: 1.5,
+        observedAt: now
+      },
+      count: phase === "active" ? 1 : 0,
+      observedAt: now
+    })
+  };
+  const service = new QuotaService({
+    appStatePath,
+    client: { dispose: () => {} },
+    versionDetector: { read: async () => null },
+    costUsageReader: emptyCostUsageReader,
+    activeTaskReader
+  });
+
+  await service.readActiveTasks(110_000);
+  phase = "manual";
+  const result = await service.readActiveTasks(120_000);
+
+  assert.equal(result.pendingTasks.length, 1);
+  assert.equal(result.pendingTasks[0].outcome, "manual-interrupted");
+  assert.equal(result.pendingTasks[0].elapsedSeconds, 12);
+  assert.equal(result.records.manualInterruptedTaskCount, 1);
+  assert.equal(result.records.abnormalInterruptedTaskCount, 0);
   service.dispose();
 });
 

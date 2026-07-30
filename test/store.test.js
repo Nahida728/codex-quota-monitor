@@ -75,21 +75,48 @@ test("reconciles task duration and cost records independently by their maxima", 
       longestElapsedSeconds: 900,
       longestRecordedAt: 10_000,
       highestEstimatedCostUsd: 12.5,
-      highestCostRecordedAt: 11_000
+      highestCostRecordedAt: 11_000,
+      totalTaskCount: 8,
+      timedTaskCount: 6,
+      totalElapsedSeconds: 900,
+      totalEstimatedCostUsd: 20,
+      completedTaskCount: 7,
+      manualInterruptedTaskCount: 1,
+      abnormalInterruptedTaskCount: 0,
+      historyObservedAt: 11_000,
+      historyTruncated: false
     }
   }, [{
     taskPerformanceRecords: {
       longestElapsedSeconds: 1_200,
       longestRecordedAt: 12_000,
       highestEstimatedCostUsd: 8.25,
-      highestCostRecordedAt: 13_000
+      highestCostRecordedAt: 13_000,
+      totalTaskCount: 10,
+      timedTaskCount: 9,
+      totalElapsedSeconds: 1_200,
+      totalEstimatedCostUsd: 18,
+      completedTaskCount: 8,
+      manualInterruptedTaskCount: 1,
+      abnormalInterruptedTaskCount: 1,
+      historyObservedAt: 13_000,
+      historyTruncated: true
     }
   }]);
   assert.deepEqual(reconciled.taskPerformanceRecords, {
     longestElapsedSeconds: 1_200,
     longestRecordedAt: 12_000,
     highestEstimatedCostUsd: 12.5,
-    highestCostRecordedAt: 11_000
+    highestCostRecordedAt: 11_000,
+    totalTaskCount: 10,
+    timedTaskCount: 9,
+    totalElapsedSeconds: 1_200,
+    totalEstimatedCostUsd: 20,
+    completedTaskCount: 8,
+    manualInterruptedTaskCount: 1,
+    abnormalInterruptedTaskCount: 1,
+    historyObservedAt: 13_000,
+    historyTruncated: true
   });
 });
 

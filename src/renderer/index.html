@@ -183,7 +183,6 @@
         <div class="token-stat token-cost-stat">
           <span class="token-cost-label">
             <span data-i18n="estimatedApiCostShort">API 等价金额</span>
-            <button class="token-cost-help no-drag" id="tokenCostHelp" type="button" aria-label="查看模型用量与 API 成本明细" title="查看模型用量与 API 成本明细">?</button>
           </span>
           <strong id="estimatedCostValue">--</strong>
         </div>
@@ -204,16 +203,36 @@
         </div>
         <div class="active-task-metrics">
           <div class="active-task-metric active-task-metric-count">
-            <span data-i18n="activeTaskRunningMetric">正在运行</span>
+            <span data-i18n="activeTaskRunningMetric">进行中</span>
             <strong id="activeTaskCount">--</strong>
           </div>
+          <div class="active-task-metric active-task-metric-pending">
+            <span data-i18n="activeTaskPendingMetric">待处理</span>
+            <strong id="activeTaskPending">--</strong>
+          </div>
           <div class="active-task-metric active-task-metric-longest">
-            <span data-i18n="activeTaskLongestLabel">最长</span>
+            <span data-i18n="activeTaskLongestLabel">最长耗时</span>
             <strong id="activeTaskElapsed">--</strong>
           </div>
           <div class="active-task-metric active-task-metric-cost">
-            <span data-i18n="activeTaskTotalCostLabel">API 等价</span>
+            <span data-i18n="activeTaskTotalCostLabel">最高消费</span>
             <strong id="activeTaskTotalCost">--</strong>
+          </div>
+          <div class="active-task-metric active-task-metric-average-time">
+            <span data-i18n="activeTaskAverageTimeLabel">平均时间</span>
+            <strong id="activeTaskAverageTime">--</strong>
+          </div>
+          <div class="active-task-metric active-task-metric-average-cost">
+            <span data-i18n="activeTaskAverageCostLabel">平均消费</span>
+            <strong id="activeTaskAverageCost">--</strong>
+          </div>
+          <div class="active-task-metric active-task-metric-total-count">
+            <span data-i18n="activeTaskTotalCountLabel">总任务数</span>
+            <strong id="activeTaskTotalCount">--</strong>
+          </div>
+          <div class="active-task-metric active-task-metric-total-time">
+            <span data-i18n="activeTaskTotalTimeLabel">总耗时</span>
+            <strong id="activeTaskTotalElapsed">--</strong>
           </div>
         </div>
         <div class="active-task-preview-list" id="activeTaskPreviewList" aria-live="polite"></div>
@@ -395,6 +414,17 @@
               <strong id="tokenModalLifetime">--</strong>
             </article>
             <article>
+              <span data-i18n="averageDailyTokens">日均 Token</span>
+              <strong id="tokenModalDailyAverage">--</strong>
+            </article>
+            <article>
+              <span class="stat-label">
+                <span data-i18n="averageDailyCost">日均消费</span>
+                <button class="stat-scope-help no-drag" type="button" data-stat-scope="token-daily-cost" data-stat-label-key="averageDailyCost">?</button>
+              </span>
+              <strong id="tokenModalDailyCost">--</strong>
+            </article>
+            <article>
               <span data-i18n="totalWorkDays">累计工作</span>
               <strong id="tokenModalTotalWorkDays">--</strong>
             </article>
@@ -452,14 +482,103 @@
             </div>
             <button class="popover-close" id="activeTaskClose" type="button" aria-label="关闭">×</button>
           </div>
-          <div class="active-task-detail-summary">
-            <span data-i18n="activeTaskRunningStatus">进行中</span>
-            <strong id="activeTaskDetailCount">--</strong>
-            <small id="activeTaskDetailLongest">--</small>
+          <div class="active-task-stat-grid">
+            <article>
+              <span class="stat-label">
+                <span data-i18n="activeTaskRunningMetric">进行中</span>
+                <button class="stat-scope-help no-drag" type="button" data-stat-scope="task-running" data-stat-label-key="activeTaskRunningMetric" hidden>?</button>
+              </span>
+              <strong id="activeTaskDetailRunning">--</strong>
+            </article>
+            <article>
+              <span class="stat-label">
+                <span data-i18n="activeTaskPendingMetric">待处理</span>
+                <button class="stat-scope-help no-drag" type="button" data-stat-scope="task-pending" data-stat-label-key="activeTaskPendingMetric">?</button>
+              </span>
+              <strong id="activeTaskDetailPending">--</strong>
+            </article>
+            <article>
+              <span class="stat-label">
+                <span data-i18n="activeTaskLongestLabel">最长耗时</span>
+                <button class="stat-scope-help no-drag" type="button" data-stat-scope="task-duration" data-stat-label-key="activeTaskLongestLabel">?</button>
+              </span>
+              <strong id="activeTaskDetailLongest">--</strong>
+            </article>
+            <article>
+              <span class="stat-label">
+                <span data-i18n="activeTaskTotalCostLabel">最高消费</span>
+                <button class="stat-scope-help no-drag" type="button" data-stat-scope="task-cost" data-stat-label-key="activeTaskTotalCostLabel">?</button>
+              </span>
+              <strong id="activeTaskDetailHighestCost">--</strong>
+            </article>
+            <article>
+              <span class="stat-label">
+                <span data-i18n="activeTaskAverageTimeLabel">平均时间</span>
+                <button class="stat-scope-help no-drag" type="button" data-stat-scope="task-duration" data-stat-label-key="activeTaskAverageTimeLabel">?</button>
+              </span>
+              <strong id="activeTaskDetailAverageTime">--</strong>
+            </article>
+            <article>
+              <span class="stat-label">
+                <span data-i18n="activeTaskAverageCostLabel">平均消费</span>
+                <button class="stat-scope-help no-drag" type="button" data-stat-scope="task-cost" data-stat-label-key="activeTaskAverageCostLabel">?</button>
+              </span>
+              <strong id="activeTaskDetailAverageCost">--</strong>
+            </article>
+            <article>
+              <span class="stat-label">
+                <span data-i18n="activeTaskTotalCountLabel">总任务数</span>
+                <button class="stat-scope-help no-drag" type="button" data-stat-scope="task-total-count" data-stat-label-key="activeTaskTotalCountLabel">?</button>
+              </span>
+              <strong id="activeTaskDetailTotalCount">--</strong>
+            </article>
+            <article>
+              <span class="stat-label">
+                <span data-i18n="activeTaskTotalTimeLabel">总耗时</span>
+                <button class="stat-scope-help no-drag" type="button" data-stat-scope="task-duration" data-stat-label-key="activeTaskTotalTimeLabel">?</button>
+              </span>
+              <strong id="activeTaskDetailTotalElapsed">--</strong>
+            </article>
           </div>
           <p class="active-task-explanation" data-i18n="activeTaskDetailsHint">按本机 Codex 当前回合的 Token 使用量与标准 API 价格估算，不代表 Codex 订阅实际收费。</p>
           <div class="active-task-list" id="activeTaskList" aria-live="polite"></div>
           <button class="glass-button primary active-task-done" id="activeTaskDone" type="button" data-i18n="close">关闭</button>
+        </div>
+      </section>
+
+      <section class="history-modal task-interruption-modal" id="taskInterruptionModal" hidden aria-modal="true" role="alertdialog" aria-labelledby="taskInterruptionTitle">
+        <div class="history-dialog task-interruption-dialog">
+          <div class="history-heading">
+            <div>
+              <span class="eyebrow">TASK INTERRUPTED</span>
+              <h2 id="taskInterruptionTitle" data-i18n="taskAbnormalTitle">任务异常中断</h2>
+            </div>
+          </div>
+          <div class="task-interruption-body">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3 2.8 20h18.4L12 3Z"></path>
+              <path d="M12 9v5m0 3.2v.1"></path>
+            </svg>
+            <p id="taskInterruptionMessage">--</p>
+          </div>
+          <button class="glass-button primary task-interruption-done" id="taskInterruptionDone" type="button" data-i18n="acknowledge">我已知晓</button>
+        </div>
+      </section>
+
+      <section class="history-modal stat-scope-modal" id="statScopeModal" hidden aria-modal="true" role="dialog" aria-labelledby="statScopeTitle">
+        <div class="history-dialog stat-scope-dialog">
+          <div class="history-heading">
+            <div>
+              <span class="eyebrow">DATA COVERAGE</span>
+              <h2 id="statScopeTitle">统计口径说明</h2>
+            </div>
+            <button class="popover-close" id="statScopeClose" type="button" aria-label="关闭">×</button>
+          </div>
+          <p id="statScopeMessage">--</p>
+          <div class="stat-scope-actions">
+            <button class="glass-button" id="tokenCostHelp" type="button" data-i18n="openCostDetails" hidden>查看模型用量与 API 成本明细</button>
+            <button class="glass-button primary stat-scope-done" id="statScopeDone" type="button" data-i18n="acknowledge">我已知晓</button>
+          </div>
         </div>
       </section>
 

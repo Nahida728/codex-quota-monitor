@@ -38,6 +38,8 @@ The monitor must:
 - Permanently retain observed installed-version changes and expose them as a
   clickable client update timeline.
 - Show the account lifetime Token total and cumulative days with recorded work.
+- Show daily-average Tokens and daily-average API-equivalent cost using the same
+  cumulative work-day denominator, without inventing calendar-day activity.
 - Show an animated Token usage bar chart switchable between daily, weekly, and
   monthly aggregation.
 - Make a recognized Codex subscription plan clickable and show cumulative work
@@ -49,6 +51,16 @@ The monitor must:
 - Retain a newly completed task in that detail view until the user confirms it
   or returns to Codex, and permanently retain the longest duration and highest
   single-task API-equivalent cost as monotonic records.
+- Distinguish completed, manually interrupted, and abnormally interrupted tasks;
+  stop their clocks at the last evidenced terminal point and alert once when an
+  abnormal interruption is first observed.
+- Permanently retain numeric task totals for count, elapsed time, estimated cost,
+  outcome counts, averages, longest duration, and highest single-task cost.
+- In secondary Token/task analytics only, put a clickable circular coverage
+  marker beside every statistic whose source cannot fully cover all account
+  activity. Do not add those markers to the main card. Its bilingual dialog must
+  state the exact included population, exclusions, denominator, and current
+  truncation or missing-duration limitation.
 - Report Codex online only when the local app-server can reach the OpenAI service
   and return quota data.
 - Show a localized red-glass connection dialog on the first offline detection of
@@ -289,10 +301,13 @@ Do not call a dragging change complete from static inspection. Manually verify:
 - The Token overview sits below the three status cards and opens the full chart
   dialog. The active-task card occupies the final content area below it and opens
   a scrollable concurrent-task detail view.
-- The active-task card uses its full height: one compact title row, a three-part
-  summary for running count, longest elapsed time, and aggregate API-equivalent
-  cost, then previews at most two project rows with model, elapsed time, and cost.
-  Additional tasks use a localized “more” count and remain available in details.
+- The active-task card uses its full height: one compact title row, then a
+  left/right split. The left side is a 2 × 4 data table for running, pending,
+  longest duration, highest cost, average duration, average cost, total tasks,
+  and total elapsed time. The right side previews at most two running projects
+  with model, elapsed time, and cost. Pending completed/interrupted rows live in
+  the detail dialog rather than occupying the main-card preview. Additional
+  running tasks use a localized “more” count and remain available in details.
 - Keep only one refresh control: the refresh button in the connection strip.
   The removed top-left refresh button must not return.
 - The footer and full-height active-task card remain unchanged in online and
@@ -307,6 +322,9 @@ Do not call a dragging change complete from static inspection. Manually verify:
   and readable contrast over both light and dark custom backgrounds.
 - Secondary dialogs must remain translucent enough for the user's custom
   background to stay visibly continuous behind them.
+- The task detail dialog may use nearly the full fixed window height. Give its
+  eight summary cards enough height for unbroken metric labels and values; wrap
+  only at word boundaries rather than splitting Chinese labels or English words.
 - Secondary dialogs enter and exit through one interruptible renderer-only
   opacity/translate/scale state machine, including a bounded close fallback.
   Entrance content may stagger, but all motion must honor reduced motion. Do not
@@ -546,8 +564,18 @@ client's visible “Update” button before installation. Do not regress to that
 ### Active task monitoring
 
 - A task is active only when the most recent explicit lifecycle event in its
-  rollout is `task_started`; `task_complete` excludes it immediately. Do not infer
-  active work from file modification time alone.
+  rollout is `task_started`; `task_complete` and `turn_aborted` exclude it
+  immediately. Do not infer active work from file modification time alone.
+- Classify an explicit `turn_aborted` with reason `interrupted` as a manual
+  interruption. Classify an observed active task that disappears without either
+  a normal completion or manual-interruption event as abnormal; an unfinished
+  task moved into the archive or superseded by a new task is also abnormal.
+- Use the terminal event's duration/end timestamp when present. If an active task
+  disappears without a terminal event, freeze it at its last observed elapsed
+  time; never add the next refresh interval or continue its renderer timer.
+- Show the red-glass abnormal-interruption dialog once per newly observed event.
+  Both completed and interrupted handoffs remain in the pending area until the
+  user confirms them or returns to Codex.
 - Support multiple simultaneous active rollouts and keep their timers updating
   once per second between the normal 60-second data refreshes.
 - Tail reads must remain bounded by file count, age, bytes per turn, total bytes,
@@ -561,12 +589,20 @@ client's visible “Update” button before installation. Do not regress to that
 - A completion handoff remains in renderer memory until its `Return to Codex` or
   `Confirm` action is used. `Return to Codex` must foreground only the trusted
   installed Codex Store window; both actions remove the completed entry.
-- Persist only monotonic numeric records for the longest observed single-task
-  duration and highest observed single-task API-equivalent cost. Do not persist
-  task IDs, project names, paths, models, or completion handoff entries.
-- Reconcile those records by maximum value across the primary state and archive
-  generations so a reset or older state cannot lower either record. A completed
-  task that raises a record forces an immutable archive immediately.
+- Reconstruct aggregate task history from readable rollout lifecycle and
+  Token-count records in both `.codex/sessions` and
+  `.codex/archived_sessions`, de-duplicating the same rollout identity during
+  move/copy transitions. This recovery may be bounded and must say so internally.
+- Persist only monotonic numeric records for total terminal task count, total
+  elapsed time, total API-equivalent cost, completed/manual/abnormal counts,
+  longest duration, and highest single-task cost. Do not persist task IDs,
+  project names, paths, models, or pending handoff entries.
+- Exclude legacy completions that provide neither a duration nor a completion
+  timestamp from total/average elapsed-time calculations; still include them in
+  total task and outcome counts. Never turn replay delay into task duration.
+- Reconcile those numeric records by maximum value across the primary state and
+  archive generations so a reset or older state cannot lower them. A newly
+  recovered aggregate or terminal task forces an immutable archive immediately.
 - If the monitor is always-on-top, returning to Codex may temporarily yield that
   native level. Restore the saved always-on-top preference only when the monitor
   is focused or shown again.

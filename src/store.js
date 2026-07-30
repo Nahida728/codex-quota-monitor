@@ -245,7 +245,16 @@ function normalizeTaskPerformanceRecords(states) {
     longestElapsedSeconds: 0,
     longestRecordedAt: null,
     highestEstimatedCostUsd: 0,
-    highestCostRecordedAt: null
+    highestCostRecordedAt: null,
+    totalTaskCount: 0,
+    timedTaskCount: 0,
+    totalElapsedSeconds: 0,
+    totalEstimatedCostUsd: 0,
+    completedTaskCount: 0,
+    manualInterruptedTaskCount: 0,
+    abnormalInterruptedTaskCount: 0,
+    historyObservedAt: null,
+    historyTruncated: false
   };
   for (const state of states) {
     const records = isPlainObject(state?.taskPerformanceRecords)
@@ -274,6 +283,34 @@ function normalizeTaskPerformanceRecords(states) {
     ) {
       result.highestEstimatedCostUsd = cost;
       result.highestCostRecordedAt = costRecordedAt;
+    }
+    for (const key of [
+      "totalTaskCount",
+      "timedTaskCount",
+      "totalElapsedSeconds",
+      "completedTaskCount",
+      "manualInterruptedTaskCount",
+      "abnormalInterruptedTaskCount"
+    ]) {
+      const value = Number(records[key]);
+      if (Number.isFinite(value) && value >= 0) {
+        result[key] = Math.max(result[key], Math.floor(value));
+      }
+    }
+    const totalCost = Number(records.totalEstimatedCostUsd);
+    if (Number.isFinite(totalCost) && totalCost >= 0) {
+      result.totalEstimatedCostUsd = Math.max(
+        result.totalEstimatedCostUsd,
+        totalCost
+      );
+    }
+    const historyObservedAt = normalizeDetectedAt(records.historyObservedAt);
+    if (
+      historyObservedAt &&
+      (!result.historyObservedAt || historyObservedAt > result.historyObservedAt)
+    ) {
+      result.historyObservedAt = historyObservedAt;
+      result.historyTruncated = Boolean(records.historyTruncated);
     }
   }
   return result;

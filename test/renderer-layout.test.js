@@ -53,33 +53,56 @@ test("places the expanded token overview before the active-task card", () => {
   assert.match(html, /id="lifetimeTokenValue"/);
   assert.match(html, /id="totalWorkDaysValue"/);
   assert.match(html, /id="tokenModalTotalWorkDays"/);
+  assert.match(html, /id="tokenModalDailyAverage"/);
+  assert.match(html, /id="tokenModalDailyCost"/);
   assert.match(renderer, /usage\.totalWorkDays/);
+  assert.match(renderer, /usage\.lifetimeTokens\s*\/\s*workDays/);
+  assert.match(renderer, /cost\.estimatedCostUsd\s*\/\s*workDays/);
   assert.match(html, /id="estimatedCostValue"/);
   assert.match(html, /id="tokenCostHelp"/);
-  assert.match(css, /\.token-overview\s*\{[\s\S]*?height:\s*190px/);
-  assert.match(css, /\.active-task-card\s*\{[\s\S]*?height:\s*126px/);
+  assert.match(css, /\.token-overview\s*\{[\s\S]*?height:\s*162px/);
+  assert.match(css, /\.active-task-card\s*\{[\s\S]*?height:\s*154px/);
   assert.doesNotMatch(css, /\.is-offline-state \.active-task-card/);
 });
 
-test("shows live tasks, completed handoffs, and permanent performance records", () => {
+test("shows live and pending tasks with recovered aggregate performance records", () => {
   assert.match(html, /id="activeTaskCard"/);
   assert.match(html, /id="activeTaskCount"/);
+  assert.match(html, /id="activeTaskPending"/);
   assert.match(html, /id="activeTaskElapsed"/);
   assert.match(html, /id="activeTaskTotalCost"/);
+  assert.match(html, /id="activeTaskAverageTime"/);
+  assert.match(html, /id="activeTaskAverageCost"/);
+  assert.match(html, /id="activeTaskTotalCount"/);
+  assert.match(html, /id="activeTaskTotalElapsed"/);
   assert.match(html, /id="activeTaskPreviewList"/);
   assert.match(html, /id="activeTaskMoreIndicator"/);
   assert.match(html, /id="activeTaskModal"/);
   assert.match(html, /id="activeTaskList"/);
   assert.match(renderer, /function renderActiveTasks/);
   assert.match(renderer, /function renderActiveTaskPreview/);
+  assert.match(renderer, /const previewTasks = activeTasks\.map/);
   assert.match(renderer, /function renderActiveTaskDetails/);
-  assert.match(renderer, /completedTasks\.forEach\(\(task,\s*index\)\s*=>/);
-  assert.match(renderer, /dataset\.completedTaskAction/);
+  assert.match(renderer, /pendingTasks\.forEach\(\(task,\s*index\)\s*=>/);
+  assert.match(renderer, /dataset\.pendingTaskAction/);
+  assert.match(renderer, /activeTaskManualInterruptedStatus/);
+  assert.match(renderer, /activeTaskAbnormalInterruptedStatus/);
+  assert.match(html, /id="taskInterruptionModal"/);
+  assert.match(html, /id="statScopeModal"/);
+  assert.match(html, /data-stat-scope="token-daily-cost"/);
+  assert.match(html, /data-stat-scope="task-duration"/);
+  assert.match(html, /data-stat-scope="task-cost"/);
+  assert.match(html, /data-stat-scope="task-total-count"/);
+  assert.match(renderer, /showTaskInterruptionAlert\(normalizedTask\)/);
+  assert.match(renderer, /function renderStatScopeDialog/);
+  assert.match(renderer, /activeTaskRecords\.timedTaskCount/);
   assert.match(renderer, /activeTaskReturnCodex/);
   assert.match(renderer, /activeTaskConfirm/);
   assert.match(renderer, /window\.codexMonitor\.focusCodex\(\)/);
   assert.match(renderer, /activeTaskRecords\.longestElapsedSeconds/);
   assert.match(renderer, /activeTaskRecords\.highestEstimatedCostUsd/);
+  assert.match(renderer, /activeTaskRecords\.totalTaskCount/);
+  assert.match(renderer, /activeTaskRecords\.totalElapsedSeconds/);
   assert.match(renderer, /formatActiveTaskCost\(task\)/);
   assert.match(renderer, /setInterval\(renderActiveTaskClock,\s*1_000\)/);
   assert.match(renderer, /activeTaskCard\.addEventListener\("click",\s*openActiveTasks\)/);
@@ -91,6 +114,15 @@ test("shows live tasks, completed handoffs, and permanent performance records", 
     /\.active-task-card\.is-running \.active-task-metric-longest strong\s*\{[\s\S]*?animation:\s*active-task-time-pulse/
   );
   assert.match(css, /\.active-task-preview-row\s*\{[\s\S]*?grid-template-columns:/);
+  assert.match(
+    css,
+    /\.active-task-card\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1\.03fr\)\s+minmax\(0,\s*\.97fr\)/
+  );
+  assert.match(
+    css,
+    /\.active-task-metrics\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2/
+  );
+  assert.match(css, /\.stat-scope-help\s*\{[\s\S]*?border-radius:\s*50%/);
   assert.match(css, /\.active-task-preview-list\.is-single \.active-task-preview-row/);
   assert.match(css, /\.active-task-completed-actions\s*\{[\s\S]*?grid-template-columns:/);
 });
@@ -103,9 +135,9 @@ test("shows API-equivalent cost with an independent model-detail dialog", () => 
   assert.match(renderer, /model\.cachedInputTokens/);
   assert.match(renderer, /model\.outputTokens/);
   assert.match(renderer, /model\.cacheHitRate/);
-  assert.match(renderer, /tokenCostHelp\.addEventListener\("click",\s*openTokenCost\)/);
+  assert.match(renderer, /tokenCostHelp\.addEventListener\("click",[\s\S]*?closeStatScope\(\(\)\s*=>\s*openTokenCost\(\)\)/);
   assert.match(renderer, /event\?\.stopPropagation\(\)/);
-  assert.match(css, /\.token-cost-help\s*\{[\s\S]*?border-radius:\s*50%/);
+  assert.match(css, /\.stat-scope-help\s*\{[\s\S]*?border-radius:\s*50%/);
 });
 
 test("keeps the Token Pulse brand on one line in compact and expanded layouts", () => {

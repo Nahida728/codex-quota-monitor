@@ -8,7 +8,8 @@ const {
   CodexActiveTaskReader,
   normalizeActiveTaskResult,
   normalizeProjectName,
-  summarizeActiveTaskLines
+  summarizeActiveTaskLines,
+  summarizeTaskWindow
 } = require("../src/codex-active-tasks");
 
 function taskStarted(turnId, startedAt) {
@@ -32,6 +33,21 @@ function taskComplete(turnId, startedAt, completedAt) {
       turn_id: turnId,
       started_at: startedAt,
       completed_at: completedAt
+    }
+  });
+}
+
+function turnAborted(turnId, startedAt, completedAt, reason = "interrupted") {
+  return JSON.stringify({
+    timestamp: new Date(completedAt * 1_000).toISOString(),
+    type: "event_msg",
+    payload: {
+      type: "turn_aborted",
+      turn_id: turnId,
+      started_at: startedAt,
+      completed_at: completedAt,
+      duration_ms: (completedAt - startedAt) * 1_000,
+      reason
     }
   });
 }
@@ -104,6 +120,41 @@ test("does not report a task after its matching completion event", () => {
   assert.equal(summarizeActiveTaskLines(lines, 200_000), null);
 });
 
+test("classifies an explicit interrupted turn as manual and freezes its duration", () => {
+  const summary = summarizeTaskWindow([
+    sessionMeta("C:\\work\\stopped-project"),
+    taskStarted("stopped-turn", 100),
+    turnContext("gpt-5.6-sol"),
+    tokenCount(1_000, 800, 10),
+    turnAborted("stopped-turn", 100, 125)
+  ], 300_000);
+
+  assert.equal(summary.task, null);
+  assert.equal(summary.terminalTask.outcome, "manual-interrupted");
+  assert.equal(summary.terminalTask.elapsedSeconds, 25);
+  assert.equal(summary.terminalTask.endedAt, 125);
+  assert.equal(summary.terminalTask.projectName, "stopped-project");
+});
+
+test("legacy completion replay without duration evidence does not inflate elapsed statistics", () => {
+  const summary = summarizeTaskWindow([
+    taskStarted("legacy-replayed-turn", 100),
+    JSON.stringify({
+      timestamp: new Date(200_000 * 1_000).toISOString(),
+      type: "event_msg",
+      payload: {
+        type: "task_complete",
+        turn_id: "legacy-replayed-turn"
+      }
+    })
+  ], 200_001_000);
+
+  assert.equal(summary.task, null);
+  assert.equal(summary.terminalTask.outcome, "completed");
+  assert.equal(summary.terminalTask.durationKnown, false);
+  assert.equal(summary.terminalTask.elapsedSeconds, 0);
+});
+
 test("reads multiple active rollout files as concurrent tasks", async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-active-tasks-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -169,4 +220,50 @@ test("normalizes active-task snapshots without exposing full workspace paths", (
 
   assert.equal(normalized.tasks[0].projectName, "full-path");
   assert.doesNotMatch(JSON.stringify(normalized), /private/);
+});
+
+test("recovers completed and interrupted aggregate statistics from live and archived sessions", async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-task-history-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sessionsRoot = path.join(root, "sessions");
+  const archivedRoot = path.join(root, "archived_sessions");
+  fs.mkdirSync(sessionsRoot, { recursive: true });
+  fs.mkdirSync(archivedRoot, { recursive: true });
+  const nowSeconds = Math.floor(Date.now() / 1_000);
+
+  fs.writeFileSync(path.join(sessionsRoot, "completed.jsonl"), [
+    taskStarted("done", nowSeconds - 80),
+    turnContext("gpt-5.6-sol"),
+    tokenCount(10_000, 8_000, 200),
+    taskComplete("done", nowSeconds - 80, nowSeconds - 50)
+  ].join("\n"));
+  fs.writeFileSync(path.join(sessionsRoot, "manual.jsonl"), [
+    taskStarted("manual", nowSeconds - 45),
+    turnAborted("manual", nowSeconds - 45, nowSeconds - 30)
+  ].join("\n"));
+  fs.writeFileSync(path.join(archivedRoot, "abnormal.jsonl"), [
+    taskStarted("abnormal", nowSeconds - 20)
+  ].join("\n"));
+
+  const reader = new CodexActiveTaskReader({
+    sessionsRoot,
+    archivedSessionsRoot: archivedRoot,
+    historyCacheMs: 0
+  });
+  const result = await reader.read(Date.now());
+
+  assert.equal(result.tasks.length, 0);
+  assert.equal(result.history.totalTaskCount, 3);
+  assert.equal(result.history.timedTaskCount, 3);
+  assert.equal(result.history.completedTaskCount, 1);
+  assert.equal(result.history.manualInterruptedTaskCount, 1);
+  assert.equal(result.history.abnormalInterruptedTaskCount, 1);
+  assert.ok(result.history.totalElapsedSeconds >= 45);
+  assert.ok(result.history.totalEstimatedCostUsd > 0);
+  assert.ok(result.terminalTasks.some(task => (
+    task.id === "manual" && task.outcome === "manual-interrupted"
+  )));
+  assert.ok(result.terminalTasks.some(task => (
+    task.id === "abnormal" && task.outcome === "abnormal-interrupted"
+  )));
 });

@@ -38,11 +38,104 @@ function activeTaskIdentity(task) {
   return `fallback:${Number(task?.startedAt) || 0}:${String(task?.projectName || "")}`;
 }
 
-function updateTaskPerformanceRecords(previous, tasks, now) {
+function updateTaskPerformanceRecords(
+  previous,
+  tasks,
+  now,
+  history = null,
+  newlyTerminalTasks = []
+) {
   const records = normalizeTaskPerformanceRecords([{
     taskPerformanceRecords: previous
   }]);
   let changed = false;
+  let historyChanged = false;
+
+  if (history?.available) {
+    const integerFields = [
+      "totalTaskCount",
+      "timedTaskCount",
+      "totalElapsedSeconds",
+      "completedTaskCount",
+      "manualInterruptedTaskCount",
+      "abnormalInterruptedTaskCount"
+    ];
+    for (const key of integerFields) {
+      const value = Math.max(0, Math.floor(Number(history[key]) || 0));
+      if (value > records[key]) {
+        records[key] = value;
+        changed = true;
+        historyChanged = true;
+      }
+    }
+    const totalCost = Number(history.totalEstimatedCostUsd);
+    if (
+      Number.isFinite(totalCost) &&
+      totalCost >= 0 &&
+      totalCost > records.totalEstimatedCostUsd
+    ) {
+      records.totalEstimatedCostUsd = totalCost;
+      changed = true;
+      historyChanged = true;
+    }
+    const historyLongest = Math.max(
+      0,
+      Math.floor(Number(history.longestElapsedSeconds) || 0)
+    );
+    if (historyLongest > records.longestElapsedSeconds) {
+      records.longestElapsedSeconds = historyLongest;
+      records.longestRecordedAt = now;
+      changed = true;
+      historyChanged = true;
+    }
+    const historyHighestCost = Number(history.highestEstimatedCostUsd);
+    if (
+      Number.isFinite(historyHighestCost) &&
+      historyHighestCost >= 0 &&
+      historyHighestCost > records.highestEstimatedCostUsd
+    ) {
+      records.highestEstimatedCostUsd = historyHighestCost;
+      records.highestCostRecordedAt = now;
+      changed = true;
+      historyChanged = true;
+    }
+    if (
+      Number.isFinite(history.observedAt) &&
+      (
+        !Number.isFinite(records.historyObservedAt) ||
+        history.observedAt > records.historyObservedAt
+      )
+    ) {
+      records.historyObservedAt = history.observedAt;
+      records.historyTruncated = Boolean(history.truncated);
+      changed = true;
+    }
+  }
+
+  if (!history?.available && newlyTerminalTasks.length) {
+    for (const task of newlyTerminalTasks) {
+      const elapsed = Math.max(0, Math.floor(Number(task?.elapsedSeconds) || 0));
+      const cost = Number(task?.estimatedCostUsd);
+      records.totalTaskCount += 1;
+      if (task?.durationKnown !== false) {
+        records.timedTaskCount += 1;
+        records.totalElapsedSeconds += elapsed;
+      }
+      if (Number.isFinite(cost) && cost >= 0) {
+        records.totalEstimatedCostUsd += cost;
+      }
+      if (task?.outcome === "completed") records.completedTaskCount += 1;
+      else if (task?.outcome === "manual-interrupted") {
+        records.manualInterruptedTaskCount += 1;
+      } else {
+        records.abnormalInterruptedTaskCount += 1;
+      }
+    }
+    records.historyObservedAt = now;
+    changed = true;
+    historyChanged = true;
+  }
+
   for (const task of tasks) {
     const elapsed = Math.max(0, Math.floor(Number(task?.elapsedSeconds) || 0));
     if (elapsed > records.longestElapsedSeconds) {
@@ -57,7 +150,7 @@ function updateTaskPerformanceRecords(previous, tasks, now) {
       changed = true;
     }
   }
-  return { records, changed };
+  return { records, changed, historyChanged };
 }
 
 class AppServerClient {
@@ -217,22 +310,37 @@ class QuotaService {
       .then(() => this.activeTaskReader?.read?.(now))
       .then(raw => normalizeActiveTaskResult(raw, now))
       .then(result => {
-        const completedTasks = [];
+        const pendingTasks = [];
         if (result.available) {
           const currentTasks = new Map(
             result.tasks.map(task => [activeTaskIdentity(task), task])
           );
+          const terminalTasks = new Map(
+            result.terminalTasks.map(task => [activeTaskIdentity(task), task])
+          );
           if (this.activeTaskBaselineEstablished && !result.truncated) {
             for (const [identity, previous] of this.previousActiveTasks) {
               if (currentTasks.has(identity)) continue;
-              completedTasks.push({
-                ...previous,
-                elapsedSeconds: Math.max(
-                  Number(previous.elapsedSeconds) || 0,
-                  Math.floor(now / 1_000) - previous.startedAt
-                ),
-                completedAt: now
-              });
+              const terminal = terminalTasks.get(identity);
+              const elapsedSeconds = terminal && terminal.durationKnown !== false
+                ? terminal.elapsedSeconds
+                : Math.max(0, Math.floor(Number(previous.elapsedSeconds) || 0));
+              const endedAt = terminal?.endedAt ||
+                previous.startedAt + elapsedSeconds;
+              pendingTasks.push(terminal
+                ? {
+                    ...terminal,
+                    elapsedSeconds,
+                    durationKnown: true
+                  }
+                : {
+                    ...previous,
+                    endedAt,
+                    completedAt: endedAt * 1_000,
+                    elapsedSeconds,
+                    durationKnown: true,
+                    outcome: "abnormal-interrupted"
+                  });
             }
           }
           this.previousActiveTasks = result.truncated
@@ -243,26 +351,34 @@ class QuotaService {
 
         const recordUpdate = updateTaskPerformanceRecords(
           this.state.data.taskPerformanceRecords,
-          [...result.tasks, ...completedTasks],
-          now
+          [...result.tasks, ...pendingTasks],
+          now,
+          result.history,
+          pendingTasks
         );
         if (recordUpdate.changed) {
           try {
             this.state.set(
               "taskPerformanceRecords",
               recordUpdate.records,
-              { forceBackup: completedTasks.length > 0 }
+              {
+                forceBackup: pendingTasks.length > 0 ||
+                  recordUpdate.historyChanged
+              }
             );
           } catch {}
         }
+        const { terminalTasks, history, ...publicResult } = result;
         return {
-          ...result,
-          completedTasks,
+          ...publicResult,
+          pendingTasks,
+          completedTasks: pendingTasks,
           records: recordUpdate.records
         };
       })
       .catch(() => ({
         ...normalizeActiveTaskResult(null, now),
+        pendingTasks: [],
         completedTasks: [],
         records: normalizeTaskPerformanceRecords([this.state.data])
       }))

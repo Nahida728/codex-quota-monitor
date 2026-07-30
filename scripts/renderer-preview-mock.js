@@ -13,6 +13,13 @@ const updatePending = params.get("pending") === "1";
 const updateHistoryEmpty = params.get("history") === "0";
 const activeTaskCount = Math.max(0, Number.parseInt(params.get("tasks") || "2", 10) || 0);
 const showCompletedTask = params.get("completed") === "1";
+const pendingOutcome = [
+  "completed",
+  "manual-interrupted",
+  "abnormal-interrupted"
+].includes(params.get("outcome"))
+  ? params.get("outcome")
+  : "completed";
 const previewBackground = params.get("bg") === "1"
   ? `data:image/svg+xml,${encodeURIComponent(`
       <svg xmlns="http://www.w3.org/2000/svg" width="460" height="690">
@@ -86,6 +93,7 @@ const previewCompletedTasks = showCompletedTask ? [{
   estimatedCostUsd: 4.7281,
   hasUnpricedModels: false,
   partial: false,
+  outcome: pendingOutcome,
   pricingDate: "2026-07-26",
   models: [{
     model: "gpt-5.6-sol",
@@ -215,10 +223,19 @@ const snapshot = {
     truncated: false,
     observedAt: Date.now(),
     pricingDate: "2026-07-26",
-    completedTasks: previewCompletedTasks,
+    pendingTasks: previewCompletedTasks,
     records: {
-      longestElapsedSeconds: 2_145,
-      highestEstimatedCostUsd: 4.7281
+      longestElapsedSeconds: 16_269,
+      highestEstimatedCostUsd: 27.768285,
+      totalTaskCount: 1_089,
+      timedTaskCount: 835,
+      totalElapsedSeconds: 333_770,
+      totalEstimatedCostUsd: 1_319.952693,
+      completedTaskCount: 1_028,
+      manualInterruptedTaskCount: 49,
+      abnormalInterruptedTaskCount: 12,
+      historyObservedAt: Date.now(),
+      historyTruncated: false
     }
   },
   receivedResetHistory: previewReceivedResetHistory,
