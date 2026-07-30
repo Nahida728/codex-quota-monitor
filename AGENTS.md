@@ -499,6 +499,12 @@ client's visible “Update” button before installation. Do not regress to that
 - Cache the expensive rollout scan for 15 minutes and reuse the last normalized
   persisted snapshot across restarts and temporary scan failures. Do not rescan
   multi-gigabyte rollout history every 60-second quota refresh.
+- Cost aggregation must include readable rollout files from both
+  `.codex/sessions` and `.codex/archived_sessions`. Moving a session into the
+  Codex archive must not lower the cumulative API-equivalent estimate.
+- De-duplicate the same stable rollout identity across active and archived roots
+  during move/copy transitions, preferring the more complete readable copy so a
+  session is neither double-counted nor partially replaced.
 
 ### Subscription details
 

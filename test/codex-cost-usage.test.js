@@ -1,5 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const {
   CodexCostUsageReader,
   calculateUsageCost,
@@ -205,4 +208,109 @@ test("reuses a recent persisted scan instead of repeatedly walking large rollout
   });
   assert.equal(restored.scanned, true);
   assert.equal(restored.models[0].model, "gpt-5.6-sol");
+});
+
+test("keeps archived rollout usage in the cumulative API-equivalent estimate", async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-cost-archive-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sessionsRoot = path.join(root, "sessions");
+  const archivedSessionsRoot = path.join(root, "archived_sessions");
+  fs.mkdirSync(sessionsRoot, { recursive: true });
+  fs.mkdirSync(archivedSessionsRoot, { recursive: true });
+
+  const activePath = path.join(
+    sessionsRoot,
+    "rollout-2026-07-30T10-00-00-active.jsonl"
+  );
+  const archivedPath = path.join(
+    archivedSessionsRoot,
+    "rollout-2026-07-29T10-00-00-archived.jsonl"
+  );
+  fs.writeFileSync(activePath, [
+    turnContext("gpt-5.6-sol"),
+    tokenCount({ input: 1_000_000, cached: 800_000, output: 10_000 })
+  ].join("\n"));
+  fs.writeFileSync(archivedPath, [
+    turnContext("gpt-5.5"),
+    tokenCount({ input: 2_000_000, cached: 1_500_000, output: 20_000 })
+  ].join("\n"));
+
+  const result = await new CodexCostUsageReader({
+    sessionsRoot,
+    archivedSessionsRoot,
+    cacheMs: 0
+  }).read(1_000, null);
+
+  assert.equal(result.filesScanned, 2);
+  assert.deepEqual(
+    result.models.map(model => model.model).sort(),
+    ["gpt-5.5", "gpt-5.6-sol"]
+  );
+});
+
+test("moving a rollout into the archive does not lower its recorded cost", async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-cost-move-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sessionsRoot = path.join(root, "sessions");
+  const archivedSessionsRoot = path.join(root, "archived_sessions");
+  fs.mkdirSync(sessionsRoot, { recursive: true });
+  fs.mkdirSync(archivedSessionsRoot, { recursive: true });
+
+  const filename = "rollout-2026-07-30T10-00-00-move.jsonl";
+  const activePath = path.join(sessionsRoot, filename);
+  fs.writeFileSync(activePath, [
+    turnContext("gpt-5.5"),
+    tokenCount({ input: 2_000_000, cached: 1_500_000, output: 20_000 })
+  ].join("\n"));
+
+  const reader = new CodexCostUsageReader({
+    sessionsRoot,
+    archivedSessionsRoot,
+    cacheMs: 0
+  });
+  const before = await reader.read(1_000, null);
+  fs.renameSync(activePath, path.join(archivedSessionsRoot, filename));
+  const after = await reader.read(2_000, null);
+
+  assert.equal(after.filesScanned, before.filesScanned);
+  assert.equal(after.estimatedCostUsd, before.estimatedCostUsd);
+  assert.deepEqual(after.models, before.models);
+});
+
+test("de-duplicates rollout copies and prefers the more complete readable copy", async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-cost-dedupe-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sessionsRoot = path.join(root, "sessions");
+  const archivedSessionsRoot = path.join(root, "archived_sessions");
+  fs.mkdirSync(sessionsRoot, { recursive: true });
+  fs.mkdirSync(archivedSessionsRoot, { recursive: true });
+
+  const filename = "rollout-2026-07-30T10-00-00-duplicate.jsonl";
+  const archivedContents = [
+    turnContext("gpt-5.6-sol"),
+    tokenCount({ input: 1_000_000, cached: 800_000, output: 10_000 })
+  ].join("\n");
+  const activeContents = [
+    archivedContents,
+    tokenCount({
+      input: 200_000,
+      cached: 100_000,
+      output: 5_000,
+      totalInput: 1_200_000,
+      totalCached: 900_000,
+      totalOutput: 15_000
+    })
+  ].join("\n");
+  fs.writeFileSync(path.join(sessionsRoot, filename), activeContents);
+  fs.writeFileSync(path.join(archivedSessionsRoot, filename), archivedContents);
+
+  const result = await new CodexCostUsageReader({
+    sessionsRoot,
+    archivedSessionsRoot,
+    cacheMs: 0
+  }).read(1_000, null);
+
+  assert.equal(result.filesScanned, 1);
+  assert.equal(result.models[0].requestCount, 2);
+  assert.equal(result.models[0].inputTokens, 1_200_000);
 });

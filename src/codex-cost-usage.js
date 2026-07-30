@@ -367,9 +367,19 @@ function summarizeRolloutLines(files, now = Date.now()) {
   });
 }
 
-async function listRolloutFiles(root) {
+function rolloutFileIdentity(file) {
+  return path.basename(file?.path || file?.relativePath || "").toLowerCase();
+}
+
+function preferMoreCompleteRollout(left, right) {
+  if (right.size !== left.size) return right.size > left.size ? right : left;
+  if (right.mtimeMs !== left.mtimeMs) return right.mtimeMs > left.mtimeMs ? right : left;
+  return right.path.localeCompare(left.path) < 0 ? right : left;
+}
+
+async function listRolloutFiles(roots) {
   const found = [];
-  async function visit(directory) {
+  async function visit(root, directory) {
     let entries;
     try {
       entries = await fsp.readdir(directory, { withFileTypes: true });
@@ -380,7 +390,7 @@ async function listRolloutFiles(root) {
     for (const entry of entries) {
       const candidate = path.join(directory, entry.name);
       if (entry.isDirectory()) {
-        await visit(candidate);
+        await visit(root, candidate);
       } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
         const stat = await fsp.stat(candidate);
         found.push({
@@ -392,8 +402,17 @@ async function listRolloutFiles(root) {
       }
     }
   }
-  await visit(root);
-  return found.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  for (const root of roots) await visit(root, root);
+
+  const unique = new Map();
+  for (const file of found) {
+    const identity = rolloutFileIdentity(file);
+    const existing = unique.get(identity);
+    unique.set(identity, existing ? preferMoreCompleteRollout(existing, file) : file);
+  }
+  return [...unique.values()].sort((left, right) => (
+    rolloutFileIdentity(left).localeCompare(rolloutFileIdentity(right))
+  ));
 }
 
 function selectBoundedFiles(files) {
@@ -426,8 +445,25 @@ async function scanRolloutFile(file, accumulator) {
 }
 
 class CodexCostUsageReader {
-  constructor({ sessionsRoot, cacheMs = SCAN_CACHE_MS } = {}) {
-    this.sessionsRoot = sessionsRoot || path.join(os.homedir(), ".codex", "sessions");
+  constructor({
+    sessionsRoot,
+    archivedSessionsRoot,
+    sessionRoots,
+    cacheMs = SCAN_CACHE_MS
+  } = {}) {
+    const codexRoot = path.join(os.homedir(), ".codex");
+    const primaryRoot = sessionsRoot || path.join(codexRoot, "sessions");
+    const defaultArchivedRoot = sessionsRoot
+      ? path.join(path.dirname(primaryRoot), "archived_sessions")
+      : path.join(codexRoot, "archived_sessions");
+    const configuredRoots = Array.isArray(sessionRoots) && sessionRoots.length
+      ? sessionRoots
+      : [primaryRoot, archivedSessionsRoot || defaultArchivedRoot];
+    this.sessionRoots = [...new Set(
+      configuredRoots
+        .filter(root => typeof root === "string" && root.trim())
+        .map(root => path.resolve(root))
+    )];
     this.cacheMs = cacheMs;
     this.cachedFingerprint = null;
     this.cachedResult = null;
@@ -452,10 +488,10 @@ class CodexCostUsageReader {
       }
     }
 
-    const inventory = await listRolloutFiles(this.sessionsRoot);
+    const inventory = await listRolloutFiles(this.sessionRoots);
     const bounded = selectBoundedFiles(inventory);
     const fingerprint = bounded.files
-      .map(file => `${file.relativePath}:${file.size}:${file.mtimeMs}`)
+      .map(file => `${rolloutFileIdentity(file)}:${file.size}:${file.mtimeMs}`)
       .join("|");
     if (this.cachedResult && fingerprint === this.cachedFingerprint) {
       this.cachedAt = now;
