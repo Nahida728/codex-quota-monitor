@@ -233,9 +233,19 @@ test("keeps reset details in a scrollable secondary view", () => {
   assert.match(css, /\.reset-credit-list\s*\{[\s\S]*?align-content:\s*start/);
   assert.match(html, /id="resetCreditModal"/);
   assert.match(html, /id="receivedResetHistoryList"/);
+  assert.match(html, /id="consumedResetHistoryList"/);
   assert.match(renderer, /function renderReceivedResetHistory/);
+  assert.match(renderer, /function renderConsumedResetHistory/);
+  assert.match(
+    renderer,
+    /renderResetCredits\(data\.resets,\s*data\.events\.newReset,\s*data\.events\.manualReset\)/
+  );
   assert.match(renderer, /resetCreditButton\.addEventListener\("click",\s*openResetCredits\)/);
   assert.match(css, /\.reset-detail-list\s*\{[\s\S]*?max-height:\s*186px/);
+  assert.match(
+    css,
+    /\.received-reset-history,[\s\S]*?\.consumed-reset-history\s*\{[\s\S]*?overflow:\s*auto/
+  );
   assert.doesNotMatch(renderer, /updateUsageSectionBalance/);
 });
 

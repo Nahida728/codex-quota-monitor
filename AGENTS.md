@@ -30,6 +30,9 @@ The monitor must:
 - Permanently retain newly received reset-credit history and expose it together
   with the current available-credit list in a clickable detail view.
 - distinguish a user-consumed reset credit from an official remote reset.
+- Permanently retain detected user-consumed reset-credit history and expose its
+  count, observation time, and safely identifiable credit details in the reset
+  detail view.
 - Permanently retain official-reset history and show the latest event on the card.
 - Detect both a Codex client update ready to install and a newly installed version.
 - Permanently retain observed installed-version changes and expose them as a
@@ -281,7 +284,8 @@ Do not call a dragging change complete from static inspection. Manually verify:
 - The three status cards are one row immediately below the quota row, ordered:
   available reset credits, official reset, Codex client update.
 - The available-reset card is the entry point to a secondary detail view that
-  shows both current credit details and permanent newly received history.
+  shows current credit details, permanent newly received history, and permanent
+  user-consumed history.
 - The Token overview sits below the three status cards and opens the full chart
   dialog. The active-task card occupies the final content area below it and opens
   a scrollable concurrent-task detail view.
@@ -362,10 +366,24 @@ Do not call a dragging change complete from static inspection. Manually verify:
 A user-triggered reset normally restores quota while consuming at least one
 available reset credit. If the available count decreases across the same snapshots:
 
-- classify it as a manual reset;
+- retain the first decrease only as a pending candidate and require the next
+  successful quota snapshot to keep the same or a lower available count before
+  classifying it as a manual reset;
+- discard the candidate when the next successful snapshot rebounds above the
+  candidate count, because transient incomplete/zero responses are not usage;
+- preserve any official-reset evidence from a rebounded candidate so a temporary
+  credit-count response cannot hide a genuine official reset;
 - show that it was excluded;
 - never append it to official-reset history;
 - do not let simultaneous quota recovery override the consumed-credit evidence.
+- append one permanent `consumedResetHistory` record with the observation time,
+  consumed count, before/after available counts, and exact missing credit details
+  only when both item lists are complete;
+- record a count decrease even when quota recovery does not form a complete
+  official-reset pattern, but exclude it when complete before/after details prove
+  every disappeared credit reached its expiry;
+- preserve and reconcile that history across primary state and archive
+  generations, and force an immutable archive when a new usage event is added.
 
 ### Official remote resets
 

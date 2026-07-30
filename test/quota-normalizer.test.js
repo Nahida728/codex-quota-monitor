@@ -374,6 +374,22 @@ test("does not misclassify a user-consumed reset credit as an official reset", (
   }, {
     hasBaseline: true,
     knownCreditIds: ["used", "remaining"],
+    resetCreditDetails: [
+      {
+        id: "used",
+        resetType: "codexRateLimits",
+        grantedAt: 1000,
+        expiresAt: 8000,
+        title: "Used credit"
+      },
+      {
+        id: "remaining",
+        resetType: "codexRateLimits",
+        grantedAt: 1100,
+        expiresAt: 9000,
+        title: "Remaining credit"
+      }
+    ],
     lastSnapshot: {
       windows: {
         fiveHour: { usedPercent: 65, remainingPercent: 35, resetsAt: 4000 },
@@ -383,9 +399,80 @@ test("does not misclassify a user-consumed reset credit as an official reset", (
     }
   }, 2000);
 
-  assert.equal(normalized.events.manualReset.detected, true);
+  assert.equal(normalized.events.manualReset.detected, false);
+  assert.equal(normalized.persistence.consumedResetHistory.length, 0);
+  assert.deepEqual(normalized.persistence.pendingConsumedReset, {
+    observedAt: 2000,
+    count: 1,
+    previousAvailableCount: 2,
+    availableCount: 1,
+    items: [{
+      id: "used",
+      resetType: "codexRateLimits",
+      grantedAt: 1000,
+      expiresAt: 8000,
+      title: "Used credit"
+    }],
+    detectionMode: "all-limits",
+    previousFiveHourResetAt: 4000,
+    previousWeeklyResetAt: 9000
+  });
   assert.equal(normalized.events.officialReset.detectedNow, false);
   assert.equal(normalized.events.officialReset.history.length, 0);
+
+  const confirmed = normalizeQuotaResponse({
+    rateLimits: {
+      primary: { usedPercent: 0, windowDurationMins: 10080, resetsAt: 12000 },
+      secondary: { usedPercent: 0, windowDurationMins: 300, resetsAt: 6000 }
+    },
+    rateLimitResetCredits: {
+      availableCount: 1,
+      credits: [{ id: "remaining", status: "available", resetType: "codexRateLimits" }]
+    }
+  }, normalized.persistence, 2100);
+
+  assert.equal(confirmed.events.manualReset.detected, true);
+  assert.equal(confirmed.events.manualReset.detectedAt, 2000);
+  assert.equal(confirmed.events.manualReset.count, 1);
+  assert.deepEqual(confirmed.events.manualReset.items, [{
+    id: "used",
+    resetType: "codexRateLimits",
+    grantedAt: 1000,
+    expiresAt: 8000,
+    title: "Used credit"
+  }]);
+  assert.deepEqual(confirmed.persistence.consumedResetHistory, [{
+    detectedAt: 2000,
+    count: 1,
+    previousAvailableCount: 2,
+    availableCount: 1,
+    items: [{
+      id: "used",
+      resetType: "codexRateLimits",
+      grantedAt: 1000,
+      expiresAt: 8000,
+      title: "Used credit"
+    }]
+  }]);
+  assert.equal(confirmed.persistence.pendingConsumedReset, null);
+  assert.equal(confirmed.events.officialReset.detectedNow, false);
+  assert.equal(confirmed.events.officialReset.history.length, 0);
+
+  const retained = normalizeQuotaResponse({
+    rateLimits: {
+      primary: { usedPercent: 0, windowDurationMins: 10080, resetsAt: 12000 },
+      secondary: { usedPercent: 0, windowDurationMins: 300, resetsAt: 6000 }
+    },
+    rateLimitResetCredits: {
+      availableCount: 1,
+      credits: [{ id: "remaining", status: "available", resetType: "codexRateLimits" }]
+    }
+  }, confirmed.persistence, 2200);
+  assert.equal(retained.events.manualReset.detected, false);
+  assert.deepEqual(
+    retained.events.manualReset.history,
+    confirmed.persistence.consumedResetHistory
+  );
 });
 
 test("does not misclassify a user reset while the five-hour window is disabled", () => {
@@ -409,7 +496,159 @@ test("does not misclassify a user reset while the five-hour window is disabled",
     }
   }, 2000);
 
-  assert.equal(normalized.events.manualReset.detected, true);
+  assert.equal(normalized.events.manualReset.detected, false);
+  assert.equal(normalized.persistence.consumedResetHistory.length, 0);
+  assert.equal(normalized.persistence.pendingConsumedReset.count, 1);
   assert.equal(normalized.events.officialReset.detectedNow, false);
   assert.equal(normalized.persistence.officialResetHistory.length, 0);
+
+  const confirmed = normalizeQuotaResponse({
+    rateLimits: {
+      primary: { usedPercent: 0, windowDurationMins: 10080, resetsAt: 12000 },
+      secondary: null
+    },
+    rateLimitResetCredits: {
+      availableCount: 0,
+      credits: []
+    }
+  }, normalized.persistence, 2100);
+
+  assert.equal(confirmed.events.manualReset.detected, true);
+  assert.equal(confirmed.events.manualReset.count, 1);
+  assert.deepEqual(confirmed.events.manualReset.items, []);
+  assert.equal(confirmed.persistence.consumedResetHistory.length, 1);
+  assert.equal(confirmed.events.officialReset.detectedNow, false);
+  assert.equal(confirmed.persistence.officialResetHistory.length, 0);
+});
+
+test("records a consumed reset when the available count drops without a full quota reset", () => {
+  const normalized = normalizeQuotaResponse({
+    rateLimits: {
+      primary: { usedPercent: 35, windowDurationMins: 10080, resetsAt: 12000 },
+      secondary: { usedPercent: 55, windowDurationMins: 300, resetsAt: 6000 }
+    },
+    rateLimitResetCredits: {
+      availableCount: 1,
+      credits: [{ id: "remaining", status: "available", resetType: "codexRateLimits" }]
+    }
+  }, {
+    hasBaseline: true,
+    resetCreditDetails: [
+      { id: "used", resetType: "codexRateLimits", expiresAt: 8000 },
+      { id: "remaining", resetType: "codexRateLimits", expiresAt: 9000 }
+    ],
+    lastSnapshot: {
+      windows: {
+        fiveHour: { usedPercent: 65, remainingPercent: 35, resetsAt: 4000 },
+        weekly: { usedPercent: 42, remainingPercent: 58, resetsAt: 9000 }
+      },
+      resets: { availableCount: 2 }
+    }
+  }, 2000);
+
+  assert.equal(normalized.events.manualReset.detected, false);
+  assert.equal(normalized.persistence.consumedResetHistory.length, 0);
+  assert.equal(normalized.persistence.pendingConsumedReset.count, 1);
+  assert.equal(normalized.events.officialReset.detectedNow, false);
+
+  const confirmed = normalizeQuotaResponse({
+    rateLimits: {
+      primary: { usedPercent: 35, windowDurationMins: 10080, resetsAt: 12000 },
+      secondary: { usedPercent: 55, windowDurationMins: 300, resetsAt: 6000 }
+    },
+    rateLimitResetCredits: {
+      availableCount: 1,
+      credits: [{ id: "remaining", status: "available", resetType: "codexRateLimits" }]
+    }
+  }, normalized.persistence, 2100);
+
+  assert.equal(confirmed.events.manualReset.detected, true);
+  assert.equal(confirmed.events.manualReset.count, 1);
+  assert.equal(confirmed.events.manualReset.items[0].id, "used");
+  assert.equal(confirmed.events.officialReset.detectedNow, false);
+  assert.equal(confirmed.persistence.consumedResetHistory.length, 1);
+});
+
+test("discards a transient zero credit count instead of recording nonexistent usage", () => {
+  const previousState = {
+    hasBaseline: true,
+    knownCreditIds: ["credit-1", "credit-2"],
+    resetCreditDetails: [
+      { id: "credit-1", resetType: "codexRateLimits", expiresAt: 8000 },
+      { id: "credit-2", resetType: "codexRateLimits", expiresAt: 9000 }
+    ],
+    lastSnapshot: {
+      windows: {
+        fiveHour: { usedPercent: 65, remainingPercent: 35, resetsAt: 4000 },
+        weekly: { usedPercent: 42, remainingPercent: 58, resetsAt: 9000 }
+      },
+      resets: { availableCount: 2 }
+    }
+  };
+  const transient = normalizeQuotaResponse({
+    rateLimits: {
+      primary: { usedPercent: 0, windowDurationMins: 10080, resetsAt: 12000 },
+      secondary: { usedPercent: 0, windowDurationMins: 300, resetsAt: 6000 }
+    },
+    rateLimitResetCredits: {
+      availableCount: 0,
+      credits: []
+    }
+  }, previousState, 2000);
+
+  assert.equal(transient.events.manualReset.detected, false);
+  assert.equal(transient.persistence.consumedResetHistory.length, 0);
+  assert.equal(transient.persistence.pendingConsumedReset.count, 2);
+  assert.equal(transient.events.officialReset.detectedNow, false);
+
+  const recovered = normalizeQuotaResponse({
+    rateLimits: {
+      primary: { usedPercent: 0, windowDurationMins: 10080, resetsAt: 12000 },
+      secondary: { usedPercent: 0, windowDurationMins: 300, resetsAt: 6000 }
+    },
+    rateLimitResetCredits: {
+      availableCount: 2,
+      credits: [
+        { id: "credit-1", status: "available", resetType: "codexRateLimits" },
+        { id: "credit-2", status: "available", resetType: "codexRateLimits" }
+      ]
+    }
+  }, transient.persistence, 2100);
+
+  assert.equal(recovered.events.manualReset.detected, false);
+  assert.equal(recovered.persistence.consumedResetHistory.length, 0);
+  assert.equal(recovered.persistence.pendingConsumedReset, null);
+  assert.equal(recovered.events.officialReset.detectedNow, true);
+  assert.equal(recovered.events.officialReset.latestAt, 2000);
+  assert.equal(recovered.persistence.officialResetHistory.length, 1);
+});
+
+test("does not record complete credit details that prove a natural expiry", () => {
+  const normalized = normalizeQuotaResponse({
+    rateLimits: {
+      primary: { usedPercent: 42, windowDurationMins: 10080, resetsAt: 12000 },
+      secondary: { usedPercent: 65, windowDurationMins: 300, resetsAt: 6000 }
+    },
+    rateLimitResetCredits: {
+      availableCount: 1,
+      credits: [{ id: "remaining", status: "available", resetType: "codexRateLimits" }]
+    }
+  }, {
+    hasBaseline: true,
+    resetCreditDetails: [
+      { id: "expired", resetType: "codexRateLimits", expiresAt: 2050 },
+      { id: "remaining", resetType: "codexRateLimits", expiresAt: 9000 }
+    ],
+    lastSnapshot: {
+      windows: {
+        fiveHour: { usedPercent: 65, remainingPercent: 35, resetsAt: 4000 },
+        weekly: { usedPercent: 42, remainingPercent: 58, resetsAt: 9000 }
+      },
+      resets: { availableCount: 2 }
+    }
+  }, 2000);
+
+  assert.equal(normalized.events.manualReset.detected, false);
+  assert.equal(normalized.events.manualReset.count, 0);
+  assert.deepEqual(normalized.events.manualReset.history, []);
 });

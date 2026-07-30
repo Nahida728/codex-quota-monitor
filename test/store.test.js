@@ -34,6 +34,13 @@ function durableState() {
       count: 1,
       items: [{ id: "credit-one", resetType: "codexRateLimits" }]
     }],
+    consumedResetHistory: [{
+      detectedAt: 1_200,
+      count: 1,
+      previousAvailableCount: 2,
+      availableCount: 1,
+      items: [{ id: "credit-used", resetType: "codexRateLimits" }]
+    }],
     codexClientVersion: "26.721.4979.0",
     codexClientPreviousVersion: "26.720.1000.0",
     codexClientUpdatedVersion: "26.721.4979.0",
@@ -137,6 +144,7 @@ test("restores a corrupt primary file from the newest valid archive", t => {
     now: () => now
   });
   assert.equal(recovered.data.officialResetHistory.length, 1);
+  assert.equal(recovered.data.consumedResetHistory.length, 1);
   assert.equal(recovered.data.codexClientUpdateHistory.length, 1);
   assert.equal(recovered.data.taskPerformanceRecords.longestElapsedSeconds, 1_245);
   assert.equal(recovered.data.taskPerformanceRecords.highestEstimatedCostUsd, 8.75);
@@ -174,12 +182,14 @@ test("repairs a valid but reset primary without allowing histories to go backwar
   });
   assert.equal(recovered.data.officialResetHistory.length, 1);
   assert.equal(recovered.data.receivedResetHistory.length, 1);
+  assert.equal(recovered.data.consumedResetHistory.length, 1);
   assert.equal(recovered.data.codexClientUpdateHistory.length, 1);
   assert.equal(recovered.data.taskPerformanceRecords.longestElapsedSeconds, 1_245);
   assert.equal(recovered.data.taskPerformanceRecords.highestEstimatedCostUsd, 8.75);
 
   recovered.data.officialResetHistory = [];
   recovered.data.receivedResetHistory = [];
+  recovered.data.consumedResetHistory = [];
   recovered.data.codexClientUpdateHistory = [];
   now += 61_000;
   recovered.set("lastSuccessfulAt", now);
@@ -187,11 +197,13 @@ test("repairs a valid but reset primary without allowing histories to go backwar
   const primary = readJsonObject(workspace.filePath);
   assert.equal(primary.officialResetHistory.length, 1);
   assert.equal(primary.receivedResetHistory.length, 1);
+  assert.equal(primary.consumedResetHistory.length, 1);
   assert.equal(primary.codexClientUpdateHistory.length, 1);
   for (const name of backupFiles(workspace.backupDirectory)) {
     const backup = readJsonObject(path.join(workspace.backupDirectory, name));
     assert.ok(backup);
     assert.equal(backup.officialResetHistory.length, 1);
+    assert.equal(backup.consumedResetHistory.length, 1);
     assert.equal(backup.codexClientUpdateHistory.length, 1);
   }
 });
@@ -254,6 +266,17 @@ test("backs up a newly appended permanent event immediately", t => {
     backupFiles(workspace.backupDirectory).at(-1)
   ));
   assert.equal(latest.officialResetHistory.length, 2);
+
+  now += 1_000;
+  store.data.consumedResetHistory.push({
+    detectedAt: 3_100,
+    count: 1,
+    previousAvailableCount: 1,
+    availableCount: 0,
+    items: []
+  });
+  store.set("lastSuccessfulAt", now);
+  assert.equal(backupFiles(workspace.backupDirectory).length, 3);
 });
 
 test("history protection does not block legitimate volatile state changes", t => {

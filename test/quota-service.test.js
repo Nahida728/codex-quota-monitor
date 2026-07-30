@@ -263,6 +263,56 @@ test("keeps official-reset history available while quota service is offline", as
   service.dispose();
 });
 
+test("keeps consumed reset-credit history available while quota service is offline", async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codex-quota-monitor-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const appStatePath = path.join(directory, "quota-state.json");
+  fs.writeFileSync(appStatePath, JSON.stringify({
+    consumedResetHistory: [{
+      detectedAt: 1234,
+      count: 1,
+      previousAvailableCount: 2,
+      availableCount: 1,
+      items: [{
+        id: "credit-used",
+        resetType: "codexRateLimits",
+        expiresAt: 5678,
+        title: "Full reset",
+        ignored: "must not escape"
+      }]
+    }]
+  }));
+
+  const service = new QuotaService({
+    appStatePath,
+    client: {
+      readRateLimits: async () => {
+        throw new Error("CODEX_REQUEST_TIMEOUT");
+      },
+      dispose: () => {}
+    },
+    versionDetector: { read: async () => null },
+    costUsageReader: emptyCostUsageReader,
+    activeTaskReader: emptyActiveTaskReader
+  });
+
+  const snapshot = await service.read();
+  assert.deepEqual(snapshot.consumedResetHistory, [{
+    detectedAt: 1234,
+    count: 1,
+    previousAvailableCount: 2,
+    availableCount: 1,
+    items: [{
+      id: "credit-used",
+      resetType: "codexRateLimits",
+      grantedAt: null,
+      expiresAt: 5678,
+      title: "Full reset"
+    }]
+  }]);
+  service.dispose();
+});
+
 test("returns normalized account token usage and retains it when only the usage endpoint fails", async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codex-quota-monitor-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));

@@ -10,7 +10,8 @@ const {
 const {
   normalizeQuotaResponse,
   normalizeOfficialResetHistory,
-  normalizeReceivedResetHistory
+  normalizeReceivedResetHistory,
+  normalizeConsumedResetHistory
 } = require("./quota-normalizer");
 const { normalizeTokenUsageResponse } = require("./token-usage");
 const {
@@ -327,6 +328,7 @@ class QuotaService {
         lastSuccessfulAt: checkedAt,
         data: normalized,
         receivedResetHistory: normalized.events.newReset.history,
+        consumedResetHistory: normalized.events.manualReset.history,
         tokenUsage: withoutPersistence(tokenUsage),
         tokenCost: withoutPersistence(tokenCost),
         activeTasks,
@@ -360,6 +362,7 @@ class QuotaService {
         lastSuccessfulAt: this.state.get("lastSuccessfulAt", null),
         data: null,
         receivedResetHistory: normalizeReceivedResetHistory(this.state.data),
+        consumedResetHistory: normalizeConsumedResetHistory(this.state.data),
         officialResetHistory: normalizeOfficialResetHistory(this.state.data),
         tokenUsage: withoutPersistence(tokenUsage),
         tokenCost: withoutPersistence(tokenCost),

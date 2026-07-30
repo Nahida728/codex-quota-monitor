@@ -49,9 +49,9 @@ const i18n = {
     noData: "暂无数据",
     resetCreditEyebrow: "RESET CREDITS",
     resetCreditTitle: "额度重置次数",
-    resetCreditCardHint: "点击查看列表与收到记录",
+    resetCreditCardHint: "点击查看列表、收到和使用记录",
     resetAvailableCount: "{count} 次可用",
-    resetCreditDetailsLabel: "查看重置次数列表和收到记录",
+    resetCreditDetailsLabel: "查看重置次数列表、收到和使用记录",
     availableResetListTitle: "当前可用",
     receivedResetHistoryTitle: "收到记录",
     receivedResetHistoryEmpty: "尚未检测到新收到的重置次数",
@@ -59,6 +59,12 @@ const i18n = {
     receivedResetEntry: "收到 {count} 次重置额度",
     receivedResetLegacy: "旧版检测到新增重置额度",
     receivedResetAt: "检测于 {time}",
+    consumedResetHistoryTitle: "使用记录",
+    consumedResetHistoryEmpty: "尚未检测到使用重置次数",
+    consumedResetHistoryCount: "共 {count} 条使用记录",
+    consumedResetEntry: "使用 {count} 次重置额度",
+    consumedResetAt: "检测于 {time}",
+    consumedResetBalance: "{before} → {after} 次可用",
     resetType: "重置类型",
     expiresAt: "最近到期",
     fullReset: "完整额度重置",
@@ -247,9 +253,9 @@ const i18n = {
     noData: "No data",
     resetCreditEyebrow: "RESET CREDITS",
     resetCreditTitle: "Available resets",
-    resetCreditCardHint: "View available resets and received history",
+    resetCreditCardHint: "View available, received, and used resets",
     resetAvailableCount: "{count} available",
-    resetCreditDetailsLabel: "View available resets and received history",
+    resetCreditDetailsLabel: "View available, received, and used reset credits",
     availableResetListTitle: "Available now",
     receivedResetHistoryTitle: "Received history",
     receivedResetHistoryEmpty: "No newly received reset credits have been detected",
@@ -257,6 +263,12 @@ const i18n = {
     receivedResetEntry: "Received {count} reset credits",
     receivedResetLegacy: "New reset credits detected by an earlier version",
     receivedResetAt: "Detected {time}",
+    consumedResetHistoryTitle: "Usage history",
+    consumedResetHistoryEmpty: "No reset-credit usage has been detected",
+    consumedResetHistoryCount: "{count} usage events",
+    consumedResetEntry: "Used {count} reset credits",
+    consumedResetAt: "Detected {time}",
+    consumedResetBalance: "{before} → {after} available",
     resetType: "Reset type",
     expiresAt: "Nearest expiry",
     fullReset: "Full reset",
@@ -416,7 +428,7 @@ const elements = Object.fromEntries([
   "weeklyPanel", "weeklyReset", "weeklyNumber", "weeklyProgress", "weeklyUsed",
   "resetCreditButton", "resetCreditIcon", "resetStatusCount", "resetCreditStatus",
   "resetCreditDetail", "resetCreditModal", "resetCreditClose", "resetCreditDone",
-  "resetDetailCount", "resetCreditList", "receivedResetHistoryList",
+  "resetDetailCount", "resetCreditList", "receivedResetHistoryList", "consumedResetHistoryList",
   "officialResetButton", "officialResetStatus", "officialResetCheck", "officialResetHistoryModal",
   "officialResetHistoryClose", "officialResetHistoryDone", "officialResetHistoryList",
   "clientUpdateCard", "clientUpdateStatus", "clientUpdateVersion", "clientUpdateCheck", "clientUpdateIcon",
@@ -457,6 +469,7 @@ let cropInteraction = null;
 let cropFrame = null;
 let officialResetHistory = [];
 let receivedResetHistory = [];
+let consumedResetHistory = [];
 let latestClientUpdate = {};
 let tokenPeriod = "day";
 let tokenChartSeries = [];
@@ -938,7 +951,68 @@ function renderReceivedResetHistory(history = []) {
   });
 }
 
-function renderResetCredits(resets = {}, newResetEvent = {}) {
+function renderConsumedResetHistory(history = []) {
+  consumedResetHistory = Array.isArray(history)
+    ? history
+        .filter(item => Number.isFinite(item?.detectedAt))
+        .slice()
+        .sort((a, b) => b.detectedAt - a.detectedAt)
+    : [];
+  elements.consumedResetHistoryList.replaceChildren();
+
+  if (!consumedResetHistory.length) {
+    const empty = document.createElement("div");
+    empty.className = "consumed-reset-empty";
+    empty.textContent = t("consumedResetHistoryEmpty");
+    elements.consumedResetHistoryList.append(empty);
+    return;
+  }
+
+  const count = document.createElement("div");
+  count.className = "history-count";
+  count.textContent = t("consumedResetHistoryCount", {
+    count: formatTokenCount(consumedResetHistory.length)
+  });
+  elements.consumedResetHistoryList.append(count);
+
+  consumedResetHistory.forEach(event => {
+    const row = document.createElement("article");
+    row.className = "received-reset-item consumed-reset-item";
+
+    const marker = document.createElement("span");
+    marker.className = "received-reset-marker is-consumed";
+    marker.textContent = `−${Math.max(1, Number(event.count) || 1)}`;
+
+    const copy = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = t("consumedResetEntry", {
+      count: Math.max(1, Number(event.count) || 1)
+    });
+
+    const detail = document.createElement("span");
+    const types = Array.isArray(event.items)
+      ? [...new Set(event.items.map(getResetCreditTitle).filter(Boolean))]
+      : [];
+    const balance = Number.isFinite(event.previousAvailableCount) &&
+      Number.isFinite(event.availableCount)
+      ? t("consumedResetBalance", {
+          before: event.previousAvailableCount,
+          after: event.availableCount
+        })
+      : "";
+    detail.textContent = [
+      t("consumedResetAt", { time: formatDate(event.detectedAt, true) }),
+      balance,
+      types.join(" · ")
+    ].filter(Boolean).join(" · ");
+
+    copy.append(title, detail);
+    row.append(marker, copy);
+    elements.consumedResetHistoryList.append(row);
+  });
+}
+
+function renderResetCredits(resets = {}, newResetEvent = {}, manualResetEvent = {}) {
   const hasAvailableCount = Number.isFinite(resets.availableCount);
   const availableCount = hasAvailableCount ? resets.availableCount : 0;
   const items = Array.isArray(resets.items)
@@ -965,6 +1039,7 @@ function renderResetCredits(resets = {}, newResetEvent = {}) {
     ? t("resetAvailableCount", { count: formatTokenCount(availableCount) })
     : t("noData");
   renderReceivedResetHistory(newResetEvent.history);
+  renderConsumedResetHistory(manualResetEvent.history);
   elements.resetCreditList.replaceChildren();
   elements.resetCreditList.classList.toggle("is-overflowing", renderedRowCount > 6);
   elements.resetCreditList.style.setProperty(
@@ -2152,7 +2227,7 @@ function renderOnline(snapshot) {
     data.windows.weekly
   );
 
-  renderResetCredits(data.resets, data.events.newReset);
+  renderResetCredits(data.resets, data.events.newReset, data.events.manualReset);
   renderOfficialResetHistory(data.events.officialReset, data.events.manualReset);
   renderClientUpdate(snapshot.clientUpdate);
   if (!elements.subscriptionModal.hidden) renderSubscriptionDetails();
@@ -2169,7 +2244,11 @@ function renderOffline(snapshot) {
   elements.connectionLabel.removeAttribute("title");
   elements.connectionLabel.setAttribute("aria-label", t("connectionDisconnectedLabel"));
   if (!elements.connectionStatusModal.hidden) renderConnectionStatusDialog(false);
-  renderResetCredits({}, { history: snapshot.receivedResetHistory });
+  renderResetCredits(
+    {},
+    { history: snapshot.receivedResetHistory },
+    { history: snapshot.consumedResetHistory }
+  );
   renderOfficialResetHistory({ history: snapshot.officialResetHistory });
   renderClientUpdate(snapshot.clientUpdate);
   if (!automaticOfflineAlertShown) {

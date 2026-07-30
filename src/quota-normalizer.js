@@ -208,6 +208,121 @@ function creditIdentity(item) {
   ].join(":");
 }
 
+function normalizeHistoryCredit(item) {
+  return {
+    id: item?.id ?? null,
+    resetType: typeof item?.resetType === "string" ? item.resetType : "unknown",
+    grantedAt: Number.isFinite(item?.grantedAt) ? item.grantedAt : null,
+    expiresAt: Number.isFinite(item?.expiresAt) ? item.expiresAt : null,
+    title: typeof item?.title === "string" ? item.title : null
+  };
+}
+
+function normalizeConsumedResetHistory(previousState) {
+  const rawHistory = Array.isArray(previousState?.consumedResetHistory)
+    ? previousState.consumedResetHistory
+    : [];
+  const normalized = [];
+  const seenEvents = new Set();
+
+  for (const entry of rawHistory) {
+    const detectedAt = Number.isFinite(entry?.detectedAt) ? entry.detectedAt : null;
+    if (!detectedAt || detectedAt <= 0) continue;
+    const items = Array.isArray(entry.items)
+      ? entry.items.filter(Boolean).map(normalizeHistoryCredit)
+      : [];
+    const count = Number.isFinite(entry.count)
+      ? Math.max(1, Math.floor(entry.count))
+      : Math.max(1, items.length);
+    const previousAvailableCount = Number.isFinite(entry.previousAvailableCount)
+      ? Math.max(0, Math.floor(entry.previousAvailableCount))
+      : null;
+    const availableCount = Number.isFinite(entry.availableCount)
+      ? Math.max(0, Math.floor(entry.availableCount))
+      : null;
+    const itemIds = items.map(creditIdentity).sort();
+    const eventKey = [
+      detectedAt,
+      count,
+      previousAvailableCount,
+      availableCount,
+      itemIds.join("|")
+    ].join(":");
+    if (seenEvents.has(eventKey)) continue;
+    seenEvents.add(eventKey);
+    normalized.push({
+      detectedAt,
+      count,
+      previousAvailableCount,
+      availableCount,
+      items
+    });
+  }
+
+  return normalized.sort((a, b) => a.detectedAt - b.detectedAt);
+}
+
+function normalizePendingConsumedReset(previousState) {
+  const pending = previousState?.pendingConsumedReset;
+  if (!pending || typeof pending !== "object") return null;
+
+  const observedAt = Number.isFinite(pending.observedAt) && pending.observedAt > 0
+    ? pending.observedAt
+    : null;
+  const previousAvailableCount = Number.isFinite(pending.previousAvailableCount)
+    ? Math.max(0, Math.floor(pending.previousAvailableCount))
+    : null;
+  const availableCount = Number.isFinite(pending.availableCount)
+    ? Math.max(0, Math.floor(pending.availableCount))
+    : null;
+  if (
+    !observedAt ||
+    previousAvailableCount === null ||
+    availableCount === null ||
+    availableCount >= previousAvailableCount
+  ) {
+    return null;
+  }
+
+  const detectionMode = [
+    "all-limits",
+    "weekly-only-five-hour-disabled"
+  ].includes(pending.detectionMode)
+    ? pending.detectionMode
+    : null;
+
+  return {
+    observedAt,
+    count: previousAvailableCount - availableCount,
+    previousAvailableCount,
+    availableCount,
+    items: Array.isArray(pending.items)
+      ? pending.items.filter(Boolean).map(normalizeHistoryCredit)
+      : [],
+    detectionMode,
+    previousFiveHourResetAt: Number.isFinite(pending.previousFiveHourResetAt)
+      ? pending.previousFiveHourResetAt
+      : null,
+    previousWeeklyResetAt: Number.isFinite(pending.previousWeeklyResetAt)
+      ? pending.previousWeeklyResetAt
+      : null
+  };
+}
+
+function identifyConsumedCredits(previousState, resets, consumedCount, previousResetCount) {
+  const previousItems = Array.isArray(previousState?.resetCreditDetails)
+    ? previousState.resetCreditDetails
+    : [];
+  const currentItems = Array.isArray(resets?.items) ? resets.items : [];
+  const hasCompleteComparison = previousItems.length === previousResetCount &&
+    currentItems.length === resets.availableCount;
+  if (!hasCompleteComparison) return [];
+
+  const currentIds = new Set(currentItems.map(creditIdentity));
+  const missing = previousItems.filter(item => !currentIds.has(creditIdentity(item)));
+  return missing.length === consumedCount ? missing.map(normalizeHistoryCredit) : [];
+}
+
 function deriveEvents(previousState, normalized, nowSeconds) {
   const knownIds = new Set(previousState?.knownCreditIds || []);
   const currentIds = normalized.resets.items.map(creditIdentity);
@@ -221,10 +336,85 @@ function deriveEvents(previousState, normalized, nowSeconds) {
   const previousResetCount = previousState?.lastSnapshot?.resets?.availableCount;
   const resetCreditCountDecreased = Number.isFinite(previousResetCount) &&
     normalized.resets.availableCount < previousResetCount;
+  const decreasedResetCount = resetCreditCountDecreased
+    ? previousResetCount - normalized.resets.availableCount
+    : 0;
+  const decreasedResetItems = resetCreditCountDecreased
+    ? identifyConsumedCredits(
+        previousState,
+        normalized.resets,
+        decreasedResetCount,
+        previousResetCount
+      )
+    : [];
+  const knownExpirationOnly = decreasedResetItems.length === decreasedResetCount &&
+    decreasedResetItems.every(item => (
+      Number.isFinite(item.expiresAt) && nowSeconds >= item.expiresAt - 90
+    ));
   const resetPatternMode = getOfficialResetDetectionMode(previousWindows, normalized.windows, nowSeconds);
-  const manualResetDetected = Boolean(resetPatternMode && resetCreditCountDecreased);
-  const officialResetMode = manualResetDetected ? null : resetPatternMode;
-  const officialFullReset = Boolean(officialResetMode);
+  const existingPendingConsumedReset = normalizePendingConsumedReset(previousState);
+  let pendingConsumedReset = existingPendingConsumedReset;
+  let manualResetDetected = false;
+  let consumedResetCount = 0;
+  let consumedResetItems = [];
+  let consumedResetDetectedAt = null;
+  let deferredOfficialReset = null;
+
+  if (existingPendingConsumedReset) {
+    if (normalized.resets.availableCount <= existingPendingConsumedReset.availableCount) {
+      manualResetDetected = true;
+      consumedResetCount = existingPendingConsumedReset.count;
+      consumedResetItems = existingPendingConsumedReset.items;
+      consumedResetDetectedAt = existingPendingConsumedReset.observedAt;
+    } else if (existingPendingConsumedReset.detectionMode) {
+      deferredOfficialReset = {
+        detectedAt: existingPendingConsumedReset.observedAt,
+        detectionMode: existingPendingConsumedReset.detectionMode,
+        previousFiveHourResetAt: existingPendingConsumedReset.previousFiveHourResetAt,
+        previousWeeklyResetAt: existingPendingConsumedReset.previousWeeklyResetAt
+      };
+    }
+    pendingConsumedReset = null;
+  }
+
+  const shouldStartPendingConsumedReset = Boolean(
+    resetCreditCountDecreased && !knownExpirationOnly
+  );
+  if (shouldStartPendingConsumedReset) {
+    pendingConsumedReset = {
+      observedAt: nowSeconds,
+      count: decreasedResetCount,
+      previousAvailableCount: previousResetCount,
+      availableCount: normalized.resets.availableCount,
+      items: decreasedResetItems,
+      detectionMode: resetPatternMode,
+      previousFiveHourResetAt: Number.isFinite(previousWindows.fiveHour?.resetsAt)
+        ? previousWindows.fiveHour.resetsAt
+        : null,
+      previousWeeklyResetAt: Number.isFinite(previousWindows.weekly?.resetsAt)
+        ? previousWindows.weekly.resetsAt
+        : null
+    };
+  }
+
+  const currentOfficialReset = (
+    !manualResetDetected &&
+    !shouldStartPendingConsumedReset &&
+    resetPatternMode
+  )
+    ? {
+        detectedAt: nowSeconds,
+        detectionMode: resetPatternMode,
+        previousFiveHourResetAt: Number.isFinite(previousWindows.fiveHour?.resetsAt)
+          ? previousWindows.fiveHour.resetsAt
+          : null,
+        previousWeeklyResetAt: Number.isFinite(previousWindows.weekly?.resetsAt)
+          ? previousWindows.weekly.resetsAt
+          : null
+      }
+    : null;
+  const officialResetCandidate = deferredOfficialReset || currentOfficialReset;
+  const officialFullReset = Boolean(officialResetCandidate);
 
   const lastNewResetAt = newlyGranted.length ? nowSeconds : previousState?.lastNewResetAt || null;
   const lastNewResetCount = newlyGranted.length ? newlyGranted.length : previousState?.lastNewResetCount || 0;
@@ -242,22 +432,25 @@ function deriveEvents(previousState, normalized, nowSeconds) {
       }))
     });
   }
+  const consumedResetHistory = normalizeConsumedResetHistory(previousState);
+  if (manualResetDetected) {
+    consumedResetHistory.push({
+      detectedAt: consumedResetDetectedAt,
+      count: consumedResetCount,
+      previousAvailableCount: existingPendingConsumedReset.previousAvailableCount,
+      availableCount: existingPendingConsumedReset.availableCount,
+      items: consumedResetItems
+    });
+  }
   const officialResetHistory = normalizeOfficialResetHistory(previousState);
   const lastOfficialReset = officialResetHistory.at(-1);
   const isDuplicateOfficialReset = lastOfficialReset &&
-    Math.abs(nowSeconds - lastOfficialReset.detectedAt) <= OFFICIAL_RESET_DEDUP_SECONDS;
+    officialResetCandidate &&
+    Math.abs(officialResetCandidate.detectedAt - lastOfficialReset.detectedAt) <=
+      OFFICIAL_RESET_DEDUP_SECONDS;
 
   if (officialFullReset && !isDuplicateOfficialReset) {
-    officialResetHistory.push({
-      detectedAt: nowSeconds,
-      detectionMode: officialResetMode,
-      previousFiveHourResetAt: Number.isFinite(previousWindows.fiveHour?.resetsAt)
-        ? previousWindows.fiveHour.resetsAt
-        : null,
-      previousWeeklyResetAt: Number.isFinite(previousWindows.weekly?.resetsAt)
-        ? previousWindows.weekly.resetsAt
-        : null
-    });
+    officialResetHistory.push(officialResetCandidate);
   }
 
   const officialResetAt = officialResetHistory.at(-1)?.detectedAt || null;
@@ -278,7 +471,10 @@ function deriveEvents(previousState, normalized, nowSeconds) {
     },
     manualReset: {
       detected: manualResetDetected,
-      detectedAt: manualResetDetected ? nowSeconds : null
+      detectedAt: consumedResetDetectedAt,
+      count: consumedResetCount,
+      items: consumedResetItems,
+      history: consumedResetHistory
     },
     persistence: {
       hasBaseline: true,
@@ -286,6 +482,8 @@ function deriveEvents(previousState, normalized, nowSeconds) {
       lastNewResetAt,
       lastNewResetCount,
       receivedResetHistory,
+      consumedResetHistory,
+      pendingConsumedReset,
       officialResetAt,
       officialResetHistory,
       resetCreditDetails: normalized.resets.items.length === normalized.resets.availableCount
@@ -331,6 +529,7 @@ module.exports = {
   normalizeOfficialResetHistory,
   restoreCachedCreditDetails,
   normalizeReceivedResetHistory,
+  normalizeConsumedResetHistory,
   normalizeQuotaResponse,
   didUnexpectedReset,
   didOfficialFullReset,

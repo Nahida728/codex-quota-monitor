@@ -134,6 +134,53 @@ function normalizeReceivedResetHistory(states) {
   return [...records.values()].sort((left, right) => left.detectedAt - right.detectedAt);
 }
 
+function normalizeConsumedResetHistory(states) {
+  const records = new Map();
+  for (const state of states) {
+    const history = Array.isArray(state?.consumedResetHistory)
+      ? state.consumedResetHistory
+      : [];
+    for (const value of history) {
+      const detectedAt = normalizeDetectedAt(value?.detectedAt);
+      if (!detectedAt) continue;
+      const items = Array.isArray(value.items)
+        ? value.items.filter(isPlainObject).map(item => ({ ...item }))
+        : [];
+      const count = Number.isFinite(value.count)
+        ? Math.max(1, Math.floor(value.count))
+        : Math.max(1, items.length);
+      const previousAvailableCount = Number.isFinite(value.previousAvailableCount)
+        ? Math.max(0, Math.floor(value.previousAvailableCount))
+        : null;
+      const availableCount = Number.isFinite(value.availableCount)
+        ? Math.max(0, Math.floor(value.availableCount))
+        : null;
+      const key = `${detectedAt}:${count}:${previousAvailableCount}:${availableCount}`;
+      const existing = records.get(key);
+      if (!existing) {
+        records.set(key, {
+          detectedAt,
+          count,
+          previousAvailableCount,
+          availableCount,
+          items
+        });
+        continue;
+      }
+      const identity = item => String(item.id ?? [
+        item.resetType,
+        item.grantedAt,
+        item.expiresAt,
+        item.title
+      ].join(":"));
+      const mergedItems = new Map(existing.items.map(item => [identity(item), item]));
+      for (const item of items) mergedItems.set(identity(item), item);
+      existing.items = [...mergedItems.values()];
+    }
+  }
+  return [...records.values()].sort((left, right) => left.detectedAt - right.detectedAt);
+}
+
 function normalizeVersion(value) {
   const version = String(value || "").trim();
   return /^\d+(?:\.\d+){1,5}$/.test(version) ? version : null;
@@ -238,10 +285,12 @@ function reconcileQuotaStates(primary, candidates = []) {
 
   const officialResetHistory = normalizeOfficialResetHistory(states);
   const receivedResetHistory = normalizeReceivedResetHistory(states);
+  const consumedResetHistory = normalizeConsumedResetHistory(states);
   const clientUpdateHistory = normalizeClientUpdateHistory(states);
   result.officialResetHistory = officialResetHistory;
   result.officialResetAt = officialResetHistory.at(-1)?.detectedAt || null;
   result.receivedResetHistory = receivedResetHistory;
+  result.consumedResetHistory = consumedResetHistory;
   result.codexClientUpdateHistory = clientUpdateHistory;
 
   const knownCreditIds = new Set();
@@ -323,6 +372,7 @@ function quotaHistoryFingerprint(state) {
     .update(JSON.stringify({
       officialResetHistory: normalizeOfficialResetHistory([state]),
       receivedResetHistory: normalizeReceivedResetHistory([state]),
+      consumedResetHistory: normalizeConsumedResetHistory([state]),
       codexClientUpdateHistory: normalizeClientUpdateHistory([state]),
       knownCreditIds: Array.isArray(state?.knownCreditIds)
         ? [...new Set(state.knownCreditIds)].sort()
@@ -509,6 +559,7 @@ module.exports = {
   JsonStore,
   createQuotaStateStore,
   normalizeTaskPerformanceRecords,
+  normalizeConsumedResetHistory,
   quotaHistoryFingerprint,
   readJsonObject,
   reconcileQuotaStates,
