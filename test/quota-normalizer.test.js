@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const {
   identifyWindows,
   normalizeQuotaResponse,
+  normalizeConsumedResetHistory,
   restoreCachedCreditDetails,
   didUnexpectedReset,
   didOfficialFullReset
@@ -415,7 +416,8 @@ test("does not misclassify a user-consumed reset credit as an official reset", (
     }],
     detectionMode: "all-limits",
     previousFiveHourResetAt: 4000,
-    previousWeeklyResetAt: 9000
+    previousWeeklyResetAt: 9000,
+    evidenceVersion: 2
   });
   assert.equal(normalized.events.officialReset.detectedNow, false);
   assert.equal(normalized.events.officialReset.history.length, 0);
@@ -452,7 +454,8 @@ test("does not misclassify a user-consumed reset credit as an official reset", (
       grantedAt: 1000,
       expiresAt: 8000,
       title: "Used credit"
-    }]
+    }],
+    evidenceVersion: 2
   }]);
   assert.equal(confirmed.persistence.pendingConsumedReset, null);
   assert.equal(confirmed.events.officialReset.detectedNow, false);
@@ -487,6 +490,11 @@ test("does not misclassify a user reset while the five-hour window is disabled",
     }
   }, {
     hasBaseline: true,
+    resetCreditDetails: [{
+      id: "used-weekly-only",
+      resetType: "codexRateLimits",
+      expiresAt: 8000
+    }],
     lastSnapshot: {
       windows: {
         fiveHour: null,
@@ -515,13 +523,13 @@ test("does not misclassify a user reset while the five-hour window is disabled",
 
   assert.equal(confirmed.events.manualReset.detected, true);
   assert.equal(confirmed.events.manualReset.count, 1);
-  assert.deepEqual(confirmed.events.manualReset.items, []);
+  assert.equal(confirmed.events.manualReset.items[0].id, "used-weekly-only");
   assert.equal(confirmed.persistence.consumedResetHistory.length, 1);
   assert.equal(confirmed.events.officialReset.detectedNow, false);
   assert.equal(confirmed.persistence.officialResetHistory.length, 0);
 });
 
-test("records a consumed reset when the available count drops without a full quota reset", () => {
+test("does not record a count decrease without a full quota recovery", () => {
   const normalized = normalizeQuotaResponse({
     rateLimits: {
       primary: { usedPercent: 35, windowDurationMins: 10080, resetsAt: 12000 },
@@ -548,7 +556,7 @@ test("records a consumed reset when the available count drops without a full quo
 
   assert.equal(normalized.events.manualReset.detected, false);
   assert.equal(normalized.persistence.consumedResetHistory.length, 0);
-  assert.equal(normalized.persistence.pendingConsumedReset.count, 1);
+  assert.equal(normalized.persistence.pendingConsumedReset, null);
   assert.equal(normalized.events.officialReset.detectedNow, false);
 
   const confirmed = normalizeQuotaResponse({
@@ -562,11 +570,71 @@ test("records a consumed reset when the available count drops without a full quo
     }
   }, normalized.persistence, 2100);
 
-  assert.equal(confirmed.events.manualReset.detected, true);
-  assert.equal(confirmed.events.manualReset.count, 1);
-  assert.equal(confirmed.events.manualReset.items[0].id, "used");
+  assert.equal(confirmed.events.manualReset.detected, false);
+  assert.equal(confirmed.events.manualReset.count, 0);
+  assert.deepEqual(confirmed.events.manualReset.items, []);
   assert.equal(confirmed.events.officialReset.detectedNow, false);
-  assert.equal(confirmed.persistence.consumedResetHistory.length, 1);
+  assert.equal(confirmed.persistence.consumedResetHistory.length, 0);
+});
+
+test("does not record incomplete or repeated disappearances of the same credit", () => {
+  const priorEvent = {
+    detectedAt: 1500,
+    count: 1,
+    previousAvailableCount: 1,
+    availableCount: 0,
+    items: [{ id: "same-credit", resetType: "codexRateLimits", expiresAt: 9000 }],
+    evidenceVersion: 2
+  };
+  const base = {
+    hasBaseline: true,
+    consumedResetHistory: [priorEvent],
+    resetCreditDetails: [{ id: "same-credit", resetType: "codexRateLimits", expiresAt: 9000 }],
+    lastSnapshot: {
+      windows: {
+        fiveHour: { usedPercent: 65, remainingPercent: 35, resetsAt: 4000 },
+        weekly: { usedPercent: 42, remainingPercent: 58, resetsAt: 9000 }
+      },
+      resets: { availableCount: 1 }
+    }
+  };
+  const repeated = normalizeQuotaResponse({
+    rateLimits: {
+      primary: { usedPercent: 0, windowDurationMins: 10080, resetsAt: 12000 },
+      secondary: { usedPercent: 0, windowDurationMins: 300, resetsAt: 6000 }
+    },
+    rateLimitResetCredits: { availableCount: 0, credits: [] }
+  }, base, 2000);
+  assert.equal(repeated.persistence.pendingConsumedReset, null);
+  assert.equal(repeated.persistence.consumedResetHistory.length, 1);
+  assert.equal(repeated.persistence.consumedResetHistory[0].items[0].id, "same-credit");
+
+  const incomplete = normalizeQuotaResponse({
+    rateLimits: {
+      primary: { usedPercent: 0, windowDurationMins: 10080, resetsAt: 12000 },
+      secondary: { usedPercent: 0, windowDurationMins: 300, resetsAt: 6000 }
+    },
+    rateLimitResetCredits: { availableCount: 0, credits: [] }
+  }, {
+    ...base,
+    consumedResetHistory: [],
+    resetCreditDetails: []
+  }, 2100);
+  assert.equal(incomplete.persistence.pendingConsumedReset, null);
+  assert.deepEqual(incomplete.persistence.consumedResetHistory, []);
+});
+
+test("drops legacy manual-reset records created without strong evidence", () => {
+  const normalized = normalizeConsumedResetHistory({
+    consumedResetHistory: [{
+      detectedAt: 1000,
+      count: 1,
+      previousAvailableCount: 1,
+      availableCount: 0,
+      items: [{ id: "legacy-credit" }]
+    }]
+  });
+  assert.deepEqual(normalized, []);
 });
 
 test("discards a transient zero credit count instead of recording nonexistent usage", () => {

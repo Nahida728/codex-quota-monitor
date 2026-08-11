@@ -9,13 +9,13 @@ const {
   shouldWakeForActiveTask
 } = require("../src/refresh-policy");
 
-test("refreshes every five seconds while a task is active and every minute while idle", () => {
+test("refreshes complete data every five seconds while active or idle", () => {
   assert.equal(ACTIVE_REFRESH_MS, 5_000);
   assert.equal(ACTIVE_TASK_PROBE_MS, 5_000);
-  assert.equal(IDLE_REFRESH_MS, 60_000);
+  assert.equal(IDLE_REFRESH_MS, 5_000);
   assert.equal(getRefreshDelay({ count: 2 }), 5_000);
-  assert.equal(getRefreshDelay({ count: 0 }), 60_000);
-  assert.equal(getRefreshDelay(null), 60_000);
+  assert.equal(getRefreshDelay({ count: 0 }), 5_000);
+  assert.equal(getRefreshDelay(null), 5_000);
 });
 
 test("a lightweight probe wakes the full refresh only when a new task appears", () => {

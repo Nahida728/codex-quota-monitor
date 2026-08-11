@@ -1,7 +1,5 @@
 const {
-  ACTIVE_TASK_PROBE_MS,
-  getRefreshDelay,
-  shouldWakeForActiveTask
+  getRefreshDelay
 } = window.RefreshPolicy;
 
 const i18n = {
@@ -205,8 +203,8 @@ const i18n = {
     waiting: "等待首次检测",
     checkedNow: "刚刚检测",
     checkedMinutes: "{count} 分钟前检测",
-    autoRefresh: "每 60 秒自动刷新",
-    autoRefreshActive: "任务期间每 5 秒自动刷新",
+    autoRefresh: "每 5 秒自动刷新",
+    autoRefreshActive: "每 5 秒自动刷新",
     reading: "读取 Codex 数据…",
     pinOn: "解锁位置",
     pinOff: "锁定位置",
@@ -223,6 +221,14 @@ const i18n = {
     backgroundOpacity: "背景透明度",
     backgroundTooLarge: "图片不能超过 20 MB",
     backgroundSettings: "背景设置",
+    settingsTitle: "设置",
+    settingsOpen: "打开设置",
+    languageSetting: "界面语言",
+    languageSettingHint: "切换中文或英文显示",
+    topDockSetting: "吸附屏幕顶部",
+    topDockSettingHint: "拖到顶部后自动收起，靠近箭头展开",
+    topDockToggle: "启用或关闭顶部吸附",
+    expandTopDock: "展开 Codex监测台",
     close: "关闭",
     dropBackground: "拖入图片或点击选择",
     backgroundRequirement: "图片需大于 460 × 690",
@@ -435,8 +441,8 @@ const i18n = {
     waiting: "Waiting for first check",
     checkedNow: "Checked just now",
     checkedMinutes: "Checked {count}m ago",
-    autoRefresh: "Auto-refresh every 60s",
-    autoRefreshActive: "Auto-refresh every 5s during tasks",
+    autoRefresh: "Auto-refresh every 5s",
+    autoRefreshActive: "Auto-refresh every 5s",
     reading: "Reading Codex data…",
     pinOn: "Unlock position",
     pinOff: "Lock position",
@@ -452,6 +458,14 @@ const i18n = {
     backgroundOpacity: "Background opacity",
     backgroundTooLarge: "Images must be under 20 MB",
     backgroundSettings: "Background settings",
+    settingsTitle: "Settings",
+    settingsOpen: "Open settings",
+    languageSetting: "Interface language",
+    languageSettingHint: "Switch between Chinese and English",
+    topDockSetting: "Dock to screen top",
+    topDockSettingHint: "Drag to the top to retract; approach the arrow to reveal",
+    topDockToggle: "Enable or disable top docking",
+    expandTopDock: "Reveal Codex Quota Monitor",
     close: "Close",
     dropBackground: "Drop an image or click to choose",
     backgroundRequirement: "Image must exceed 460 × 690",
@@ -472,7 +486,8 @@ const elements = Object.fromEntries([
   "connectionIssueList", "connectionStatusDone",
   "languageButton", "refreshButton", "pinButton", "collapseButton", "minimizeButton", "closeButton", "titlebar",
   "quotaSection", "statusSection",
-  "backgroundButton", "backgroundPopover", "backgroundClose", "chooseBackground", "clearBackground",
+  "settingsButton", "settingsPopover", "settingsClose", "topDockToggle",
+  "chooseBackground", "clearBackground",
   "opacitySlider", "opacityValue", "backgroundError", "customBackground", "backgroundDropZone",
   "cropModal", "cropClose", "cropCancel", "cropApply", "cropStage", "cropImage", "cropBox",
   "cropResizeHandle", "cropSourceInfo",
@@ -510,7 +525,8 @@ const elements = Object.fromEntries([
   "taskInterruptionDone",
   "statScopeModal", "statScopeTitle", "statScopeMessage", "statScopeClose",
   "statScopeDone",
-  "lastChecked", "autoRefreshLabel", "loadingLayer", "floatingOrb", "floatingOrbIcon", "floatingOrbOpen"
+  "lastChecked", "autoRefreshLabel", "loadingLayer", "floatingOrb", "floatingOrbIcon", "floatingOrbOpen",
+  "topDockTab"
 ].map(id => [id, document.getElementById(id)]));
 
 let language = "zh";
@@ -519,9 +535,13 @@ let positionLocked = false;
 let windowCollapsed = false;
 let windowModeChanging = false;
 let windowModeAnchor = { x: 358, y: 43 };
+let topDockEnabled = false;
+let topDockDocked = false;
+let topDockRetracted = false;
+let topDockLeaveTimer = null;
+let topDockRevealPending = false;
 let latestSnapshot = null;
 let refreshTimer = null;
-let activeTaskProbeTimer = null;
 let clockTimer = null;
 let isRefreshing = false;
 let backgroundDataUrl = null;
@@ -707,9 +727,12 @@ function applyLanguage() {
   elements.minimizeButton.setAttribute("aria-label", t("minimize"));
   elements.closeButton.title = t("hide");
   elements.closeButton.setAttribute("aria-label", t("hide"));
-  elements.backgroundButton.title = t("backgroundSettings");
-  elements.backgroundButton.setAttribute("aria-label", t("backgroundSettings"));
-  elements.backgroundClose.setAttribute("aria-label", t("close"));
+  elements.settingsButton.title = t("settingsOpen");
+  elements.settingsButton.setAttribute("aria-label", t("settingsOpen"));
+  elements.settingsClose.setAttribute("aria-label", t("close"));
+  elements.topDockToggle.setAttribute("aria-label", t("topDockToggle"));
+  elements.topDockTab.title = t("expandTopDock");
+  elements.topDockTab.setAttribute("aria-label", t("expandTopDock"));
   elements.cropClose.setAttribute("aria-label", t("close"));
   elements.cropResizeHandle.setAttribute("aria-label", t("cropResize"));
   elements.officialResetHistoryClose.setAttribute("aria-label", t("close"));
@@ -748,8 +771,8 @@ function applyBackground() {
 }
 
 function closeBackgroundPopover() {
-  elements.backgroundPopover.hidden = true;
-  elements.backgroundButton.classList.remove("is-active");
+  elements.settingsPopover.hidden = true;
+  elements.settingsButton.classList.remove("is-active");
 }
 
 function showBackgroundError(messageKey) {
@@ -769,7 +792,7 @@ function renderCropBox() {
 }
 
 function closeCropModal() {
-  closeSecondaryModal(elements.cropModal, elements.backgroundButton, {
+  closeSecondaryModal(elements.cropModal, elements.settingsButton, {
     onHidden() {
       elements.cropImage.removeAttribute("src");
       cropSource = null;
@@ -2574,26 +2597,19 @@ function render(snapshot) {
   updateLastChecked();
 }
 
-function scheduleNextRefresh() {
+function scheduleNextRefresh(startedAt = Date.now()) {
   clearTimeout(refreshTimer);
+  const interval = getRefreshDelay(latestSnapshot?.activeTasks);
+  const delay = Math.max(0, interval - Math.max(0, Date.now() - startedAt));
   refreshTimer = setTimeout(
     () => refresh({ silent: true }),
-    getRefreshDelay(latestSnapshot?.activeTasks)
+    delay
   );
-}
-
-async function probeForActiveTask() {
-  if (isRefreshing || latestSnapshot?.activeTasks?.count > 0) return;
-  try {
-    const status = await window.codexMonitor.readActiveTaskStatus();
-    if (shouldWakeForActiveTask(latestSnapshot?.activeTasks, status)) {
-      await refresh({ silent: true });
-    }
-  } catch {}
 }
 
 async function refresh({ initial = false, silent = false } = {}) {
   if (isRefreshing) return false;
+  const startedAt = Date.now();
   isRefreshing = true;
   clearTimeout(refreshTimer);
   refreshTimer = null;
@@ -2614,7 +2630,7 @@ async function refresh({ initial = false, silent = false } = {}) {
     isRefreshing = false;
     elements.refreshButton.classList.remove("is-spinning");
     elements.loadingLayer.classList.add("is-hidden");
-    scheduleNextRefresh();
+    scheduleNextRefresh(startedAt);
   }
   return true;
 }
@@ -2645,6 +2661,67 @@ function applyWindowModeVisual(collapsed, anchor = windowModeAnchor) {
   document.documentElement.style.setProperty("--orb-anchor-x", `${windowModeAnchor.x}px`);
   document.documentElement.style.setProperty("--orb-anchor-y", `${windowModeAnchor.y}px`);
   document.body.classList.toggle("is-window-collapsed", windowCollapsed);
+}
+
+function applyTopDockState(state = {}) {
+  topDockEnabled = state.enabled === true;
+  topDockDocked = state.docked === true;
+  topDockRetracted = state.retracted === true;
+  elements.topDockToggle.setAttribute("aria-checked", String(topDockEnabled));
+  document.body.classList.toggle("is-top-dock-retracted", topDockRetracted);
+  document.body.classList.toggle("is-top-dock-docked", topDockDocked);
+  if (topDockRetracted && Number.isSafeInteger(state.paintRequestId)) {
+    acknowledgeTopDockPaint(state.paintRequestId);
+  }
+}
+
+function acknowledgeTopDockPaint(paintRequestId) {
+  let acknowledged = false;
+  const finish = () => {
+    if (acknowledged || !topDockRetracted) return;
+    acknowledged = true;
+    clearTimeout(fallbackTimer);
+    const bounds = elements.topDockTab.getBoundingClientRect();
+    window.codexMonitor.confirmTopDockPaint(paintRequestId, {
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height
+    });
+  };
+  // requestAnimationFrame may pause while Windows is changing a transparent
+  // window's native region. The bounded timer keeps the painted tab handshake
+  // alive; the forced layout above still supplies its exact current bounds.
+  const fallbackTimer = setTimeout(finish, 96);
+  requestAnimationFrame(() => requestAnimationFrame(finish));
+}
+
+function clearTopDockLeaveTimer() {
+  if (!topDockLeaveTimer) return;
+  clearTimeout(topDockLeaveTimer);
+  topDockLeaveTimer = null;
+}
+
+function scheduleTopDockRetract() {
+  clearTopDockLeaveTimer();
+  if (!topDockEnabled || !topDockDocked || topDockRetracted || windowCollapsed) return;
+  topDockLeaveTimer = setTimeout(async () => {
+    topDockLeaveTimer = null;
+    const state = await window.codexMonitor.retractTopDock();
+    applyTopDockState(state);
+  }, 520);
+}
+
+async function revealTopDock() {
+  clearTopDockLeaveTimer();
+  if (!topDockRetracted || topDockRevealPending) return;
+  topDockRevealPending = true;
+  try {
+    const state = await window.codexMonitor.revealTopDock();
+    applyTopDockState(state);
+  } finally {
+    topDockRevealPending = false;
+  }
 }
 
 function waitForWindowModePaint() {
@@ -2699,6 +2776,9 @@ async function initialize() {
   positionLocked = settings.positionLocked;
   windowCollapsed = settings.windowCollapsed === true;
   windowModeAnchor = settings.windowModeAnchor || windowModeAnchor;
+  topDockEnabled = settings.topDockEnabled === true;
+  topDockDocked = settings.topDockDocked === true;
+  topDockRetracted = settings.topDockRetracted === true;
   if (settings.appIconDataUrl) elements.floatingOrbIcon.src = settings.appIconDataUrl;
   backgroundDataUrl = settings.backgroundDataUrl;
   backgroundOpacity = settings.backgroundOpacity;
@@ -2706,6 +2786,11 @@ async function initialize() {
   elements.app.classList.toggle("is-position-locked", positionLocked);
   document.body.classList.toggle("is-position-locked", positionLocked);
   applyWindowModeVisual(windowCollapsed, windowModeAnchor);
+  applyTopDockState({
+    enabled: topDockEnabled,
+    docked: topDockDocked,
+    retracted: topDockRetracted
+  });
   applyLanguage();
   applyBackground();
   initializeCropper();
@@ -2719,6 +2804,10 @@ async function initialize() {
     language = language === "zh" ? "en" : "zh";
     await window.codexMonitor.setLanguage(language);
     applyLanguage();
+  });
+  elements.topDockToggle.addEventListener("click", async () => {
+    const state = await window.codexMonitor.setTopDockEnabled(!topDockEnabled);
+    applyTopDockState(state);
   });
   elements.pinButton.addEventListener("click", async () => {
     positionLocked = !positionLocked;
@@ -2735,6 +2824,11 @@ async function initialize() {
     event.preventDefault();
     window.codexMonitor.beginOrbGesture();
   });
+  elements.topDockTab.addEventListener("pointerenter", revealTopDock);
+  elements.topDockTab.addEventListener("pointermove", revealTopDock);
+  elements.topDockTab.addEventListener("click", revealTopDock);
+  document.documentElement.addEventListener("pointerenter", clearTopDockLeaveTimer);
+  document.documentElement.addEventListener("pointerleave", scheduleTopDockRetract);
   elements.minimizeButton.addEventListener("click", () => window.codexMonitor.minimize());
   elements.closeButton.addEventListener("click", () => window.codexMonitor.hide());
   elements.refreshButton.addEventListener("click", () => refresh());
@@ -2842,13 +2936,13 @@ async function initialize() {
   });
   elements.tokenUsageChart.addEventListener("pointermove", updateTokenChartTooltip);
   elements.tokenUsageChart.addEventListener("pointerleave", () => hideTokenChartTooltip());
-  elements.backgroundButton.addEventListener("click", () => {
-    const shouldOpen = elements.backgroundPopover.hidden;
-    elements.backgroundPopover.hidden = !shouldOpen;
-    elements.backgroundButton.classList.toggle("is-active", shouldOpen);
+  elements.settingsButton.addEventListener("click", () => {
+    const shouldOpen = elements.settingsPopover.hidden;
+    elements.settingsPopover.hidden = !shouldOpen;
+    elements.settingsButton.classList.toggle("is-active", shouldOpen);
     elements.backgroundError.hidden = true;
   });
-  elements.backgroundClose.addEventListener("click", closeBackgroundPopover);
+  elements.settingsClose.addEventListener("click", closeBackgroundPopover);
   const chooseBackgroundFile = async () => {
     elements.backgroundError.hidden = true;
     const result = await window.codexMonitor.chooseBackground();
@@ -2912,6 +3006,8 @@ async function initialize() {
     windowModeChanging = false;
     if (!collapsed) renderTokenUsage(latestSnapshot?.tokenUsage);
   });
+  window.codexMonitor.onTopDockChanged(state => applyTopDockState(state));
+  window.codexMonitor.notifyTopDockReady();
   document.addEventListener("keydown", event => {
     if (event.key !== "Escape") return;
     if (!elements.statScopeModal.hidden) closeStatScope();
@@ -2923,10 +3019,10 @@ async function initialize() {
     else if (!elements.resetCreditModal.hidden) closeResetCredits();
     else if (!elements.clientUpdateHistoryModal.hidden) closeClientUpdateHistory();
     else if (!elements.officialResetHistoryModal.hidden) closeOfficialResetHistory();
+    else if (!elements.settingsPopover.hidden) closeBackgroundPopover();
   });
 
   await refresh({ initial: true });
-  activeTaskProbeTimer = setInterval(probeForActiveTask, ACTIVE_TASK_PROBE_MS);
   clockTimer = setInterval(() => {
     if (latestSnapshot?.online) renderOnline(latestSnapshot);
     updateLastChecked();
@@ -2938,7 +3034,7 @@ async function initialize() {
 window.addEventListener("DOMContentLoaded", initialize);
 window.addEventListener("beforeunload", () => {
   clearTimeout(refreshTimer);
-  clearInterval(activeTaskProbeTimer);
+  clearTopDockLeaveTimer();
   clearInterval(clockTimer);
   clearInterval(activeTaskTimer);
   clearInterval(subscriptionTimer);

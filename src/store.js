@@ -6,6 +6,7 @@ const MAX_STATE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_BACKUP_INTERVAL_MS = 15 * 60 * 1000;
 const DEFAULT_MAX_BACKUPS = 192;
 const MAX_BACKUP_CANDIDATES = 512;
+const MANUAL_RESET_EVIDENCE_VERSION = 2;
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -135,50 +136,50 @@ function normalizeReceivedResetHistory(states) {
 }
 
 function normalizeConsumedResetHistory(states) {
-  const records = new Map();
+  const records = [];
+  const consumedCreditIds = new Set();
   for (const state of states) {
     const history = Array.isArray(state?.consumedResetHistory)
       ? state.consumedResetHistory
       : [];
     for (const value of history) {
+      if (value?.evidenceVersion !== MANUAL_RESET_EVIDENCE_VERSION) continue;
       const detectedAt = normalizeDetectedAt(value?.detectedAt);
       if (!detectedAt) continue;
       const items = Array.isArray(value.items)
         ? value.items.filter(isPlainObject).map(item => ({ ...item }))
         : [];
-      const count = Number.isFinite(value.count)
-        ? Math.max(1, Math.floor(value.count))
-        : Math.max(1, items.length);
-      const previousAvailableCount = Number.isFinite(value.previousAvailableCount)
-        ? Math.max(0, Math.floor(value.previousAvailableCount))
-        : null;
-      const availableCount = Number.isFinite(value.availableCount)
-        ? Math.max(0, Math.floor(value.availableCount))
-        : null;
-      const key = `${detectedAt}:${count}:${previousAvailableCount}:${availableCount}`;
-      const existing = records.get(key);
-      if (!existing) {
-        records.set(key, {
-          detectedAt,
-          count,
-          previousAvailableCount,
-          availableCount,
-          items
-        });
-        continue;
-      }
       const identity = item => String(item.id ?? [
         item.resetType,
         item.grantedAt,
         item.expiresAt,
         item.title
       ].join(":"));
-      const mergedItems = new Map(existing.items.map(item => [identity(item), item]));
-      for (const item of items) mergedItems.set(identity(item), item);
-      existing.items = [...mergedItems.values()];
+      const uniqueItems = items.filter(item => {
+        const id = identity(item);
+        if (!id || consumedCreditIds.has(id)) return false;
+        consumedCreditIds.add(id);
+        return true;
+      });
+      if (!uniqueItems.length) continue;
+      const count = uniqueItems.length;
+      const previousAvailableCount = Number.isFinite(value.previousAvailableCount)
+        ? Math.max(0, Math.floor(value.previousAvailableCount))
+        : null;
+      const availableCount = Number.isFinite(value.availableCount)
+        ? Math.max(0, Math.floor(value.availableCount))
+        : null;
+      records.push({
+        detectedAt,
+        count,
+        previousAvailableCount,
+        availableCount,
+        items: uniqueItems,
+        evidenceVersion: MANUAL_RESET_EVIDENCE_VERSION
+      });
     }
   }
-  return [...records.values()].sort((left, right) => left.detectedAt - right.detectedAt);
+  return records.sort((left, right) => left.detectedAt - right.detectedAt);
 }
 
 function normalizeVersion(value) {

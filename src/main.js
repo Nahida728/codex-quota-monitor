@@ -17,11 +17,27 @@ let isWindowCollapsed = false;
 let isChangingWindowMode = false;
 let orbMoveSettledTimer = null;
 let alwaysOnTopYielded = false;
+let isTopDockEnabled = false;
+let isTopDocked = false;
+let isTopDockRetracted = false;
+let isTopDockInternalMove = false;
+let topDockInternalMoveTimer = null;
+let topDockMoveSettledTimer = null;
+let topDockPaintRequestId = 0;
+let topDockPaintWaiter = null;
+let topDockRevealGraceUntil = 0;
+let topDockTabRect = null;
 
 const APP_NAME = "Codex监测台";
 const WINDOW_WIDTH = 460;
 const WINDOW_HEIGHT = 690;
 const ORB_SIZE = 76;
+const TOP_DOCK_TAB_WIDTH = 54;
+const TOP_DOCK_TAB_HEIGHT = 22;
+const TOP_DOCK_SNAP_DISTANCE = 96;
+const TOP_DOCK_RELEASE_DISTANCE = 160;
+const TOP_DOCK_PAINT_FALLBACK_MS = 320;
+const TOP_DOCK_REVEAL_GRACE_MS = 900;
 const DEFAULT_WINDOW_MODE_ANCHOR = Object.freeze({ x: 358, y: 43 });
 const MAX_BACKGROUND_BYTES = 20 * 1024 * 1024;
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
@@ -97,11 +113,278 @@ function createRectangularWindowShape(width, height, offsetX = 0, offsetY = 0) {
   }];
 }
 
+function sendTopDockState(extra = {}) {
+  if (!window || window.isDestroyed()) return;
+  window.webContents.send("window:topDockChanged", {
+    enabled: isTopDockEnabled,
+    docked: isTopDocked,
+    retracted: isTopDockRetracted,
+    ...extra
+  });
+}
+
+function cancelTopDockPaintWaiter() {
+  if (!topDockPaintWaiter) return;
+  clearTimeout(topDockPaintWaiter.timeout);
+  const { resolve } = topDockPaintWaiter;
+  topDockPaintWaiter = null;
+  resolve(null);
+}
+
+function waitForTopDockTabPaint() {
+  cancelTopDockPaintWaiter();
+  const requestId = ++topDockPaintRequestId;
+  return new Promise(resolve => {
+    const finish = rect => {
+      if (topDockPaintWaiter?.requestId !== requestId) return;
+      clearTimeout(topDockPaintWaiter.timeout);
+      topDockPaintWaiter = null;
+      resolve(rect);
+    };
+    const timeout = setTimeout(() => finish(null), TOP_DOCK_PAINT_FALLBACK_MS);
+    topDockPaintWaiter = { requestId, timeout, resolve, finish };
+    sendTopDockState({ paintRequestId: requestId });
+  });
+}
+
+function normalizeTopDockTabRect(rect) {
+  if (!rect || ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite)) return null;
+  const contentBounds = window?.getContentBounds();
+  const contentWidth = Number.isFinite(contentBounds?.width) ? contentBounds.width : WINDOW_WIDTH;
+  const contentHeight = Number.isFinite(contentBounds?.height) ? contentBounds.height : WINDOW_HEIGHT;
+  if (rect.width < 24 || rect.height < 16 || rect.width > contentWidth || rect.height > contentHeight) return null;
+  if (rect.x < 0 || rect.y < 0 || rect.x + rect.width > contentWidth + 1 || rect.y + rect.height > contentHeight + 1) return null;
+  return {
+    x: Math.round(rect.x),
+    y: Math.round(rect.y),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height)
+  };
+}
+
+function confirmTopDockTabPaint(requestId, rect) {
+  if (!Number.isSafeInteger(requestId)) return;
+  if (topDockPaintWaiter?.requestId === requestId) {
+    topDockPaintWaiter.finish(normalizeTopDockTabRect(rect));
+  }
+}
+
+function getWindowContentInsets() {
+  if (!window || window.isDestroyed()) return { left: 0, top: 0 };
+  const bounds = window.getBounds();
+  const contentBounds = window.getContentBounds();
+  return {
+    left: Math.max(0, Math.round(contentBounds.x - bounds.x)),
+    top: Math.max(0, Math.round(contentBounds.y - bounds.y))
+  };
+}
+
+function getTopDockShapeRect() {
+  const fallback = {
+    x: (WINDOW_WIDTH - TOP_DOCK_TAB_WIDTH) / 2,
+    y: WINDOW_HEIGHT - TOP_DOCK_TAB_HEIGHT,
+    width: TOP_DOCK_TAB_WIDTH,
+    height: TOP_DOCK_TAB_HEIGHT
+  };
+  const tab = topDockTabRect || fallback;
+  const inset = getWindowContentInsets();
+  return {
+    x: Math.round(inset.left + tab.x),
+    y: Math.round(inset.top + tab.y),
+    width: Math.round(tab.width),
+    height: Math.round(tab.height)
+  };
+}
+
+function applyCurrentWindowShape() {
+  if (!window || window.isDestroyed()) return;
+  if (isWindowCollapsed) {
+    const anchor = normalizeWindowModeAnchor();
+    window.setShape(createRectangularWindowShape(
+      ORB_SIZE,
+      ORB_SIZE,
+      anchor.x - ORB_SIZE / 2,
+      anchor.y - ORB_SIZE / 2
+    ));
+    return;
+  }
+  if (isTopDockRetracted) {
+    const tab = getTopDockShapeRect();
+    window.setShape(createRectangularWindowShape(tab.width, tab.height, tab.x, tab.y));
+    return;
+  }
+  // Electron documents an empty shape as the only complete reset back to a
+  // rectangular, fully interactive window. A same-sized custom rectangle can
+  // leave a stale Windows region after a rapid dock/orb transition.
+  window.setShape([]);
+}
+
+function getTopDockDisplay(bounds = window?.getBounds()) {
+  if (!bounds) return screen.getPrimaryDisplay();
+  return screen.getDisplayNearestPoint({
+    x: Math.round(bounds.x + bounds.width / 2),
+    y: Math.round(bounds.y + bounds.height - 1)
+  });
+}
+
+function setWindowPositionInternally(position) {
+  if (!window || window.isDestroyed()) return;
+  if (topDockInternalMoveTimer) clearTimeout(topDockInternalMoveTimer);
+  isTopDockInternalMove = true;
+  window.setBounds({
+    x: Math.round(position.x),
+    y: Math.round(position.y),
+    width: WINDOW_WIDTH,
+    height: WINDOW_HEIGHT
+  }, false);
+  topDockInternalMoveTimer = setTimeout(() => {
+    isTopDockInternalMove = false;
+    topDockInternalMoveTimer = null;
+  }, 450);
+}
+
+function finishTopDockInternalMove() {
+  if (topDockInternalMoveTimer) clearTimeout(topDockInternalMoveTimer);
+  topDockInternalMoveTimer = null;
+  isTopDockInternalMove = false;
+}
+
+function isCursorInsideFullWindow() {
+  if (!window || window.isDestroyed()) return false;
+  const cursor = screen.getCursorScreenPoint();
+  const bounds = window.getBounds();
+  return cursor.x >= bounds.x &&
+    cursor.x < bounds.x + bounds.width &&
+    cursor.y >= bounds.y &&
+    cursor.y < bounds.y + bounds.height;
+}
+
+async function retractTopDock() {
+  if (
+    !isTopDockEnabled ||
+    !isTopDocked ||
+    isTopDockRetracted ||
+    isWindowCollapsed ||
+    !window ||
+    window.isDestroyed()
+  ) return sendTopDockState();
+  // Shape/position changes can synthesize a renderer pointerleave. Never hide
+  // the card while the pointer is still inside it or during the reveal grace.
+  if (Date.now() < topDockRevealGraceUntil || isCursorInsideFullWindow()) {
+    return sendTopDockState();
+  }
+
+  const bounds = window.getBounds();
+  const { workArea } = getTopDockDisplay(bounds);
+  const x = Math.round(Math.min(
+    Math.max(bounds.x, workArea.x),
+    workArea.x + workArea.width - bounds.width
+  ));
+  store.set("windowBounds", { x, y: workArea.y });
+  isTopDockRetracted = true;
+  const paintedTabRect = await waitForTopDockTabPaint();
+  if (!isTopDockRetracted || !window || window.isDestroyed()) return;
+  if (!paintedTabRect) {
+    isTopDockRetracted = false;
+    window.setShape([]);
+    sendTopDockState();
+    return;
+  }
+  topDockTabRect = paintedTabRect;
+  const tab = getTopDockShapeRect();
+  applyCurrentWindowShape();
+  setWindowPositionInternally({
+    x,
+    y: workArea.y - tab.y
+  });
+  window.webContents.invalidate();
+}
+
+function revealTopDock({ undock = false } = {}) {
+  if (!window || window.isDestroyed()) return;
+  if (!isTopDocked && !isTopDockRetracted) return sendTopDockState();
+  cancelTopDockPaintWaiter();
+  const bounds = window.getBounds();
+  const { workArea } = getTopDockDisplay(bounds);
+  const inset = getWindowContentInsets();
+  const x = Math.round(Math.min(
+    Math.max(bounds.x, workArea.x),
+    workArea.x + workArea.width - bounds.width
+  ));
+  // Move the still-clipped tab first, then remove the native region completely.
+  // Only after that does the renderer expose the full card.
+  setWindowPositionInternally({ x, y: workArea.y - inset.top });
+  window.setShape([]);
+  isTopDockRetracted = false;
+  if (undock) isTopDocked = false;
+  topDockRevealGraceUntil = Date.now() + TOP_DOCK_REVEAL_GRACE_MS;
+  store.set("windowBounds", { x, y: workArea.y - inset.top });
+  sendTopDockState();
+  window.webContents.invalidate();
+}
+
+function setTopDockEnabled(enabled) {
+  isTopDockEnabled = Boolean(enabled);
+  store.set("topDockEnabled", isTopDockEnabled);
+  if (!isTopDockEnabled) revealTopDock({ undock: true });
+  sendTopDockState();
+  return isTopDockEnabled;
+}
+
+function evaluateTopDockAfterMove() {
+  if (
+    !isTopDockEnabled ||
+    isWindowCollapsed ||
+    isTopDockRetracted ||
+    isTopDockInternalMove ||
+    !window ||
+    window.isDestroyed()
+  ) return;
+  const bounds = window.getBounds();
+  const { workArea } = getTopDockDisplay(bounds);
+  const inset = getWindowContentInsets();
+  const dockedY = workArea.y - inset.top;
+  const allowedDistance = isTopDocked
+    ? TOP_DOCK_RELEASE_DISTANCE
+    : TOP_DOCK_SNAP_DISTANCE;
+  if (bounds.y > dockedY + allowedDistance) {
+    if (isTopDocked) {
+      isTopDocked = false;
+      sendTopDockState();
+    }
+    scheduleWindowPositionSave(window, "windowBounds");
+    return;
+  }
+  const x = Math.round(Math.min(
+    Math.max(bounds.x, workArea.x),
+    workArea.x + workArea.width - bounds.width
+  ));
+  const wasDocked = isTopDocked;
+  isTopDocked = true;
+  setWindowPositionInternally({ x, y: dockedY });
+  store.set("windowBounds", { x, y: dockedY });
+  sendTopDockState();
+  if (!wasDocked) void retractTopDock();
+}
+
+function scheduleTopDockMoveEvaluation() {
+  if (topDockMoveSettledTimer) clearTimeout(topDockMoveSettledTimer);
+  topDockMoveSettledTimer = setTimeout(() => {
+    topDockMoveSettledTimer = null;
+    evaluateTopDockAfterMove();
+  }, 220);
+}
+
 function saveWindowPosition(target = window, key = "windowBounds") {
   if (!target || target.isDestroyed()) return;
   if (windowPositionSaveTimer) clearTimeout(windowPositionSaveTimer);
   windowPositionSaveTimer = null;
   const bounds = target.getBounds();
+  if (key === "windowBounds" && isTopDockRetracted) {
+    const { workArea } = getTopDockDisplay(bounds);
+    store.set(key, { x: bounds.x, y: workArea.y });
+    return;
+  }
   store.set(key, { x: bounds.x, y: bounds.y });
 }
 
@@ -167,7 +450,12 @@ function normalizeWindowModeAnchor(anchor) {
 
 function positionWindow(target, position) {
   if (!target || target.isDestroyed()) return;
-  target.setPosition(Math.round(position.x), Math.round(position.y), false);
+  target.setBounds({
+    x: Math.round(position.x),
+    y: Math.round(position.y),
+    width: WINDOW_WIDTH,
+    height: WINDOW_HEIGHT
+  }, false);
   target.setOpacity(1);
   target.webContents.invalidate();
 }
@@ -188,6 +476,9 @@ async function setWindowMode(collapsed, requestedAnchor) {
   isChangingWindowMode = true;
 
   try {
+    if (nextCollapsed && (isTopDocked || isTopDockRetracted)) {
+      revealTopDock({ undock: true });
+    }
     const effectiveAnchor = anchor;
     const bounds = window.getBounds();
     isWindowCollapsed = nextCollapsed;
@@ -199,17 +490,12 @@ async function setWindowMode(collapsed, requestedAnchor) {
         y: Math.round(bounds.y + effectiveAnchor.y - ORB_SIZE / 2)
       });
       window.webContents.send("window:modeChanged", true, effectiveAnchor);
-      window.setShape(createRectangularWindowShape(
-        ORB_SIZE,
-        ORB_SIZE,
-        effectiveAnchor.x - ORB_SIZE / 2,
-        effectiveAnchor.y - ORB_SIZE / 2
-      ));
+      applyCurrentWindowShape();
     } else {
       window.setMovable(!store.get("positionLocked", false));
       // Keep the full-card hit-test region explicit when the same fixed native
       // surface returns from its small floating-orb shape.
-      window.setShape(createRectangularWindowShape(WINDOW_WIDTH, WINDOW_HEIGHT));
+      applyCurrentWindowShape();
       window.webContents.send("window:modeChanged", false, effectiveAnchor);
       window.focus();
     }
@@ -269,7 +555,7 @@ function updateTray() {
 function showWindow() {
   if (!window || window.isDestroyed()) return;
   isAppHidden = false;
-  positionWindow(window, getWindowPosition(false));
+  if (!isTopDockRetracted) positionWindow(window, getWindowPosition(false));
   window.setAlwaysOnTop(store.get("alwaysOnTop", true), "floating");
   alwaysOnTopYielded = false;
   if (window.isMinimized()) window.restore();
@@ -397,12 +683,19 @@ function createWindow() {
   window.webContents.once("did-finish-load", showInitialWindow);
   window.loadFile(path.join(__dirname, "renderer", "index.html"));
   window.on("move", () => {
+    if (isTopDockInternalMove) return;
     if (!isWindowCollapsed && !isChangingWindowMode) {
       scheduleWindowPositionSave(window, "windowBounds");
+      scheduleTopDockMoveEvaluation();
     }
   });
   window.on("moved", () => {
+    if (isTopDockInternalMove) {
+      finishTopDockInternalMove();
+      return;
+    }
     if (isWindowCollapsed) markOrbNativeMove();
+    else scheduleTopDockMoveEvaluation();
   });
   window.on("will-resize", event => {
     event.preventDefault();
@@ -462,6 +755,9 @@ function registerIpc() {
     alwaysOnTop: store.get("alwaysOnTop", true),
     positionLocked: store.get("positionLocked", false),
     windowCollapsed: isWindowCollapsed,
+    topDockEnabled: isTopDockEnabled,
+    topDockDocked: isTopDocked,
+    topDockRetracted: isTopDockRetracted,
     windowModeAnchor: normalizeWindowModeAnchor(),
     appIconDataUrl: getWindowIconDataUrl(),
     backgroundDataUrl: getBackgroundDataUrl(),
@@ -484,6 +780,40 @@ function registerIpc() {
       saveWindowPosition(window, "windowBounds");
     }
     return next;
+  });
+  ipcMain.handle("settings:topDockEnabled", (_event, enabled) => {
+    setTopDockEnabled(enabled);
+    return {
+      enabled: isTopDockEnabled,
+      docked: isTopDocked,
+      retracted: isTopDockRetracted
+    };
+  });
+  ipcMain.handle("window:revealTopDock", () => {
+    revealTopDock();
+    return {
+      enabled: isTopDockEnabled,
+      docked: isTopDocked,
+      retracted: isTopDockRetracted
+    };
+  });
+  ipcMain.handle("window:retractTopDock", async () => {
+    await retractTopDock();
+    return {
+      enabled: isTopDockEnabled,
+      docked: isTopDocked,
+      retracted: isTopDockRetracted
+    };
+  });
+  ipcMain.on("window:topDockPaintReady", (_event, requestId, rect) => {
+    confirmTopDockTabPaint(requestId, rect);
+  });
+  ipcMain.on("window:topDockRendererReady", () => {
+    if (isTopDockEnabled && isTopDocked && !isTopDockRetracted) {
+      void retractTopDock();
+      return;
+    }
+    scheduleTopDockMoveEvaluation();
   });
   ipcMain.handle("window:setCollapsed", (_event, collapsed, anchor) => setWindowMode(collapsed, anchor));
   ipcMain.on("window:beginOrbGesture", handleOrbNativeGesture);
@@ -551,6 +881,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   app.setName(APP_NAME);
   app.setAppUserModelId("com.codex.quota-monitor");
   store = new JsonStore(path.join(app.getPath("userData"), "settings.json"));
+  isTopDockEnabled = store.get("topDockEnabled", false);
   quotaService = new QuotaService({
     appStatePath: path.join(app.getPath("userData"), "quota-state.json")
   });
@@ -573,6 +904,9 @@ app.on("second-instance", () => {
 app.on("before-quit", () => {
   isQuitting = true;
   if (orbMoveSettledTimer) clearTimeout(orbMoveSettledTimer);
+  if (topDockMoveSettledTimer) clearTimeout(topDockMoveSettledTimer);
+  if (topDockInternalMoveTimer) clearTimeout(topDockInternalMoveTimer);
+  cancelTopDockPaintWaiter();
   saveWindowPosition(window, "windowBounds");
   quotaService?.dispose();
 });

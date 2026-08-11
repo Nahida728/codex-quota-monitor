@@ -349,7 +349,8 @@ test("keeps consumed reset-credit history available while quota service is offli
         expiresAt: 5678,
         title: "Full reset",
         ignored: "must not escape"
-      }]
+      }],
+      evidenceVersion: 2
     }]
   }));
 
@@ -378,7 +379,8 @@ test("keeps consumed reset-credit history available while quota service is offli
       grantedAt: null,
       expiresAt: 5678,
       title: "Full reset"
-    }]
+    }],
+    evidenceVersion: 2
   }]);
   service.dispose();
 });

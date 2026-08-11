@@ -72,7 +72,14 @@ The monitor must:
 - Support click-to-upload and drag-to-upload backgrounds, manual fixed-ratio
   cropping, and background opacity.
 - Support native window movement, position lock, always-on-top, tray hide/show,
-  manual refresh, 60-second idle refresh, and 5-second refresh while tasks run.
+  manual refresh, and one complete data refresh every five seconds.
+- Support optional single-window top-edge docking: after an unlocked card is
+  moved within a generous acquisition zone of a display's top edge, snap and
+  retract the same fixed surface above that display, leave one small
+  downward-arrow hit target, reveal on pointer approach, and allow the revealed
+  card to be deliberately dragged away without polling the cursor. Use hysteresis:
+  a docked card tolerates a substantially larger downward movement than an
+  undocked card needs to acquire the top edge.
 - Support immediate collapse to a freely movable floating orb and restoration to
   the full card without a cross-window snapshot animation.
 
@@ -144,8 +151,11 @@ The app uses exactly one persistent 460 × 690 native window:
   region. It does not create, hide, show, resize, or swap another BrowserWindow.
 - Do not create an orb BrowserWindow, transition BrowserWindow, capture renderer
   snapshots, or interpolate native bounds. A bounded two-frame renderer paint
-  synchronization before applying the circular shape is allowed to prevent a
-  stale full-card frame from being clipped into the orb.
+  synchronization before applying a small native shape is allowed to prevent a
+  stale full-card frame from being clipped into the orb or top-dock tab.
+- Restore the full-card native region with `setShape([])`, the Electron reset
+  operation. Do not substitute a nominal 460 × 690 custom region: Windows may
+  retain that stale clipping region after rapid top-dock or orb transitions.
 - Keep `resizable: false`, `maximizable: false`, `fullscreenable: false`,
   `frame: false`, `thickFrame: false`, and `hasShadow: false`.
 - Keep the native `will-resize` prevention as a final guard.
@@ -275,6 +285,29 @@ change to main-process window options, CSS hit regions, overlays, or tray logic:
     presses could not move it while edge presses could. The expand control may
     remain for keyboard accessibility, but in collapsed mode its whole surface is
     part of the native drag region and has no pointer hit target.
+31. Top-dock reveal can emit synthetic move and pointer-leave events while the
+    native window moves from its off-screen tab position. Ignore the internal
+    move, do not re-run automatic retract for an already docked window, and
+    refuse renderer retract requests while the pointer is within the restored
+    full bounds or the reveal grace period is active.
+32. Applying the top-tab native shape before its renderer frame has painted can
+    remove the last visible and interactive pixels. Require a bounded two-frame
+    renderer acknowledgement carrying the tab's measured bounds before clipping;
+    add the native content-area inset instead of assuming the content and outer
+    bounds share an origin. If acknowledgement fails, keep the full card visible.
+    On reveal, move the still-clipped tab first, clear the native shape with
+    `setShape([])`, and only then expose the full card.
+33. On fractional Windows display scaling, repeated `setPosition()` calls around
+    shaped-window transitions can accumulate native width and height rounding,
+    moving the renderer tab away from its native region and progressively
+    clipping the restored card. Every programmatic top-dock/show reposition must
+    use one non-animated `setBounds()` call that reasserts 460 × 690. This is a
+    bounded transition correction, never a pointer-driven movement loop.
+34. A single small threshold for both top-dock acquisition and release makes the
+    card detach on a tiny movement yet remain difficult to snap back. Keep
+    separate hysteresis thresholds: acquire within 96 device-independent pixels,
+    retain docking until moved more than 160 pixels down, and evaluate only after
+    native movement settles. Do not clear dock state in the live `move` event.
 
 Do not call a dragging change complete from static inspection. Manually verify:
 
@@ -384,9 +417,11 @@ Do not call a dragging change complete from static inspection. Manually verify:
 A user-triggered reset normally restores quota while consuming at least one
 available reset credit. If the available count decreases across the same snapshots:
 
-- retain the first decrease only as a pending candidate and require the next
-  successful quota snapshot to keep the same or a lower available count before
-  classifying it as a manual reset;
+- require an early full-quota recovery pattern, complete before/after credit
+  details, and exact stable identities for every disappeared credit;
+- retain the first strongly evidenced decrease only as a pending candidate and
+  require the next successful complete snapshot to keep every disappeared
+  identity absent before classifying it as a manual reset;
 - discard the candidate when the next successful snapshot rebounds above the
   candidate count, because transient incomplete/zero responses are not usage;
 - preserve any official-reset evidence from a rebounded candidate so a temporary
@@ -394,12 +429,17 @@ available reset credit. If the available count decreases across the same snapsho
 - show that it was excluded;
 - never append it to official-reset history;
 - do not let simultaneous quota recovery override the consumed-credit evidence.
-- append one permanent `consumedResetHistory` record with the observation time,
+- append one permanent `consumedResetHistory` record per unique credit identity,
+  with the observation time,
   consumed count, before/after available counts, and exact missing credit details
   only when both item lists are complete;
-- record a count decrease even when quota recovery does not form a complete
-  official-reset pattern, but exclude it when complete before/after details prove
-  every disappeared credit reached its expiry;
+- never record count-only decreases, incomplete credit lists, repeated
+  disappearances of the same identity, or decreases without a matching early
+  quota recovery; exclude complete comparisons when every disappeared credit
+  reached its expiry;
+- treat pre-evidence-version manual-reset records as invalid in recovery because
+  older clients permanently recorded transient list omissions; immutable archive
+  files may remain on disk, but those invalid entries must not re-enter the UI;
 - preserve and reconcile that history across primary state and archive
   generations, and force an immutable archive when a new usage event is added.
 
@@ -534,7 +574,7 @@ client's visible “Update” button before installation. Do not regress to that
   total; the UI must make partial pricing explicit.
 - Cache the expensive rollout scan for 15 minutes and reuse the last normalized
   persisted snapshot across restarts and temporary scan failures. Do not rescan
-  multi-gigabyte rollout history every 60-second quota refresh.
+  multi-gigabyte rollout history every five-second quota refresh.
 - Cost aggregation must include readable rollout files from both
   `.codex/sessions` and `.codex/archived_sessions`. Moving a session into the
   Codex archive must not lower the cumulative API-equivalent estimate.
@@ -577,7 +617,7 @@ client's visible “Update” button before installation. Do not regress to that
   Both completed and interrupted handoffs remain in the pending area until the
   user confirms them or returns to Codex.
 - Support multiple simultaneous active rollouts and keep their timers updating
-  once per second between the normal 60-second data refreshes.
+  once per second between five-second data refreshes.
 - Tail reads must remain bounded by file count, age, bytes per turn, total bytes,
   and task count. Expand a tail only until the last lifecycle event is found.
 - From active rollouts expose only the validated turn ID, project directory
@@ -606,12 +646,9 @@ client's visible “Update” button before installation. Do not regress to that
 - If the monitor is always-on-top, returning to Codex may temporarily yield that
   native level. Restore the saved always-on-top preference only when the monitor
   is focused or shown again.
-- While at least one task is active, the complete monitor refresh interval is
-  five seconds; after the last task completes it returns to sixty seconds.
-- While idle, a five-second lightweight local task-status probe may wake the full
-  refresh when a new task appears. That probe must not call quota, account usage,
-  Store update, or model-cost endpoints and exposes only availability, count, and
-  observation time through preload.
+- Run the complete monitor refresh every five seconds whether tasks are active or
+  idle. Do not substitute a lightweight task-only probe for quota or connection
+  refreshes; the connection indicator must reflect the same five-second cadence.
 - The main-card and per-task elapsed time visually pulses only while at least one
   task is active. Respect the operating system's reduced-motion preference.
 
@@ -747,8 +784,7 @@ the fix. At minimum, automated tests must continue covering:
 - exact task lifecycle classification, one-shot completion handoff, both
   completion actions, concurrent active tasks, project-path sanitization,
   task-level cost isolation, and monotonic performance-record recovery;
-- active five-second versus idle sixty-second refresh policy and lightweight
-  task-probe wake-up behavior;
+- five-second complete refresh policy in both active and idle states;
 - crop containment, movement, resize, ratio, and source-to-output mapping;
 - side-by-side quota cards, the clickable reset entry in the three-card status
   row, reset-detail/history dialog, the connection-status dialog, and the reserved
@@ -777,6 +813,10 @@ visual/manual matrix:
 - background popover, crop dialog, and reset-history dialog;
 - unlocked/locked title and four-edge movement;
 - instant collapse/restore, plus unlocked/locked orb movement;
+- enabled/disabled top docking, snap and retract on every display, arrow-hover
+  reveal, repeated reveal/retract cycles without a missing tab, no immediate
+  synthetic retraction, full hit testing after reveal, drag-away undocking, and
+  interaction with position lock and orb mode;
 - hide and single-click restore from tray.
 
 Verify:

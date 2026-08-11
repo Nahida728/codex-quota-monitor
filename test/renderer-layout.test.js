@@ -323,17 +323,51 @@ test("secondary dialogs use interruptible reduced-motion-safe entrance and exit 
   assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)/);
 });
 
-test("uses five-second full refreshes during tasks and a lightweight idle probe", () => {
+test("uses five-second full refreshes in active and idle states", () => {
   assert.match(html, /<script src="\.\.\/refresh-policy\.js"><\/script>/);
   assert.match(renderer, /getRefreshDelay\(latestSnapshot\?\.activeTasks\)/);
-  assert.match(renderer, /setInterval\(probeForActiveTask,\s*ACTIVE_TASK_PROBE_MS\)/);
-  assert.match(renderer, /readActiveTaskStatus\(\)/);
-  assert.match(renderer, /shouldWakeForActiveTask\(latestSnapshot\?\.activeTasks,\s*status\)/);
-  assert.match(renderer, /autoRefreshActive:\s*"任务期间每 5 秒自动刷新"/);
-  assert.match(renderer, /autoRefreshActive:\s*"Auto-refresh every 5s during tasks"/);
+  assert.doesNotMatch(renderer, /probeForActiveTask|readActiveTaskStatus\(\)/);
+  assert.match(renderer, /autoRefresh:\s*"每 5 秒自动刷新"/);
+  assert.match(renderer, /autoRefresh:\s*"Auto-refresh every 5s"/);
+  assert.match(renderer, /interval - Math\.max\(0,\s*Date\.now\(\) - startedAt\)/);
   assert.doesNotMatch(renderer, /setInterval\(refresh,\s*AUTO_REFRESH_MS\)/);
-  assert.match(main, /ipcMain\.handle\("tasks:active-status"/);
-  assert.match(preload, /readActiveTaskStatus:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("tasks:active-status"\)/);
+});
+
+test("moves language and background controls into settings and docks one fixed window", () => {
+  assert.match(html, /id="settingsButton"/);
+  assert.match(html, /id="settingsPopover"[\s\S]*?id="languageButton"[\s\S]*?id="topDockToggle"[\s\S]*?id="backgroundDropZone"/);
+  const connectionMarkup = html.slice(html.indexOf('id="connectionStrip"'), html.indexOf("</section>", html.indexOf('id="connectionStrip"')));
+  assert.doesNotMatch(connectionMarkup, /id="languageButton"|id="backgroundButton"/);
+  assert.match(html, /id="topDockTab"/);
+  assert.match(main, /const TOP_DOCK_TAB_HEIGHT\s*=\s*22/);
+  assert.match(main, /const TOP_DOCK_SNAP_DISTANCE\s*=\s*96/);
+  assert.match(main, /const TOP_DOCK_RELEASE_DISTANCE\s*=\s*160/);
+  assert.match(main, /topDockDocked:\s*isTopDocked/);
+  assert.doesNotMatch(main, /isTopDockDocked/);
+  assert.match(main, /const tab = getTopDockShapeRect\(\);[\s\S]*?createRectangularWindowShape\(tab\.width,\s*tab\.height,\s*tab\.x,\s*tab\.y\)/);
+  assert.match(main, /window:revealTopDock/);
+  assert.match(main, /window:retractTopDock/);
+  assert.match(main, /window:topDockPaintReady/);
+  assert.match(main, /window:topDockRendererReady/);
+  assert.match(main, /await waitForTopDockTabPaint\(\)/);
+  assert.match(main, /Date\.now\(\) < topDockRevealGraceUntil \|\| isCursorInsideFullWindow\(\)/);
+  assert.match(main, /function setWindowPositionInternally\(position\)[\s\S]*?window\.setBounds\(\{[\s\S]*?width:\s*WINDOW_WIDTH,[\s\S]*?height:\s*WINDOW_HEIGHT/);
+  assert.match(main, /const wasDocked = isTopDocked;[\s\S]*?if \(!wasDocked\) void retractTopDock\(\)/);
+  assert.match(main, /const allowedDistance = isTopDocked[\s\S]*?TOP_DOCK_RELEASE_DISTANCE[\s\S]*?TOP_DOCK_SNAP_DISTANCE/);
+  assert.match(main, /window\.setShape\(\[\]\);[\s\S]*?isTopDockRetracted = false/);
+  assert.match(renderer, /topDockTab\.addEventListener\("pointerenter",\s*revealTopDock\)/);
+  assert.match(renderer, /topDockTab\.addEventListener\("pointermove",\s*revealTopDock\)/);
+  assert.match(renderer, /function acknowledgeTopDockPaint\(paintRequestId\)[\s\S]*?getBoundingClientRect\(\)[\s\S]*?confirmTopDockPaint\(paintRequestId,\s*\{/);
+  assert.match(renderer, /const fallbackTimer = setTimeout\(finish,\s*96\)/);
+  assert.match(renderer, /onTopDockChanged\(state => applyTopDockState\(state\)\);[\s\S]*?notifyTopDockReady\(\)/);
+  assert.match(main, /contentBounds\.x - bounds\.x/);
+  assert.match(main, /workArea\.y - tab\.y/);
+  assert.match(main, /if \(!paintedTabRect\)\s*\{[\s\S]*?isTopDockRetracted = false;[\s\S]*?window\.setShape\(\[\]\)/);
+  assert.match(renderer, /document\.documentElement\.addEventListener\("pointerleave",\s*scheduleTopDockRetract\)/);
+  assert.doesNotMatch(main, /setInterval\(/);
+  assert.doesNotMatch(renderer, /pointermove[\s\S]{0,200}(?:setPosition|setBounds)/);
+  const nativeMoveHandler = main.slice(main.indexOf('window.on("move"'), main.indexOf('window.on("moved"'));
+  assert.doesNotMatch(nativeMoveHandler, /isTopDocked\s*=\s*false/);
 });
 
 test("collapse and expand clip one persistent native window without a surface swap", () => {
@@ -360,11 +394,12 @@ test("collapse and expand clip one persistent native window without a surface sw
   assert.doesNotMatch(main, /orbWindow\s*=\s*new BrowserWindow/);
   assert.match(main, /function createRectangularWindowShape\(width,\s*height,\s*offsetX\s*=\s*0,\s*offsetY\s*=\s*0\)/);
   assert.match(main, /window\.setShape\(createRectangularWindowShape\(\s*ORB_SIZE,\s*ORB_SIZE/);
-  assert.match(main, /window\.setShape\(createRectangularWindowShape\(WINDOW_WIDTH,\s*WINDOW_HEIGHT\)\)/);
-  assert.doesNotMatch(main, /createCircularWindowShape|ORB_SHAPE_OVERSCAN|window\.setShape\(\[\]\)/);
+  assert.match(main, /window\.setShape\(\[\]\)/);
+  assert.doesNotMatch(main, /createCircularWindowShape|ORB_SHAPE_OVERSCAN|createRectangularWindowShape\(WINDOW_WIDTH,\s*WINDOW_HEIGHT\)/);
   assert.match(css, /\.floating-orb\s*\{[\s\S]*?clip-path:\s*circle\(50% at 50% 50%\)/);
   assert.match(css, /body\.is-window-collapsed \.glass-card\s*\{[\s\S]*?visibility:\s*hidden/);
   assert.match(main, /function positionWindow\(target,\s*position\)/);
+  assert.match(main, /function positionWindow\(target,\s*position\)[\s\S]*?target\.setBounds\(\{[\s\S]*?width:\s*WINDOW_WIDTH,[\s\S]*?height:\s*WINDOW_HEIGHT/);
   assert.doesNotMatch(main, /transitionWindow|capturePage\(|window-transition/);
   assert.doesNotMatch(renderer, /TransitionSnapshot|transitionSnapshot|updateTransitionSnapshot/);
   const modeChangeSource = main.slice(

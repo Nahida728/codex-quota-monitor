@@ -6,7 +6,7 @@
 > 这是非官方社区项目，与 OpenAI 没有隶属、合作或背书关系。Codex、OpenAI 及相关图标是其各自权利人的商标或资产。
 
 > [!WARNING]
-> **v1.2.0-Beta** 已发布。使用 v1.1.5 及更早版本的用户建议尽快升级：旧版曾存在本地状态异常后历史记录看似丢失、备份未参与恢复，以及会话归档后 API 等价金额回退的问题。v1.2.0-Beta 进一步加入历史任务统计恢复和中断判定；Beta 版本建议保留自动生成的状态存档，不要手动删除 `%APPDATA%\codex-quota-monitor\quota-state.json.archive`。
+> **v1.2.1** 已发布。本次重点修复重置次数误判和顶部吸附稳定性，并把连接与数据刷新统一为 5 秒。状态文件仍会自动生成不可变存档，请不要手动删除 `%APPDATA%\codex-quota-monitor\quota-state.json.archive`。
 
 ## 目录
 
@@ -309,8 +309,8 @@ npm run build
 
 ```text
 release/
-├─ Codex监测台-1.2.0-Beta-portable-x64.exe
-├─ Codex监测台-1.2.0-Beta-setup-x64.exe
+├─ Codex监测台-1.2.1-portable-x64.exe
+├─ Codex监测台-1.2.1-setup-x64.exe
 └─ win-unpacked/
 ```
 

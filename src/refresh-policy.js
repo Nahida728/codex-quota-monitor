@@ -1,6 +1,6 @@
 (function initializeRefreshPolicy() {
 const ACTIVE_REFRESH_MS = 5_000;
-const IDLE_REFRESH_MS = 60_000;
+const IDLE_REFRESH_MS = 5_000;
 const ACTIVE_TASK_PROBE_MS = 5_000;
 
 function activeTaskCount(value) {
@@ -10,9 +10,7 @@ function activeTaskCount(value) {
 }
 
 function getRefreshDelay(activeTasks) {
-  return activeTaskCount(activeTasks) > 0
-    ? ACTIVE_REFRESH_MS
-    : IDLE_REFRESH_MS;
+  return activeTaskCount(activeTasks) > 0 ? ACTIVE_REFRESH_MS : IDLE_REFRESH_MS;
 }
 
 function shouldWakeForActiveTask(latestActiveTasks, probeResult) {

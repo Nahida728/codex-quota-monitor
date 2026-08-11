@@ -39,7 +39,8 @@ function durableState() {
       count: 1,
       previousAvailableCount: 2,
       availableCount: 1,
-      items: [{ id: "credit-used", resetType: "codexRateLimits" }]
+      items: [{ id: "credit-used", resetType: "codexRateLimits" }],
+      evidenceVersion: 2
     }],
     codexClientVersion: "26.721.4979.0",
     codexClientPreviousVersion: "26.720.1000.0",
@@ -300,7 +301,8 @@ test("backs up a newly appended permanent event immediately", t => {
     count: 1,
     previousAvailableCount: 1,
     availableCount: 0,
-    items: []
+    items: [{ id: "credit-used-2", resetType: "codexRateLimits" }],
+    evidenceVersion: 2
   });
   store.set("lastSuccessfulAt", now);
   assert.equal(backupFiles(workspace.backupDirectory).length, 3);
