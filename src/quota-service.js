@@ -306,8 +306,11 @@ class QuotaService {
 
   async readActiveTasks(now = Date.now()) {
     if (this.activeTaskInFlight) return this.activeTaskInFlight;
+    const previousHistorySnapshot = this.state.data.taskHistorySnapshot || {
+      legacyFloor: this.state.data.taskPerformanceRecords || null
+    };
     this.activeTaskInFlight = Promise.resolve()
-      .then(() => this.activeTaskReader?.read?.(now))
+      .then(() => this.activeTaskReader?.read?.(now, previousHistorySnapshot))
       .then(raw => normalizeActiveTaskResult(raw, now))
       .then(result => {
         const pendingTasks = [];
@@ -356,6 +359,13 @@ class QuotaService {
           result.history,
           pendingTasks
         );
+        const historySnapshotChanged = result.historySnapshot && (
+          JSON.stringify(this.state.data.taskHistorySnapshot || null) !==
+          JSON.stringify(result.historySnapshot)
+        );
+        if (historySnapshotChanged) {
+          this.state.data.taskHistorySnapshot = result.historySnapshot;
+        }
         if (recordUpdate.changed) {
           try {
             this.state.set(
@@ -367,8 +377,12 @@ class QuotaService {
               }
             );
           } catch {}
+        } else if (historySnapshotChanged) {
+          try {
+            this.state.set("taskHistorySnapshot", result.historySnapshot);
+          } catch {}
         }
-        const { terminalTasks, history, ...publicResult } = result;
+        const { terminalTasks, history, historySnapshot, ...publicResult } = result;
         return {
           ...publicResult,
           pendingTasks,

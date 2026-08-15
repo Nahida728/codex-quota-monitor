@@ -52,6 +52,61 @@ test("retains the last normalized usage snapshot when the endpoint is temporaril
   assert.deepEqual(result.persistence, {});
 });
 
+test("a fresh official account snapshot replaces an older higher cached value", () => {
+  const result = normalizeTokenUsageResponse({
+    summary: {
+      lifetimeTokens: 900,
+      totalWorkDays: 2,
+      currentStreakDays: 1,
+      longestStreakDays: 3,
+      peakDailyTokens: 80,
+      longestRunningTurnSec: 20
+    },
+    dailyUsageBuckets: [
+      { startDate: "2026-07-02", tokens: 40 },
+      { startDate: "2026-07-03", tokens: 30 }
+    ]
+  }, {
+    tokenUsageSnapshot: {
+      lifetimeTokens: 1_000,
+      totalWorkDays: 3,
+      currentStreakDays: 5,
+      longestStreakDays: 7,
+      peakDailyTokens: 100,
+      longestRunningTurnSec: 60,
+      dailyUsageBuckets: [
+        { startDate: "2026-07-01", tokens: 20 },
+        { startDate: "2026-07-02", tokens: 50 }
+      ],
+      observedAt: 1_000
+    }
+  }, 2_000);
+
+  assert.equal(result.lifetimeTokens, 900);
+  assert.equal(result.totalWorkDays, 2);
+  assert.equal(result.currentStreakDays, 1);
+  assert.equal(result.longestStreakDays, 3);
+  assert.equal(result.peakDailyTokens, 80);
+  assert.equal(result.longestRunningTurnSec, 20);
+  assert.deepEqual(result.dailyUsageBuckets, [
+    { startDate: "2026-07-02", tokens: 40 },
+    { startDate: "2026-07-03", tokens: 30 }
+  ]);
+  assert.deepEqual(result.persistence.tokenUsageSnapshot, {
+    lifetimeTokens: 900,
+    totalWorkDays: 2,
+    currentStreakDays: 1,
+    longestStreakDays: 3,
+    peakDailyTokens: 80,
+    longestRunningTurnSec: 20,
+    dailyUsageBuckets: [
+      { startDate: "2026-07-02", tokens: 40 },
+      { startDate: "2026-07-03", tokens: 30 }
+    ],
+    observedAt: 2_000
+  });
+});
+
 test("aggregates token buckets by day, Monday-based week, and month with empty gaps", () => {
   const buckets = normalizeDailyBuckets([
     { startDate: "2026-06-30", tokens: 5 },

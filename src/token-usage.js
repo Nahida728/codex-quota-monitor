@@ -38,7 +38,7 @@ function addUtcDays(key, days) {
 function normalizeDailyBuckets(value) {
   if (!Array.isArray(value)) return [];
   const totals = new Map();
-  for (const bucket of value.slice(0, MAX_DAILY_BUCKETS)) {
+  for (const bucket of value) {
     const startDate = parseDateKey(bucket?.startDate);
     const tokens = normalizeCount(bucket?.tokens);
     if (!startDate || tokens === null) continue;
@@ -49,6 +49,7 @@ function normalizeDailyBuckets(value) {
   }
   return [...totals.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
+    .slice(-MAX_DAILY_BUCKETS)
     .map(([startDate, tokens]) => ({ startDate, tokens }));
 }
 

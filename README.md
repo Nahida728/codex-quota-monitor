@@ -6,7 +6,7 @@
 > 这是非官方社区项目，与 OpenAI 没有隶属、合作或背书关系。Codex、OpenAI 及相关图标是其各自权利人的商标或资产。
 
 > [!WARNING]
-> **v1.2.1** 已发布。本次重点修复重置次数误判和顶部吸附稳定性，并把连接与数据刷新统一为 5 秒。状态文件仍会自动生成不可变存档，请不要手动删除 `%APPDATA%\codex-quota-monitor\quota-state.json.archive`。
+> **v1.2.3** 修复累计统计在扫描窗口变化后回退、重复或被旧快照污染的问题。API 等价金额和任务统计会持续合并可读取的普通与归档会话；账户 Token 与工作天数则以最新一次完整的官方账号快照为准，仅在接口临时失败时显示最近缓存。请不要手动删除 `%APPDATA%\codex-quota-monitor\quota-state.json.archive`。
 
 ## 目录
 
@@ -309,8 +309,8 @@ npm run build
 
 ```text
 release/
-├─ Codex监测台-1.2.1-portable-x64.exe
-├─ Codex监测台-1.2.1-setup-x64.exe
+├─ Codex监测台-1.2.3-portable-x64.exe
+├─ Codex监测台-1.2.3-setup-x64.exe
 └─ win-unpacked/
 ```
 

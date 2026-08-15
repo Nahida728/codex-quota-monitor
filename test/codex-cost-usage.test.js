@@ -88,6 +88,43 @@ test("aggregates only model context and token-count records without exposing oth
   assert.doesNotMatch(JSON.stringify(result), /must never escape/);
 });
 
+test("de-duplicates replayed counters within one rollout but not across distinct rollouts", () => {
+  const sameCounters = tokenCount({
+    input: 1_000_000,
+    cached: 800_000,
+    output: 10_000
+  });
+  const result = summarizeRolloutLines([
+    { lines: [turnContext("gpt-5.6-sol"), sameCounters, sameCounters] },
+    { lines: [turnContext("gpt-5.6-sol"), sameCounters] }
+  ], 123);
+
+  assert.equal(result.models[0].requestCount, 2);
+  assert.equal(result.models[0].inputTokens, 2_000_000);
+  assert.equal(result.duplicateEvents, 1);
+});
+
+test("counts equal Token counters again after a new turn context", () => {
+  const sameCounters = tokenCount({
+    input: 1_000_000,
+    cached: 800_000,
+    output: 10_000
+  });
+  const result = summarizeRolloutLines([{
+    lines: [
+      turnContext("gpt-5.6-sol"),
+      sameCounters,
+      sameCounters,
+      turnContext("gpt-5.6-sol"),
+      sameCounters
+    ]
+  }], 123);
+
+  assert.equal(result.models[0].requestCount, 2);
+  assert.equal(result.models[0].inputTokens, 2_000_000);
+  assert.equal(result.duplicateEvents, 1);
+});
+
 test("prices cached, uncached, cache-write, output, and long-context tokens", () => {
   const regular = calculateUsageCost("gpt-5.6-sol", {
     inputTokens: 1_000_000,
@@ -313,4 +350,86 @@ test("de-duplicates rollout copies and prefers the more complete readable copy",
   assert.equal(result.filesScanned, 1);
   assert.equal(result.models[0].requestCount, 2);
   assert.equal(result.models[0].inputTokens, 1_200_000);
+});
+
+test("builds a persistent rollout index in bounded batches without lowering prior totals", async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-cost-index-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sessionsRoot = path.join(root, "sessions");
+  fs.mkdirSync(sessionsRoot, { recursive: true });
+
+  const paths = [];
+  for (let index = 1; index <= 3; index += 1) {
+    const filePath = path.join(
+      sessionsRoot,
+      `rollout-2026-08-15T00-00-0${index}-index.jsonl`
+    );
+    fs.writeFileSync(filePath, [
+      turnContext("gpt-5.6-sol"),
+      tokenCount({
+        input: index * 1_000_000,
+        cached: index * 800_000,
+        output: index * 10_000
+      })
+    ].join("\n"));
+    paths.push(filePath);
+  }
+  const maxTotalBytes = Math.max(...paths.map(filePath => fs.statSync(filePath).size));
+  const reader = new CodexCostUsageReader({
+    sessionsRoot,
+    cacheMs: 0,
+    maxTotalBytes
+  });
+
+  const first = await reader.read(1_000, null);
+  const second = await reader.read(2_000, first);
+  const third = await reader.read(3_000, second);
+
+  assert.equal(first.indexComplete, false);
+  assert.equal(first.rolloutIndex.length, 1);
+  assert.equal(second.rolloutIndex.length, 2);
+  assert.ok(second.estimatedCostUsd >= first.estimatedCostUsd);
+  assert.equal(third.indexComplete, true);
+  assert.equal(third.rolloutIndex.length, 3);
+  assert.ok(third.estimatedCostUsd >= second.estimatedCostUsd);
+
+  fs.rmSync(paths[0]);
+  const afterDelete = await reader.read(4_000, third);
+  assert.equal(afterDelete.rolloutIndex.length, 3);
+  assert.equal(afterDelete.estimatedCostUsd, third.estimatedCostUsd);
+});
+
+test("keeps a trusted legacy snapshot as a floor while the rollout index migrates", async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-cost-floor-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sessionsRoot = path.join(root, "sessions");
+  fs.mkdirSync(sessionsRoot, { recursive: true });
+  fs.writeFileSync(path.join(sessionsRoot, "rollout-new.jsonl"), [
+    turnContext("gpt-5.6-sol"),
+    tokenCount({ input: 100_000, cached: 50_000, output: 1_000 })
+  ].join("\n"));
+  const previous = {
+    pricingDate: "2026-07-26",
+    estimatedCostUsd: 100,
+    models: [{
+      model: "gpt-5.6-sol",
+      inputTokens: 10_000_000,
+      cachedInputTokens: 5_000_000,
+      outputTokens: 1_000_000,
+      estimatedCostUsd: 100
+    }],
+    filesScanned: 20,
+    observedAt: 900
+  };
+  const raw = await new CodexCostUsageReader({
+    sessionsRoot,
+    cacheMs: 0
+  }).read(1_000, previous);
+  const normalized = normalizeCodexCostUsageResult(raw, { tokenCostSnapshot: previous }, 1_000);
+
+  assert.equal(raw.estimatedCostUsd, 100);
+  assert.equal(raw.legacyFloorApplied, true);
+  assert.equal(normalized.estimatedCostUsd, 100);
+  assert.equal(normalized.rolloutIndex, undefined);
+  assert.equal(normalized.persistence.tokenCostSnapshot.rolloutIndex.length, 1);
 });

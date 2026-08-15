@@ -581,6 +581,24 @@ client's visible “Update” button before installation. Do not regress to that
 - De-duplicate the same stable rollout identity across active and archived roots
   during move/copy transitions, preferring the more complete readable copy so a
   session is neither double-counted nor partially replaced.
+- Treat the total-byte scan limit as a per-pass work budget, never as the
+  cumulative population. Persist a privacy-safe hashed rollout index containing
+  only normalized model counters and merge unfinished batches on later reads;
+  sessions that leave the current filesystem inventory must not erase previously
+  observed cumulative usage.
+- Scope replay-counter signatures to one rollout. Equal cumulative/last counters
+  in two distinct rollouts are distinct usage evidence and must not be globally
+  de-duplicated.
+- Reconcile API-equivalent snapshots across immutable archives by their richest
+  per-model evidence. A newer truncated scan must not replace an older, more
+  complete cumulative amount; keep the older evidence as a migration floor until
+  the rollout index covers it.
+- Treat each successful `account/usage/read` response as one authoritative
+  account snapshot. Replace the cached Token summary and daily buckets together;
+  never take historical maxima or merge dated buckets across snapshots because
+  backend corrections, account changes, or scope changes can otherwise preserve
+  an inflated total indefinitely. Use only the newest complete stored snapshot
+  when the endpoint is unavailable.
 
 ### Subscription details
 
@@ -633,10 +651,12 @@ client's visible “Update” button before installation. Do not regress to that
   Token-count records in both `.codex/sessions` and
   `.codex/archived_sessions`, de-duplicating the same rollout identity during
   move/copy transitions. This recovery may be bounded and must say so internally.
-- Persist only monotonic numeric records for total terminal task count, total
-  elapsed time, total API-equivalent cost, completed/manual/abnormal counts,
-  longest duration, and highest single-task cost. Do not persist task IDs,
-  project names, paths, models, or pending handoff entries.
+- Persist monotonic numeric records for total terminal task count, total elapsed
+  time, total API-equivalent cost, completed/manual/abnormal counts, longest
+  duration, and highest single-task cost. A bounded hashed-rollout index may
+  retain only these per-rollout numeric aggregates so changing scan windows can
+  be merged without double counting. Do not persist task IDs, project names,
+  paths, models, or pending handoff entries.
 - Exclude legacy completions that provide neither a duration nor a completion
   timestamp from total/average elapsed-time calculations; still include them in
   total task and outcome counts. Never turn replay delay into task duration.

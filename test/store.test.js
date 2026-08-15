@@ -121,6 +121,124 @@ test("reconciles task duration and cost records independently by their maxima", 
   });
 });
 
+test("restores the richest API-equivalent snapshot instead of the newest lower scan", () => {
+  const model = (estimatedCostUsd, inputTokens) => ({
+    model: "gpt-5.6-sol",
+    inputTokens,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    estimatedCostUsd
+  });
+  const reconciled = reconcileQuotaStates({
+    tokenCostSnapshot: {
+      pricingDate: "2026-07-26",
+      estimatedCostUsd: 70,
+      models: [model(70, 7_000_000)],
+      filesScanned: 8,
+      truncated: true,
+      observedAt: 2_000
+    }
+  }, [{
+    tokenCostSnapshot: {
+      pricingDate: "2026-07-26",
+      estimatedCostUsd: 100,
+      models: [model(100, 10_000_000)],
+      filesScanned: 10,
+      truncated: false,
+      observedAt: 1_000
+    }
+  }]);
+
+  assert.equal(reconciled.tokenCostSnapshot.estimatedCostUsd, 100);
+  assert.equal(reconciled.tokenCostSnapshot.models[0].estimatedCostUsd, 100);
+  assert.equal(reconciled.tokenCostSnapshot.observedAt, 2_000);
+});
+
+test("restores only the newest account-usage snapshot instead of mixing historical maxima", () => {
+  const reconciled = reconcileQuotaStates({
+    tokenUsageSnapshot: {
+      lifetimeTokens: 900,
+      totalWorkDays: 2,
+      currentStreakDays: 1,
+      longestStreakDays: 3,
+      peakDailyTokens: 80,
+      longestRunningTurnSec: 20,
+      dailyUsageBuckets: [
+        { startDate: "2026-08-02", tokens: 40 },
+        { startDate: "2026-08-03", tokens: 30 }
+      ],
+      observedAt: 2_000
+    }
+  }, [{
+    tokenUsageSnapshot: {
+      lifetimeTokens: 1_000,
+      totalWorkDays: 3,
+      currentStreakDays: 5,
+      longestStreakDays: 7,
+      peakDailyTokens: 100,
+      longestRunningTurnSec: 60,
+      dailyUsageBuckets: [
+        { startDate: "2026-08-01", tokens: 20 },
+        { startDate: "2026-08-02", tokens: 50 }
+      ],
+      observedAt: 1_000
+    }
+  }]);
+
+  assert.equal(reconciled.tokenUsageSnapshot.lifetimeTokens, 900);
+  assert.equal(reconciled.tokenUsageSnapshot.totalWorkDays, 2);
+  assert.equal(reconciled.tokenUsageSnapshot.currentStreakDays, 1);
+  assert.equal(reconciled.tokenUsageSnapshot.longestStreakDays, 3);
+  assert.equal(reconciled.tokenUsageSnapshot.peakDailyTokens, 80);
+  assert.equal(reconciled.tokenUsageSnapshot.longestRunningTurnSec, 20);
+  assert.deepEqual(reconciled.tokenUsageSnapshot.dailyUsageBuckets, [
+    { startDate: "2026-08-02", tokens: 40 },
+    { startDate: "2026-08-03", tokens: 30 }
+  ]);
+});
+
+test("merges cumulative task-history indexes across archive generations", () => {
+  const entry = (id, fingerprint, observedAt) => ({
+    id: id.repeat(64),
+    fingerprint: fingerprint.repeat(64),
+    size: 100,
+    observedAt,
+    history: {
+      available: true,
+      totalTaskCount: 1,
+      timedTaskCount: 1,
+      totalElapsedSeconds: 10,
+      totalEstimatedCostUsd: 1,
+      completedTaskCount: 1,
+      observedAt
+    }
+  });
+  const reconciled = reconcileQuotaStates({
+    taskHistorySnapshot: {
+      schemaVersion: 2,
+      available: true,
+      totalTaskCount: 1,
+      rolloutIndex: [entry("b", "c", 2_000)],
+      indexComplete: false,
+      observedAt: 2_000
+    }
+  }, [{
+    taskHistorySnapshot: {
+      schemaVersion: 2,
+      available: true,
+      totalTaskCount: 1,
+      rolloutIndex: [entry("a", "d", 1_000)],
+      indexComplete: true,
+      observedAt: 1_000
+    }
+  }]);
+
+  assert.equal(reconciled.taskHistorySnapshot.rolloutIndex.length, 2);
+  assert.equal(reconciled.taskHistorySnapshot.totalTaskCount, 2);
+  assert.equal(reconciled.taskHistorySnapshot.completedTaskCount, 2);
+  assert.equal(reconciled.taskHistorySnapshot.indexComplete, false);
+});
+
 test("periodically creates immutable quota-state archives", t => {
   const workspace = createWorkspace(t);
   let now = 10_000;
@@ -306,6 +424,43 @@ test("backs up a newly appended permanent event immediately", t => {
   });
   store.set("lastSuccessfulAt", now);
   assert.equal(backupFiles(workspace.backupDirectory).length, 3);
+});
+
+test("backs up a richer cumulative cost index immediately", t => {
+  const workspace = createWorkspace(t);
+  let now = 55_000;
+  const store = createQuotaStateStore(workspace.filePath, {
+    backupDirectory: workspace.backupDirectory,
+    backupIntervalMs: 60_000,
+    now: () => now
+  });
+  Object.assign(store.data, durableState());
+  store.set("lastSuccessfulAt", now);
+  assert.equal(backupFiles(workspace.backupDirectory).length, 1);
+
+  now += 1_000;
+  store.set("tokenCostSnapshot", {
+    schemaVersion: 2,
+    pricingDate: "2026-07-26",
+    estimatedCostUsd: 10,
+    models: [{
+      model: "gpt-5.6-sol",
+      inputTokens: 1_000_000,
+      cachedInputTokens: 0,
+      outputTokens: 100_000,
+      estimatedCostUsd: 10
+    }],
+    rolloutIndex: [{
+      id: "a".repeat(64),
+      fingerprint: "b".repeat(64),
+      size: 1_000,
+      models: [],
+      observedAt: now
+    }],
+    observedAt: now
+  });
+
+  assert.equal(backupFiles(workspace.backupDirectory).length, 2);
 });
 
 test("history protection does not block legitimate volatile state changes", t => {

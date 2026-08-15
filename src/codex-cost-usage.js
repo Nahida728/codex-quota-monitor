@@ -1,5 +1,6 @@
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
+const crypto = require("node:crypto");
 const os = require("node:os");
 const path = require("node:path");
 const readline = require("node:readline");
@@ -8,6 +9,8 @@ const MAX_ROLLOUT_FILES = 1_000;
 const MAX_ROLLOUT_FILE_BYTES = 512 * 1024 * 1024;
 const MAX_ROLLOUT_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 const SCAN_CACHE_MS = 15 * 60 * 1_000;
+const COST_SNAPSHOT_SCHEMA_VERSION = 2;
+const MAX_PERSISTED_ROLLOUTS = 1_000;
 const PRICING_DATE = "2026-07-26";
 const LONG_CONTEXT_THRESHOLD = 272_000;
 
@@ -286,6 +289,7 @@ function consumeRolloutLine(accumulator, line) {
       const record = JSON.parse(line);
       if (record?.type === "turn_context") {
         accumulator.activeModel = normalizeModelName(record?.payload?.model);
+        accumulator.seenUsage = new Set();
       }
     } catch {
       accumulator.invalidLines += 1;
@@ -353,22 +357,125 @@ function finalizeAccumulator(accumulator, metadata = {}) {
   };
 }
 
+function modelEvidence(value) {
+  const model = normalizeCostModel(value);
+  if (model.priced) return model.estimatedCostUsd || 0;
+  return model.inputTokens + model.outputTokens + model.cacheWriteInputTokens;
+}
+
+function combineModels(modelCollections, mode = "sum") {
+  const combined = new Map();
+  for (const models of Array.isArray(modelCollections) ? modelCollections : []) {
+    for (const rawModel of Array.isArray(models) ? models : []) {
+      const model = normalizeCostModel(rawModel);
+      const existing = combined.get(model.model);
+      if (mode === "max") {
+        if (!existing || modelEvidence(model) > modelEvidence(existing)) {
+          combined.set(model.model, model);
+        }
+        continue;
+      }
+      const entry = existing || {
+        ...model,
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        cacheWriteInputTokens: 0,
+        outputTokens: 0,
+        reasoningOutputTokens: 0,
+        requestCount: 0,
+        longContextRequests: 0,
+        estimatedCostUsd: model.priced ? 0 : null
+      };
+      entry.inputTokens = safeAdd(entry.inputTokens, model.inputTokens);
+      entry.cachedInputTokens = safeAdd(entry.cachedInputTokens, model.cachedInputTokens);
+      entry.cacheWriteInputTokens = safeAdd(
+        entry.cacheWriteInputTokens,
+        model.cacheWriteInputTokens
+      );
+      entry.outputTokens = safeAdd(entry.outputTokens, model.outputTokens);
+      entry.reasoningOutputTokens = safeAdd(
+        entry.reasoningOutputTokens,
+        model.reasoningOutputTokens
+      );
+      entry.requestCount = safeAdd(entry.requestCount, model.requestCount);
+      entry.longContextRequests = safeAdd(
+        entry.longContextRequests,
+        model.longContextRequests
+      );
+      if (entry.priced) {
+        entry.estimatedCostUsd += model.estimatedCostUsd || 0;
+      }
+      combined.set(model.model, entry);
+    }
+  }
+  return [...combined.values()].map(model => normalizeCostModel({
+    ...model,
+    estimatedCostUsd: model.priced
+      ? Number((model.estimatedCostUsd || 0).toFixed(6))
+      : null
+  })).sort((left, right) => {
+    if (left.priced !== right.priced) return left.priced ? -1 : 1;
+    const costDifference = (right.estimatedCostUsd || 0) - (left.estimatedCostUsd || 0);
+    if (costDifference) return costDifference;
+    return (right.inputTokens + right.outputTokens) - (left.inputTokens + left.outputTokens);
+  });
+}
+
+function modelsContainAtLeast(candidateModels, floorModels) {
+  const candidates = new Map(
+    combineModels([candidateModels], "max").map(model => [model.model, model])
+  );
+  return combineModels([floorModels], "max").every(floor => {
+    const candidate = candidates.get(floor.model);
+    return candidate && modelEvidence(candidate) >= modelEvidence(floor);
+  });
+}
+
 function summarizeRolloutLines(files, now = Date.now()) {
-  const accumulator = createAccumulator();
+  const snapshots = [];
   for (const file of Array.isArray(files) ? files : []) {
-    accumulator.activeModel = "unknown";
+    const accumulator = createAccumulator();
     for (const line of Array.isArray(file?.lines) ? file.lines : []) {
       consumeRolloutLine(accumulator, line);
     }
+    snapshots.push(finalizeAccumulator(accumulator, { observedAt: now }));
   }
-  return finalizeAccumulator(accumulator, {
+  const models = combineModels(snapshots.map(snapshot => snapshot.models));
+  return {
+    scanned: true,
+    pricingDate: PRICING_DATE,
+    estimatedCostUsd: Number(models.reduce(
+      (total, model) => total + (model.estimatedCostUsd || 0),
+      0
+    ).toFixed(6)),
+    hasUnpricedModels: models.some(model => !model.priced),
+    models,
     filesScanned: Array.isArray(files) ? files.length : 0,
+    truncated: false,
+    duplicateEvents: snapshots.reduce(
+      (total, snapshot) => safeAdd(total, snapshot.duplicateEvents),
+      0
+    ),
     observedAt: now
-  });
+  };
 }
 
 function rolloutFileIdentity(file) {
   return path.basename(file?.path || file?.relativePath || "").toLowerCase();
+}
+
+function persistedRolloutId(file) {
+  return crypto
+    .createHash("sha256")
+    .update(rolloutFileIdentity(file))
+    .digest("hex");
+}
+
+function rolloutFingerprint(file) {
+  return crypto
+    .createHash("sha256")
+    .update(`${normalizeCount(file?.size)}:${normalizeCount(file?.mtimeMs)}`)
+    .digest("hex");
 }
 
 function preferMoreCompleteRollout(left, right) {
@@ -415,18 +522,22 @@ async function listRolloutFiles(roots) {
   ));
 }
 
-function selectBoundedFiles(files) {
-  let truncated = files.length > MAX_ROLLOUT_FILES;
-  const candidates = files.slice(-MAX_ROLLOUT_FILES);
+function selectBoundedFiles(files, {
+  maxFiles = MAX_ROLLOUT_FILES,
+  maxFileBytes = MAX_ROLLOUT_FILE_BYTES,
+  maxTotalBytes = MAX_ROLLOUT_TOTAL_BYTES
+} = {}) {
+  let truncated = files.length > maxFiles;
+  const candidates = files.slice(-maxFiles);
   const selected = [];
   let totalBytes = 0;
   for (let index = candidates.length - 1; index >= 0; index -= 1) {
     const file = candidates[index];
-    if (file.size > MAX_ROLLOUT_FILE_BYTES) {
+    if (file.size > maxFileBytes) {
       truncated = true;
       continue;
     }
-    if (totalBytes + file.size > MAX_ROLLOUT_TOTAL_BYTES) {
+    if (totalBytes + file.size > maxTotalBytes) {
       truncated = true;
       continue;
     }
@@ -434,14 +545,56 @@ function selectBoundedFiles(files) {
     totalBytes += file.size;
   }
   selected.reverse();
-  return { files: selected, truncated };
+  return { files: selected, truncated, candidates };
 }
 
-async function scanRolloutFile(file, accumulator) {
-  accumulator.activeModel = "unknown";
+async function scanRolloutFile(file, observedAt) {
+  const accumulator = createAccumulator();
   const stream = fs.createReadStream(file.path, { encoding: "utf8" });
   const lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
   for await (const line of lines) consumeRolloutLine(accumulator, line);
+  const snapshot = finalizeAccumulator(accumulator, { observedAt });
+  return {
+    id: persistedRolloutId(file),
+    fingerprint: rolloutFingerprint(file),
+    size: normalizeCount(file.size),
+    models: snapshot.models,
+    duplicateEvents: snapshot.duplicateEvents,
+    observedAt: normalizeCount(observedAt)
+  };
+}
+
+function normalizeRolloutEntry(value) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    typeof value.id !== "string" ||
+    !/^[a-f0-9]{64}$/.test(value.id) ||
+    typeof value.fingerprint !== "string" ||
+    !/^[a-f0-9]{64}$/.test(value.fingerprint) ||
+    !Array.isArray(value.models)
+  ) return null;
+  return {
+    id: value.id,
+    fingerprint: value.fingerprint,
+    size: normalizeCount(value.size),
+    models: value.models.slice(0, 100).map(normalizeCostModel),
+    duplicateEvents: normalizeCount(value.duplicateEvents),
+    observedAt: normalizeCount(value.observedAt)
+  };
+}
+
+function preferRolloutEntry(existing, candidate) {
+  if (!existing) return candidate;
+  if (!candidate) return existing;
+  if (candidate.fingerprint === existing.fingerprint) {
+    return candidate.observedAt >= existing.observedAt ? candidate : existing;
+  }
+  if (
+    candidate.size >= existing.size &&
+    modelsContainAtLeast(candidate.models, existing.models)
+  ) return candidate;
+  return existing;
 }
 
 class CodexCostUsageReader {
@@ -449,7 +602,10 @@ class CodexCostUsageReader {
     sessionsRoot,
     archivedSessionsRoot,
     sessionRoots,
-    cacheMs = SCAN_CACHE_MS
+    cacheMs = SCAN_CACHE_MS,
+    maxFiles = MAX_ROLLOUT_FILES,
+    maxFileBytes = MAX_ROLLOUT_FILE_BYTES,
+    maxTotalBytes = MAX_ROLLOUT_TOTAL_BYTES
   } = {}) {
     const codexRoot = path.join(os.homedir(), ".codex");
     const primaryRoot = sessionsRoot || path.join(codexRoot, "sessions");
@@ -465,7 +621,9 @@ class CodexCostUsageReader {
         .map(root => path.resolve(root))
     )];
     this.cacheMs = cacheMs;
-    this.cachedFingerprint = null;
+    this.maxFiles = Math.max(1, normalizeCount(maxFiles));
+    this.maxFileBytes = Math.max(1, normalizeCount(maxFileBytes));
+    this.maxTotalBytes = Math.max(1, normalizeCount(maxTotalBytes));
     this.cachedResult = null;
     this.cachedAt = 0;
   }
@@ -475,6 +633,8 @@ class CodexCostUsageReader {
       return this.cachedResult;
     }
     if (
+      previousSnapshot?.schemaVersion === COST_SNAPSHOT_SCHEMA_VERSION &&
+      previousSnapshot?.indexComplete === true &&
       previousSnapshot?.pricingDate === PRICING_DATE &&
       Number.isFinite(previousSnapshot?.observedAt) &&
       now - previousSnapshot.observedAt >= 0 &&
@@ -488,26 +648,79 @@ class CodexCostUsageReader {
       }
     }
 
+    const previous = normalizeCostSnapshot(previousSnapshot);
+    const previousEntries = new Map(
+      (previous?.rolloutIndex || []).map(entry => [entry.id, entry])
+    );
     const inventory = await listRolloutFiles(this.sessionRoots);
-    const bounded = selectBoundedFiles(inventory);
-    const fingerprint = bounded.files
-      .map(file => `${rolloutFileIdentity(file)}:${file.size}:${file.mtimeMs}`)
-      .join("|");
-    if (this.cachedResult && fingerprint === this.cachedFingerprint) {
-      this.cachedAt = now;
-      return this.cachedResult;
+    const visibleInventory = inventory.slice(-this.maxFiles);
+    const changed = visibleInventory.filter(file => {
+      const existing = previousEntries.get(persistedRolloutId(file));
+      return !existing || existing.fingerprint !== rolloutFingerprint(file);
+    });
+    const bounded = selectBoundedFiles(changed, {
+      maxFiles: this.maxFiles,
+      maxFileBytes: this.maxFileBytes,
+      maxTotalBytes: this.maxTotalBytes
+    });
+    let scanFailed = false;
+    for (const file of bounded.files) {
+      try {
+        const candidate = await scanRolloutFile(file, now);
+        const existing = previousEntries.get(candidate.id);
+        const accepted = preferRolloutEntry(existing, candidate);
+        previousEntries.set(candidate.id, accepted);
+        if (accepted !== candidate) scanFailed = true;
+      } catch {
+        scanFailed = true;
+      }
     }
 
-    const accumulator = createAccumulator();
-    for (const file of bounded.files) await scanRolloutFile(file, accumulator);
-    const result = finalizeAccumulator(accumulator, {
-      filesScanned: bounded.files.length,
-      truncated: bounded.truncated,
-      observedAt: now
-    });
-    this.cachedFingerprint = fingerprint;
+    const rolloutIndex = [...previousEntries.values()].sort((left, right) => (
+      left.id.localeCompare(right.id)
+    ));
+    const indexedModels = combineModels(rolloutIndex.map(entry => entry.models));
+    const legacyFloorModels = combineModels([
+      previous?.legacyFloorModels || [],
+      previous?.models || []
+    ], "max");
+    const models = combineModels([indexedModels, legacyFloorModels], "max");
+    const selectedIds = new Set(bounded.files.map(persistedRolloutId));
+    const pendingFiles = changed.filter(file => !selectedIds.has(persistedRolloutId(file)));
+    const indexComplete = (
+      inventory.length <= this.maxFiles &&
+      pendingFiles.length === 0 &&
+      !scanFailed &&
+      visibleInventory.every(file => {
+        const entry = previousEntries.get(persistedRolloutId(file));
+        return entry?.fingerprint === rolloutFingerprint(file);
+      })
+    );
+    const legacyFloorApplied = !modelsContainAtLeast(indexedModels, legacyFloorModels);
+    const result = {
+      scanned: true,
+      schemaVersion: COST_SNAPSHOT_SCHEMA_VERSION,
+      pricingDate: PRICING_DATE,
+      estimatedCostUsd: Number(models.reduce(
+        (total, model) => total + (model.estimatedCostUsd || 0),
+        0
+      ).toFixed(6)),
+      hasUnpricedModels: models.some(model => !model.priced),
+      models,
+      filesScanned: rolloutIndex.length,
+      truncated: !indexComplete || legacyFloorApplied,
+      duplicateEvents: rolloutIndex.reduce(
+        (total, entry) => safeAdd(total, entry.duplicateEvents),
+        0
+      ),
+      observedAt: normalizeCount(now),
+      indexComplete,
+      legacyFloorApplied,
+      legacyFloorModels,
+      rolloutIndex
+    };
     this.cachedResult = result;
-    this.cachedAt = now;
+    this.cachedAt = indexComplete ? now : 0;
     return result;
   }
 }
@@ -550,7 +763,19 @@ function normalizeCostModel(value) {
 function normalizeCostSnapshot(value) {
   if (!value || typeof value !== "object" || !Array.isArray(value.models)) return null;
   const models = value.models.slice(0, 100).map(normalizeCostModel);
+  const rolloutIndex = Array.isArray(value.rolloutIndex)
+    ? value.rolloutIndex
+      .slice(-MAX_PERSISTED_ROLLOUTS)
+      .map(normalizeRolloutEntry)
+      .filter(Boolean)
+    : [];
+  const legacyFloorModels = Array.isArray(value.legacyFloorModels)
+    ? value.legacyFloorModels.slice(0, 100).map(normalizeCostModel)
+    : [];
   return {
+    schemaVersion: value.schemaVersion === COST_SNAPSHOT_SCHEMA_VERSION
+      ? COST_SNAPSHOT_SCHEMA_VERSION
+      : 1,
     pricingDate: typeof value.pricingDate === "string" ? value.pricingDate : PRICING_DATE,
     estimatedCostUsd: models.reduce(
       (total, model) => total + (model.estimatedCostUsd || 0),
@@ -561,7 +786,83 @@ function normalizeCostSnapshot(value) {
     filesScanned: normalizeCount(value.filesScanned),
     truncated: Boolean(value.truncated),
     duplicateEvents: normalizeCount(value.duplicateEvents),
-    observedAt: normalizeCount(value.observedAt)
+    observedAt: normalizeCount(value.observedAt),
+    indexComplete: value.indexComplete === true,
+    legacyFloorApplied: value.legacyFloorApplied === true,
+    legacyFloorModels,
+    rolloutIndex
+  };
+}
+
+function publicCostSnapshot(snapshot) {
+  if (!snapshot) return null;
+  const {
+    rolloutIndex,
+    legacyFloorModels,
+    indexComplete,
+    legacyFloorApplied,
+    schemaVersion,
+    ...publicSnapshot
+  } = snapshot;
+  return publicSnapshot;
+}
+
+function reconcileCostSnapshots(values) {
+  const snapshots = (Array.isArray(values) ? values : [])
+    .map(normalizeCostSnapshot)
+    .filter(Boolean);
+  if (!snapshots.length) return null;
+
+  const entries = new Map();
+  for (const snapshot of snapshots) {
+    for (const entry of snapshot.rolloutIndex) {
+      entries.set(entry.id, preferRolloutEntry(entries.get(entry.id), entry));
+    }
+  }
+  const rolloutIndex = [...entries.values()]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .slice(-MAX_PERSISTED_ROLLOUTS);
+  const indexedModels = combineModels(rolloutIndex.map(entry => entry.models));
+  const legacyFloorModels = combineModels(snapshots.flatMap(snapshot => [
+    snapshot.models,
+    snapshot.legacyFloorModels
+  ]), "max");
+  const models = combineModels([indexedModels, legacyFloorModels], "max");
+  const newest = snapshots.sort((left, right) => right.observedAt - left.observedAt)[0];
+  const hasIndex = rolloutIndex.length > 0;
+  const newestIndexed = snapshots.find(snapshot => (
+    snapshot.schemaVersion === COST_SNAPSHOT_SCHEMA_VERSION &&
+    snapshot.rolloutIndex.length > 0
+  ));
+  const indexComplete = hasIndex && newestIndexed?.indexComplete === true;
+  const legacyFloorApplied = hasIndex && !modelsContainAtLeast(indexedModels, legacyFloorModels);
+  return {
+    schemaVersion: hasIndex ? COST_SNAPSHOT_SCHEMA_VERSION : 1,
+    pricingDate: PRICING_DATE,
+    estimatedCostUsd: Number(models.reduce(
+      (total, model) => total + (model.estimatedCostUsd || 0),
+      0
+    ).toFixed(6)),
+    hasUnpricedModels: models.some(model => !model.priced),
+    models,
+    filesScanned: Math.max(
+      rolloutIndex.length,
+      ...snapshots.map(snapshot => snapshot.filesScanned)
+    ),
+    truncated: hasIndex
+      ? (!indexComplete || legacyFloorApplied)
+      : snapshots.every(snapshot => snapshot.truncated),
+    duplicateEvents: hasIndex
+      ? rolloutIndex.reduce(
+        (total, entry) => safeAdd(total, entry.duplicateEvents),
+        0
+      )
+      : Math.max(...snapshots.map(snapshot => snapshot.duplicateEvents)),
+    observedAt: newest.observedAt,
+    indexComplete,
+    legacyFloorApplied,
+    legacyFloorModels,
+    rolloutIndex
   };
 }
 
@@ -572,7 +873,7 @@ function normalizeCodexCostUsageResult(raw, previousState = {}, now = Date.now()
     return {
       available: true,
       cached: false,
-      ...snapshot,
+      ...publicCostSnapshot(snapshot),
       persistence: { tokenCostSnapshot: snapshot }
     };
   }
@@ -582,7 +883,7 @@ function normalizeCodexCostUsageResult(raw, previousState = {}, now = Date.now()
     return {
       available: true,
       cached: true,
-      ...cached,
+      ...publicCostSnapshot(cached),
       persistence: {}
     };
   }
@@ -609,6 +910,7 @@ module.exports = {
   PRICING_DATE,
   calculateUsageCost,
   normalizeCodexCostUsageResult,
+  reconcileCostSnapshots,
   normalizeModelName,
   summarizeRolloutLines
 };

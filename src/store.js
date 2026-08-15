@@ -1,6 +1,8 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const { reconcileCostSnapshots } = require("./codex-cost-usage");
+const { reconcileTaskHistorySnapshots } = require("./codex-active-tasks");
 
 const MAX_STATE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_BACKUP_INTERVAL_MS = 15 * 60 * 1000;
@@ -314,6 +316,14 @@ function normalizeTaskPerformanceRecords(states) {
       result.historyTruncated = Boolean(records.historyTruncated);
     }
   }
+  const outcomeTotal = result.completedTaskCount +
+    result.manualInterruptedTaskCount +
+    result.abnormalInterruptedTaskCount;
+  result.totalTaskCount = Math.max(
+    result.totalTaskCount,
+    result.timedTaskCount,
+    outcomeTotal
+  );
   return result;
 }
 
@@ -379,11 +389,19 @@ function reconcileQuotaStates(primary, candidates = []) {
     if (values.length) result[key] = Math.max(...values);
   }
 
-  for (const key of ["tokenUsageSnapshot", "tokenCostSnapshot"]) {
-    const snapshot = newestSnapshot(states, key);
-    if (snapshot) result[key] = snapshot;
-  }
+  const tokenUsageSnapshot = newestSnapshot(states, "tokenUsageSnapshot");
+  if (tokenUsageSnapshot) result.tokenUsageSnapshot = tokenUsageSnapshot;
+  const tokenCostSnapshot = reconcileCostSnapshots(
+    states.map(state => state.tokenCostSnapshot)
+  );
+  if (tokenCostSnapshot) result.tokenCostSnapshot = tokenCostSnapshot;
   result.taskPerformanceRecords = normalizeTaskPerformanceRecords(states);
+  if (states.some(state => isPlainObject(state.taskHistorySnapshot))) {
+    result.taskHistorySnapshot = reconcileTaskHistorySnapshots(
+      states.map(state => state.taskHistorySnapshot),
+      result.taskPerformanceRecords
+    );
+  }
 
   if (!isPlainObject(result.lastSnapshot)) {
     const source = states
@@ -414,7 +432,23 @@ function quotaHistoryFingerprint(state) {
       codexClientUpdateHistory: normalizeClientUpdateHistory([state]),
       knownCreditIds: Array.isArray(state?.knownCreditIds)
         ? [...new Set(state.knownCreditIds)].sort()
-        : []
+        : [],
+      tokenCostSnapshot: isPlainObject(state?.tokenCostSnapshot) ? {
+        estimatedCostUsd: Number(state.tokenCostSnapshot.estimatedCostUsd) || 0,
+        models: Array.isArray(state.tokenCostSnapshot.models)
+          ? state.tokenCostSnapshot.models.map(model => [
+            model?.model,
+            model?.inputTokens,
+            model?.cachedInputTokens,
+            model?.cacheWriteInputTokens,
+            model?.outputTokens,
+            model?.estimatedCostUsd
+          ])
+          : [],
+        rolloutIndex: Array.isArray(state.tokenCostSnapshot.rolloutIndex)
+          ? state.tokenCostSnapshot.rolloutIndex.map(entry => [entry?.id, entry?.fingerprint])
+          : []
+      } : null
     }))
     .digest("hex");
 }

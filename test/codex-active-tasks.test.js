@@ -267,3 +267,45 @@ test("recovers completed and interrupted aggregate statistics from live and arch
     task.id === "abnormal" && task.outcome === "abnormal-interrupted"
   )));
 });
+
+test("builds cumulative task statistics across bounded history batches", async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-task-index-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sessionsRoot = path.join(root, "sessions");
+  fs.mkdirSync(sessionsRoot, { recursive: true });
+  const nowSeconds = Math.floor(Date.now() / 1_000);
+  const paths = [];
+  for (let index = 1; index <= 3; index += 1) {
+    const filePath = path.join(sessionsRoot, `rollout-task-${index}.jsonl`);
+    fs.writeFileSync(filePath, [
+      taskStarted(`task-${index}`, nowSeconds - index * 20),
+      taskComplete(`task-${index}`, nowSeconds - index * 20, nowSeconds - index * 10)
+    ].join("\n"));
+    paths.push(filePath);
+  }
+  const maxHistoryTotalBytes = Math.max(
+    ...paths.map(filePath => fs.statSync(filePath).size)
+  );
+  const reader = new CodexActiveTaskReader({
+    sessionsRoot,
+    historyCacheMs: 0,
+    maxHistoryTotalBytes
+  });
+
+  const first = await reader.read(Date.now(), null);
+  const second = await reader.read(Date.now() + 1, first.history);
+  const third = await reader.read(Date.now() + 2, second.history);
+
+  assert.equal(first.history.indexComplete, false);
+  assert.equal(first.history.rolloutIndex.length, 1);
+  assert.equal(second.history.rolloutIndex.length, 2);
+  assert.equal(third.history.rolloutIndex.length, 3);
+  assert.equal(third.history.indexComplete, true);
+  assert.equal(third.history.totalTaskCount, 3);
+  assert.equal(third.history.completedTaskCount, 3);
+
+  fs.rmSync(paths[0]);
+  const afterDelete = await reader.read(Date.now() + 3, third.history);
+  assert.equal(afterDelete.history.totalTaskCount, 3);
+  assert.equal(afterDelete.history.rolloutIndex.length, 3);
+});

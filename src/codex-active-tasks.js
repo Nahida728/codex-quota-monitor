@@ -1,5 +1,6 @@
 const fsSync = require("node:fs");
 const fs = require("node:fs/promises");
+const crypto = require("node:crypto");
 const os = require("node:os");
 const path = require("node:path");
 const readline = require("node:readline");
@@ -20,6 +21,8 @@ const MAX_HISTORY_FILES = 1_000;
 const MAX_HISTORY_FILE_BYTES = 512 * 1024 * 1024;
 const MAX_HISTORY_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 const HISTORY_CACHE_MS = 15 * 60 * 1_000;
+const TASK_HISTORY_SCHEMA_VERSION = 2;
+const MAX_PERSISTED_HISTORY_ROLLOUTS = 1_000;
 
 const TASK_OUTCOMES = new Set([
   "completed",
@@ -318,6 +321,22 @@ function rolloutFileIdentity(file) {
   return path.basename(file?.path || "").toLowerCase();
 }
 
+function persistedHistoryRolloutId(file) {
+  return crypto
+    .createHash("sha256")
+    .update(rolloutFileIdentity(file))
+    .digest("hex");
+}
+
+function historyRolloutFingerprint(file) {
+  const size = Math.max(0, Math.floor(Number(file?.size) || 0));
+  const mtimeMs = Math.max(0, Math.floor(Number(file?.mtimeMs) || 0));
+  return crypto
+    .createHash("sha256")
+    .update(`${size}:${mtimeMs}:${file?.archived ? "a" : "s"}`)
+    .digest("hex");
+}
+
 function preferMoreCompleteRollout(left, right) {
   if (right.size !== left.size) return right.size > left.size ? right : left;
   if (right.mtimeMs !== left.mtimeMs) return right.mtimeMs > left.mtimeMs ? right : left;
@@ -451,11 +470,27 @@ function addTaskToHistory(history, task) {
 }
 
 function finalizeHistory(history) {
+  const outcomeTotal = Math.max(0, Math.floor(history.completedTaskCount)) +
+    Math.max(0, Math.floor(history.manualInterruptedTaskCount)) +
+    Math.max(0, Math.floor(history.abnormalInterruptedTaskCount));
   history.totalTaskCount = Math.max(0, Math.floor(history.totalTaskCount));
   history.timedTaskCount = Math.max(0, Math.floor(history.timedTaskCount));
+  history.totalTaskCount = Math.max(
+    history.totalTaskCount,
+    history.timedTaskCount,
+    outcomeTotal
+  );
   history.totalElapsedSeconds = Math.max(0, Math.floor(history.totalElapsedSeconds));
+  history.totalElapsedSeconds = Math.max(
+    history.totalElapsedSeconds,
+    Math.max(0, Math.floor(history.longestElapsedSeconds))
+  );
   history.totalEstimatedCostUsd = Number(history.totalEstimatedCostUsd.toFixed(6));
   history.highestEstimatedCostUsd = Number(history.highestEstimatedCostUsd.toFixed(6));
+  history.totalEstimatedCostUsd = Math.max(
+    history.totalEstimatedCostUsd,
+    history.highestEstimatedCostUsd
+  );
   return history;
 }
 
@@ -560,19 +595,23 @@ async function scanTaskHistoryFile(file, history, now) {
   }
 }
 
-function selectHistoryFiles(files) {
+function selectHistoryFiles(files, {
+  maxFiles = MAX_HISTORY_FILES,
+  maxFileBytes = MAX_HISTORY_FILE_BYTES,
+  maxTotalBytes = MAX_HISTORY_TOTAL_BYTES
+} = {}) {
   const sorted = files.sort((left, right) => (
     rolloutFileIdentity(left).localeCompare(rolloutFileIdentity(right))
   ));
-  let truncated = sorted.length > MAX_HISTORY_FILES;
-  const candidates = sorted.slice(-MAX_HISTORY_FILES);
+  let truncated = sorted.length > maxFiles;
+  const candidates = sorted.slice(-maxFiles);
   const selected = [];
   let totalBytes = 0;
   for (let index = candidates.length - 1; index >= 0; index -= 1) {
     const file = candidates[index];
     if (
-      file.size > MAX_HISTORY_FILE_BYTES ||
-      totalBytes + file.size > MAX_HISTORY_TOTAL_BYTES
+      file.size > maxFileBytes ||
+      totalBytes + file.size > maxTotalBytes
     ) {
       truncated = true;
       continue;
@@ -581,7 +620,7 @@ function selectHistoryFiles(files) {
     totalBytes += file.size;
   }
   selected.reverse();
-  return { files: selected, truncated };
+  return { files: selected, truncated, candidates };
 }
 
 function normalizeTerminalTask(value) {
@@ -638,12 +677,170 @@ function normalizeTaskHistory(value, now = Date.now()) {
   };
 }
 
+const TASK_HISTORY_SUM_FIELDS = [
+  "totalTaskCount",
+  "timedTaskCount",
+  "totalElapsedSeconds",
+  "totalEstimatedCostUsd",
+  "completedTaskCount",
+  "manualInterruptedTaskCount",
+  "abnormalInterruptedTaskCount"
+];
+
+const TASK_HISTORY_MAX_FIELDS = [
+  "longestElapsedSeconds",
+  "highestEstimatedCostUsd"
+];
+
+function mergeTaskHistories(histories, mode = "sum", now = Date.now()) {
+  const normalized = (Array.isArray(histories) ? histories : [])
+    .map(history => normalizeTaskHistory({ available: true, ...history }, now));
+  const result = createTaskHistory(
+    Math.max(0, ...normalized.map(history => Number(history.observedAt) || 0)),
+    normalized.some(history => history.truncated)
+  );
+  for (const history of normalized) {
+    for (const key of TASK_HISTORY_SUM_FIELDS) {
+      result[key] = mode === "max"
+        ? Math.max(result[key], history[key])
+        : Math.min(Number.MAX_SAFE_INTEGER, result[key] + history[key]);
+    }
+    for (const key of TASK_HISTORY_MAX_FIELDS) {
+      result[key] = Math.max(result[key], history[key]);
+    }
+  }
+  return finalizeHistory(result);
+}
+
+function taskHistoryCovers(candidate, floor, now = Date.now()) {
+  const normalizedCandidate = normalizeTaskHistory({ available: true, ...candidate }, now);
+  const normalizedFloor = normalizeTaskHistory({ available: true, ...floor }, now);
+  return [...TASK_HISTORY_SUM_FIELDS, ...TASK_HISTORY_MAX_FIELDS]
+    .every(key => normalizedCandidate[key] >= normalizedFloor[key]);
+}
+
+function normalizeTaskHistoryEntry(value, now = Date.now()) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    typeof value.id !== "string" ||
+    !/^[a-f0-9]{64}$/.test(value.id) ||
+    typeof value.fingerprint !== "string" ||
+    !/^[a-f0-9]{64}$/.test(value.fingerprint)
+  ) return null;
+  return {
+    id: value.id,
+    fingerprint: value.fingerprint,
+    size: Math.max(0, Math.floor(Number(value.size) || 0)),
+    history: normalizeTaskHistory({ available: true, ...value.history }, now),
+    observedAt: Number.isFinite(value.observedAt) ? value.observedAt : now
+  };
+}
+
+function normalizeTaskHistorySnapshot(value, legacyFallback = null, now = Date.now()) {
+  const rolloutIndex = Array.isArray(value?.rolloutIndex)
+    ? value.rolloutIndex
+      .slice(-MAX_PERSISTED_HISTORY_ROLLOUTS)
+      .map(entry => normalizeTaskHistoryEntry(entry, now))
+      .filter(Boolean)
+    : [];
+  const legacyFloor = mergeTaskHistories([
+    value?.legacyFloor,
+    legacyFallback,
+    value ? {
+      ...value,
+      rolloutIndex: undefined,
+      legacyFloor: undefined
+    } : null
+  ].filter(Boolean), "max", now);
+  const indexed = mergeTaskHistories(
+    rolloutIndex.map(entry => entry.history),
+    "sum",
+    now
+  );
+  const history = mergeTaskHistories([indexed, legacyFloor], "max", now);
+  const legacyFloorApplied = !taskHistoryCovers(indexed, legacyFloor, now);
+  return {
+    ...history,
+    schemaVersion: value?.schemaVersion === TASK_HISTORY_SCHEMA_VERSION
+      ? TASK_HISTORY_SCHEMA_VERSION
+      : (rolloutIndex.length ? TASK_HISTORY_SCHEMA_VERSION : 1),
+    indexComplete: value?.indexComplete === true,
+    legacyFloorApplied,
+    legacyFloor,
+    rolloutIndex
+  };
+}
+
+async function scanTaskHistoryEntry(file, now) {
+  const history = createTaskHistory(now, false);
+  await scanTaskHistoryFile(file, history, now);
+  return {
+    id: persistedHistoryRolloutId(file),
+    fingerprint: historyRolloutFingerprint(file),
+    size: Math.max(0, Math.floor(Number(file.size) || 0)),
+    history: finalizeHistory(history),
+    observedAt: now
+  };
+}
+
+function mergeTaskHistoryEntry(existing, candidate, now) {
+  if (!existing) return candidate;
+  return {
+    ...candidate,
+    size: Math.max(existing.size, candidate.size),
+    history: mergeTaskHistories([existing.history, candidate.history], "max", now)
+  };
+}
+
+function reconcileTaskHistorySnapshots(values, legacyRecords = null, now = Date.now()) {
+  const snapshots = (Array.isArray(values) ? values : [])
+    .filter(value => value && typeof value === "object")
+    .map(value => normalizeTaskHistorySnapshot(value, null, now))
+    .sort((left, right) => (right.observedAt || 0) - (left.observedAt || 0));
+  const entries = new Map();
+  for (const snapshot of snapshots) {
+    for (const entry of snapshot.rolloutIndex) {
+      entries.set(entry.id, mergeTaskHistoryEntry(entries.get(entry.id), entry, now));
+    }
+  }
+  const rolloutIndex = [...entries.values()]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .slice(-MAX_PERSISTED_HISTORY_ROLLOUTS);
+  const indexed = mergeTaskHistories(rolloutIndex.map(entry => entry.history), "sum", now);
+  const legacyFloor = mergeTaskHistories([
+    legacyRecords,
+    ...snapshots.map(snapshot => ({
+      ...snapshot,
+      rolloutIndex: undefined,
+      legacyFloor: undefined
+    }))
+  ].filter(Boolean), "max", now);
+  const history = mergeTaskHistories([indexed, legacyFloor], "max", now);
+  const newestIndexed = snapshots.find(snapshot => snapshot.rolloutIndex.length > 0);
+  const indexComplete = rolloutIndex.length > 0 && newestIndexed?.indexComplete === true;
+  const legacyFloorApplied = !taskHistoryCovers(indexed, legacyFloor, now);
+  return {
+    ...history,
+    schemaVersion: rolloutIndex.length ? TASK_HISTORY_SCHEMA_VERSION : 1,
+    indexComplete,
+    legacyFloorApplied,
+    legacyFloor,
+    rolloutIndex,
+    truncated: !indexComplete || legacyFloorApplied,
+    observedAt: snapshots[0]?.observedAt || now
+  };
+}
+
 class CodexActiveTaskReader {
   constructor({
     sessionsRoot,
     archivedSessionsRoot,
     sessionRoots,
-    historyCacheMs = HISTORY_CACHE_MS
+    historyCacheMs = HISTORY_CACHE_MS,
+    maxHistoryFiles = MAX_HISTORY_FILES,
+    maxHistoryFileBytes = MAX_HISTORY_FILE_BYTES,
+    maxHistoryTotalBytes = MAX_HISTORY_TOTAL_BYTES
   } = {}) {
     const codexRoot = path.join(os.homedir(), ".codex");
     const primaryRoot = sessionsRoot || path.join(codexRoot, "sessions");
@@ -659,31 +856,90 @@ class CodexActiveTaskReader {
         .map(root => path.resolve(root))
     )];
     this.historyCacheMs = historyCacheMs;
+    this.maxHistoryFiles = Math.max(1, Math.floor(Number(maxHistoryFiles) || 1));
+    this.maxHistoryFileBytes = Math.max(1, Math.floor(Number(maxHistoryFileBytes) || 1));
+    this.maxHistoryTotalBytes = Math.max(1, Math.floor(Number(maxHistoryTotalBytes) || 1));
     this.cachedHistory = null;
     this.cachedHistoryAt = 0;
     this.cachedLifecycleFingerprint = null;
   }
 
-  async readHistory(now, lifecycleFingerprint) {
+  async readHistory(now, lifecycleFingerprint, previousSnapshot = null) {
     if (
       this.cachedHistory &&
       this.cachedLifecycleFingerprint === lifecycleFingerprint &&
       now - this.cachedHistoryAt >= 0 &&
-      now - this.cachedHistoryAt < this.historyCacheMs
+      now - this.cachedHistoryAt < this.historyCacheMs &&
+      this.cachedHistory.indexComplete
     ) {
       return this.cachedHistory;
     }
     const inventory = await listRolloutFiles(this.sessionRoots, now);
-    const bounded = selectHistoryFiles(inventory);
-    const history = createTaskHistory(now, bounded.truncated);
-    for (const file of bounded.files) await scanTaskHistoryFile(file, history, now);
-    this.cachedHistory = finalizeHistory(history);
-    this.cachedHistoryAt = now;
+    const previous = normalizeTaskHistorySnapshot(previousSnapshot, null, now);
+    const entries = new Map(previous.rolloutIndex.map(entry => [entry.id, entry]));
+    const visibleInventory = inventory.slice(-this.maxHistoryFiles);
+    const changed = visibleInventory.filter(file => {
+      const existing = entries.get(persistedHistoryRolloutId(file));
+      return !existing || existing.fingerprint !== historyRolloutFingerprint(file);
+    });
+    const bounded = selectHistoryFiles(changed, {
+      maxFiles: this.maxHistoryFiles,
+      maxFileBytes: this.maxHistoryFileBytes,
+      maxTotalBytes: this.maxHistoryTotalBytes
+    });
+    let scanFailed = false;
+    for (const file of bounded.files) {
+      try {
+        const candidate = await scanTaskHistoryEntry(file, now);
+        entries.set(candidate.id, mergeTaskHistoryEntry(
+          entries.get(candidate.id),
+          candidate,
+          now
+        ));
+      } catch {
+        scanFailed = true;
+      }
+    }
+    const rolloutIndex = [...entries.values()]
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .slice(-MAX_PERSISTED_HISTORY_ROLLOUTS);
+    const indexed = mergeTaskHistories(rolloutIndex.map(entry => entry.history), "sum", now);
+    const legacyFloor = mergeTaskHistories([
+      previous.legacyFloor,
+      {
+        ...previous,
+        rolloutIndex: undefined,
+        legacyFloor: undefined
+      }
+    ], "max", now);
+    const history = mergeTaskHistories([indexed, legacyFloor], "max", now);
+    const selectedIds = new Set(bounded.files.map(persistedHistoryRolloutId));
+    const pending = changed.filter(file => !selectedIds.has(persistedHistoryRolloutId(file)));
+    const indexComplete = (
+      inventory.length <= this.maxHistoryFiles &&
+      pending.length === 0 &&
+      !scanFailed &&
+      visibleInventory.every(file => {
+        const entry = entries.get(persistedHistoryRolloutId(file));
+        return entry?.fingerprint === historyRolloutFingerprint(file);
+      })
+    );
+    this.cachedHistory = {
+      ...history,
+      schemaVersion: TASK_HISTORY_SCHEMA_VERSION,
+      indexComplete,
+      legacyFloorApplied: !taskHistoryCovers(indexed, legacyFloor, now),
+      legacyFloor,
+      rolloutIndex,
+      truncated: !indexComplete || !taskHistoryCovers(indexed, legacyFloor, now),
+      observedAt: now
+    };
+    this.cachedHistoryAt = indexComplete ? now : 0;
     this.cachedLifecycleFingerprint = lifecycleFingerprint;
     return this.cachedHistory;
   }
 
-  async read(now = Date.now()) {
+  async read(now = Date.now(), previousHistorySnapshot = null) {
     const inventory = await listRolloutFiles(
       this.sessionRoots,
       now,
@@ -744,7 +1000,7 @@ class CodexActiveTaskReader {
     const lifecycleFingerprint = lifecycleParts.sort().join("|");
     let history;
     try {
-      history = await this.readHistory(now, lifecycleFingerprint);
+      history = await this.readHistory(now, lifecycleFingerprint, previousHistorySnapshot);
     } catch {
       history = this.cachedHistory || normalizeTaskHistory(null, now);
     }
@@ -786,6 +1042,7 @@ function normalizeActiveTaskResult(raw, now = Date.now()) {
       tasks: [],
       terminalTasks: [],
       history: normalizeTaskHistory(null, now),
+      historySnapshot: null,
       count: 0,
       truncated: false,
       observedAt: null,
@@ -801,11 +1058,17 @@ function normalizeActiveTaskResult(raw, now = Date.now()) {
     .map(normalizeTerminalTask)
     .filter(Boolean)
     .slice(0, MAX_CANDIDATE_FILES);
+  const historySnapshot = raw.history?.available
+    ? normalizeTaskHistorySnapshot(raw.history, null, now)
+    : null;
   return {
     available: true,
     tasks,
     terminalTasks,
-    history: normalizeTaskHistory(raw.history, now),
+    history: historySnapshot
+      ? normalizeTaskHistory(historySnapshot, now)
+      : normalizeTaskHistory(null, now),
+    historySnapshot,
     count: tasks.length,
     truncated: Boolean(raw.truncated),
     observedAt: Number.isFinite(raw.observedAt) ? raw.observedAt : now,
@@ -818,6 +1081,8 @@ module.exports = {
   CodexActiveTaskReader,
   normalizeActiveTaskResult,
   normalizeProjectName,
+  reconcileTaskHistorySnapshots,
+  normalizeTaskHistorySnapshot,
   normalizeTaskHistory,
   summarizeActiveTaskLines,
   summarizeTaskWindow
