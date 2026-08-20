@@ -7,6 +7,7 @@ const {
   CodexCostUsageReader,
   calculateUsageCost,
   normalizeCodexCostUsageResult,
+  reconcileCostSnapshots,
   summarizeRolloutLines
 } = require("../src/codex-cost-usage");
 
@@ -104,7 +105,7 @@ test("de-duplicates replayed counters within one rollout but not across distinct
   assert.equal(result.duplicateEvents, 1);
 });
 
-test("counts equal Token counters again after a new turn context", () => {
+test("de-duplicates replayed Token counters across turn contexts in one rollout", () => {
   const sameCounters = tokenCount({
     input: 1_000_000,
     cached: 800_000,
@@ -120,9 +121,62 @@ test("counts equal Token counters again after a new turn context", () => {
     ]
   }], 123);
 
+  assert.equal(result.models[0].requestCount, 1);
+  assert.equal(result.models[0].inputTokens, 1_000_000);
+  assert.equal(result.duplicateEvents, 2);
+});
+
+test("keeps equal per-call usage when cumulative counters differ", () => {
+  const result = summarizeRolloutLines([{
+    lines: [
+      turnContext("gpt-5.6-sol"),
+      tokenCount({
+        input: 1_000_000,
+        cached: 800_000,
+        output: 10_000,
+        totalInput: 1_000_000,
+        totalCached: 800_000,
+        totalOutput: 10_000
+      }),
+      turnContext("gpt-5.6-sol"),
+      tokenCount({
+        input: 1_000_000,
+        cached: 800_000,
+        output: 10_000,
+        totalInput: 2_000_000,
+        totalCached: 1_600_000,
+        totalOutput: 20_000
+      })
+    ]
+  }], 123);
+
   assert.equal(result.models[0].requestCount, 2);
   assert.equal(result.models[0].inputTokens, 2_000_000);
-  assert.equal(result.duplicateEvents, 1);
+  assert.equal(result.duplicateEvents, 0);
+});
+
+test("excludes Token events without direct model context from model totals", () => {
+  const result = summarizeRolloutLines([{
+    lines: [
+      tokenCount({ input: 2_000_000, cached: 1_500_000, output: 20_000 }),
+      turnContext("gpt-5.6-sol"),
+      tokenCount({
+        input: 1_000_000,
+        cached: 800_000,
+        output: 10_000,
+        totalInput: 3_000_000,
+        totalCached: 2_300_000,
+        totalOutput: 30_000
+      })
+    ]
+  }], 123);
+
+  assert.equal(result.models.length, 1);
+  assert.equal(result.models[0].model, "gpt-5.6-sol");
+  assert.equal(result.models[0].inputTokens, 1_000_000);
+  assert.equal(result.hasUnattributedUsage, true);
+  assert.equal(result.unattributedRequestCount, 1);
+  assert.equal(result.unattributedInputTokens, 2_000_000);
 });
 
 test("prices cached, uncached, cache-write, output, and long-context tokens", () => {
@@ -209,6 +263,7 @@ test("retains the last normalized local cost snapshot after a scan failure", () 
       longContextRequests: 0,
       estimatedCostUsd: 0.305
     }],
+    dailyUsage: [],
     filesScanned: 2,
     observedAt: 100
   }, {}, 100);
@@ -231,6 +286,7 @@ test("reuses a recent persisted scan instead of repeatedly walking large rollout
     cacheMs: 15 * 60 * 1000
   });
   const restored = await reader.read(1_000_000, {
+    schemaVersion: 4,
     pricingDate: "2026-07-26",
     estimatedCostUsd: 0.305,
     models: [{
@@ -240,7 +296,9 @@ test("reuses a recent persisted scan instead of repeatedly walking large rollout
       outputTokens: 1_000,
       estimatedCostUsd: 0.305
     }],
+    dailyUsage: [],
     filesScanned: 2,
+    indexComplete: true,
     observedAt: 999_000
   });
   assert.equal(restored.scanned, true);
@@ -399,7 +457,7 @@ test("builds a persistent rollout index in bounded batches without lowering prio
   assert.equal(afterDelete.estimatedCostUsd, third.estimatedCostUsd);
 });
 
-test("keeps a trusted legacy snapshot as a floor while the rollout index migrates", async t => {
+test("rebuilds an old aggregate instead of keeping it as a permanent floor", async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-cost-floor-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const sessionsRoot = path.join(root, "sessions");
@@ -427,9 +485,139 @@ test("keeps a trusted legacy snapshot as a floor while the rollout index migrate
   }).read(1_000, previous);
   const normalized = normalizeCodexCostUsageResult(raw, { tokenCostSnapshot: previous }, 1_000);
 
-  assert.equal(raw.estimatedCostUsd, 100);
-  assert.equal(raw.legacyFloorApplied, true);
-  assert.equal(normalized.estimatedCostUsd, 100);
+  assert.equal(raw.estimatedCostUsd, 0.305);
+  assert.equal(raw.schemaVersion, 4);
+  assert.equal(normalized.estimatedCostUsd, 0.305);
   assert.equal(normalized.rolloutIndex, undefined);
   assert.equal(normalized.persistence.tokenCostSnapshot.rolloutIndex.length, 1);
+  assert.equal(
+    normalized.persistence.tokenCostSnapshot.models.some(model => model.model === "unknown"),
+    false
+  );
+});
+
+test("does not merge incompatible archived aggregates into the current ledger", () => {
+  const oldSnapshot = {
+    schemaVersion: 2,
+    models: [{
+      model: "unknown",
+      inputTokens: 200_000_000,
+      cachedInputTokens: 190_000_000,
+      outputTokens: 2_000_000,
+      requestCount: 2_000
+    }],
+    observedAt: 900
+  };
+  const currentSnapshot = {
+    schemaVersion: 4,
+    pricingDate: "2026-07-26",
+    models: [{
+      model: "gpt-5.6-sol",
+      inputTokens: 100_000,
+      cachedInputTokens: 50_000,
+      outputTokens: 1_000,
+      estimatedCostUsd: 0.305
+    }],
+    dailyUsage: [{
+      date: "2026-08-12",
+      models: [{
+        model: "gpt-5.6-sol",
+        inputTokens: 100_000,
+        cachedInputTokens: 50_000,
+        outputTokens: 1_000,
+        estimatedCostUsd: 0.305
+      }]
+    }],
+    rolloutIndex: [{
+      id: "a".repeat(64),
+      fingerprint: "b".repeat(64),
+      size: 1_000,
+      models: [{
+        model: "gpt-5.6-sol",
+        inputTokens: 100_000,
+        cachedInputTokens: 50_000,
+        outputTokens: 1_000,
+        estimatedCostUsd: 0.305
+      }],
+      dailyUsage: [{
+        date: "2026-08-12",
+        models: [{
+          model: "gpt-5.6-sol",
+          inputTokens: 100_000,
+          cachedInputTokens: 50_000,
+          outputTokens: 1_000,
+          estimatedCostUsd: 0.305
+        }]
+      }],
+      observedAt: 1_000
+    }],
+    indexComplete: true,
+    observedAt: 1_000
+  };
+
+  const reconciled = reconcileCostSnapshots([oldSnapshot, currentSnapshot]);
+  assert.equal(reconciled.schemaVersion, 4);
+  assert.equal(reconciled.models.length, 1);
+  assert.equal(reconciled.models[0].model, "gpt-5.6-sol");
+  assert.equal(reconciled.estimatedCostUsd, 0.305);
+  assert.equal(reconciled.hasUnattributedUsage, false);
+});
+
+test("caps replay-inflated daily model usage to the official Token ledger", () => {
+  const model = {
+    model: "gpt-5.6-sol",
+    inputTokens: 200_000,
+    cachedInputTokens: 160_000,
+    outputTokens: 2_000,
+    requestCount: 20,
+    estimatedCostUsd: 0.5
+  };
+  const result = normalizeCodexCostUsageResult({
+    scanned: true,
+    schemaVersion: 4,
+    pricingDate: "2026-07-26",
+    models: [model],
+    dailyUsage: [{
+      date: "2026-08-12",
+      models: [model]
+    }],
+    observedAt: 1_000
+  }, {}, 1_000, {
+    lifetimeTokens: 100_000,
+    dailyUsageBuckets: [{ startDate: "2026-08-12", tokens: 100_000 }]
+  });
+
+  assert.equal(result.calibratedToOfficialUsage, true);
+  assert.equal(result.models[0].inputTokens, 100_000);
+  assert.equal(result.models[0].cachedInputTokens, 80_000);
+  assert.equal(result.models[0].requestCount, 10);
+  assert.equal(result.estimatedCostUsd, 0.25);
+  assert.equal(result.replayExcludedInputTokens, 100_000);
+  assert.equal(result.officialUnmappedInputTokens, 0);
+  assert.equal(result.persistence.tokenCostSnapshot.models[0].inputTokens, 200_000);
+});
+
+test("does not invent model usage when the official Token ledger is larger", () => {
+  const model = {
+    model: "gpt-5.6-sol",
+    inputTokens: 100_000,
+    cachedInputTokens: 80_000,
+    outputTokens: 1_000,
+    requestCount: 10,
+    estimatedCostUsd: 0.25
+  };
+  const result = normalizeCodexCostUsageResult({
+    scanned: true,
+    schemaVersion: 4,
+    models: [model],
+    dailyUsage: [{ date: "2026-08-12", models: [model] }],
+    observedAt: 1_000
+  }, {}, 1_000, {
+    lifetimeTokens: 150_000,
+    dailyUsageBuckets: [{ startDate: "2026-08-12", tokens: 150_000 }]
+  });
+
+  assert.equal(result.models[0].inputTokens, 100_000);
+  assert.equal(result.replayExcludedInputTokens, 0);
+  assert.equal(result.officialUnmappedInputTokens, 50_000);
 });

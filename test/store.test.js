@@ -121,7 +121,7 @@ test("reconciles task duration and cost records independently by their maxima", 
   });
 });
 
-test("restores the richest API-equivalent snapshot instead of the newest lower scan", () => {
+test("does not revive a larger incompatible API-equivalent aggregate from backup", () => {
   const model = (estimatedCostUsd, inputTokens) => ({
     model: "gpt-5.6-sol",
     inputTokens,
@@ -149,9 +149,10 @@ test("restores the richest API-equivalent snapshot instead of the newest lower s
     }
   }]);
 
-  assert.equal(reconciled.tokenCostSnapshot.estimatedCostUsd, 100);
-  assert.equal(reconciled.tokenCostSnapshot.models[0].estimatedCostUsd, 100);
+  assert.equal(reconciled.tokenCostSnapshot.estimatedCostUsd, 70);
+  assert.equal(reconciled.tokenCostSnapshot.models[0].estimatedCostUsd, 70);
   assert.equal(reconciled.tokenCostSnapshot.observedAt, 2_000);
+  assert.equal(reconciled.tokenCostSnapshot.truncated, true);
 });
 
 test("restores only the newest account-usage snapshot instead of mixing historical maxima", () => {
@@ -440,7 +441,7 @@ test("backs up a richer cumulative cost index immediately", t => {
 
   now += 1_000;
   store.set("tokenCostSnapshot", {
-    schemaVersion: 2,
+    schemaVersion: 4,
     pricingDate: "2026-07-26",
     estimatedCostUsd: 10,
     models: [{
@@ -450,11 +451,13 @@ test("backs up a richer cumulative cost index immediately", t => {
       outputTokens: 100_000,
       estimatedCostUsd: 10
     }],
+    dailyUsage: [],
     rolloutIndex: [{
       id: "a".repeat(64),
       fingerprint: "b".repeat(64),
       size: 1_000,
       models: [],
+      dailyUsage: [],
       observedAt: now
     }],
     observedAt: now

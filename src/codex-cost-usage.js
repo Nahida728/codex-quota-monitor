@@ -9,7 +9,7 @@ const MAX_ROLLOUT_FILES = 1_000;
 const MAX_ROLLOUT_FILE_BYTES = 512 * 1024 * 1024;
 const MAX_ROLLOUT_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 const SCAN_CACHE_MS = 15 * 60 * 1_000;
-const COST_SNAPSHOT_SCHEMA_VERSION = 2;
+const COST_SNAPSHOT_SCHEMA_VERSION = 4;
 const MAX_PERSISTED_ROLLOUTS = 1_000;
 const PRICING_DATE = "2026-07-26";
 const LONG_CONTEXT_THRESHOLD = 272_000;
@@ -235,21 +235,74 @@ function usageSignature(info) {
   return keys.flatMap(key => [normalizeCount(total[key]), normalizeCount(last[key])]).join(":");
 }
 
+function normalizedUsageDay(value) {
+  if (typeof value !== "string") return null;
+  const day = value.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const timestamp = Date.parse(`${day}T00:00:00Z`);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === day
+    ? day
+    : null;
+}
+
+function createUnattributedUsage() {
+  return {
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    cacheWriteInputTokens: 0,
+    outputTokens: 0,
+    reasoningOutputTokens: 0,
+    requestCount: 0
+  };
+}
+
 function createAccumulator() {
   return {
     activeModel: "unknown",
     seenUsage: new Set(),
     models: new Map(),
+    unattributedUsage: createUnattributedUsage(),
+    dailyUsage: new Map(),
     invalidLines: 0,
     duplicateEvents: 0
   };
 }
 
-function addUsage(accumulator, model, rawUsage) {
+function getDailyUsage(accumulator, day) {
+  if (!day) return null;
+  const existing = accumulator.dailyUsage.get(day);
+  if (existing) return existing;
+  const created = {
+    date: day,
+    models: new Map(),
+    unattributedUsage: createUnattributedUsage()
+  };
+  accumulator.dailyUsage.set(day, created);
+  return created;
+}
+
+function addUnattributedToTarget(target, usage) {
+  target.inputTokens = safeAdd(target.inputTokens, usage.inputTokens);
+  target.cachedInputTokens = safeAdd(target.cachedInputTokens, usage.cachedInputTokens);
+  target.cacheWriteInputTokens = safeAdd(target.cacheWriteInputTokens, usage.cacheWriteInputTokens);
+  target.outputTokens = safeAdd(target.outputTokens, usage.outputTokens);
+  target.reasoningOutputTokens = safeAdd(
+    target.reasoningOutputTokens,
+    usage.reasoningOutputTokens
+  );
+  target.requestCount = safeAdd(target.requestCount, 1);
+}
+
+function addUnattributedUsage(accumulator, rawUsage, day = null) {
   const usage = normalizeUsage(rawUsage);
   if (!usage.inputTokens && !usage.outputTokens && !usage.cacheWriteInputTokens) return;
-  const modelName = normalizeModelName(model);
-  const entry = accumulator.models.get(modelName) || {
+  addUnattributedToTarget(accumulator.unattributedUsage, usage);
+  const daily = getDailyUsage(accumulator, day);
+  if (daily) addUnattributedToTarget(daily.unattributedUsage, usage);
+}
+
+function addUsageToModels(models, modelName, usage) {
+  const entry = models.get(modelName) || {
     model: modelName,
     inputTokens: 0,
     cachedInputTokens: 0,
@@ -278,7 +331,16 @@ function addUsage(accumulator, model, rawUsage) {
     entry.estimatedCostUsd += cost.cost;
     if (cost.isLongContext) entry.longContextRequests += 1;
   }
-  accumulator.models.set(modelName, entry);
+  models.set(modelName, entry);
+}
+
+function addUsage(accumulator, model, rawUsage, day = null) {
+  const usage = normalizeUsage(rawUsage);
+  if (!usage.inputTokens && !usage.outputTokens && !usage.cacheWriteInputTokens) return;
+  const modelName = normalizeModelName(model);
+  addUsageToModels(accumulator.models, modelName, usage);
+  const daily = getDailyUsage(accumulator, day);
+  if (daily) addUsageToModels(daily.models, modelName, usage);
 }
 
 function consumeRolloutLine(accumulator, line) {
@@ -289,7 +351,6 @@ function consumeRolloutLine(accumulator, line) {
       const record = JSON.parse(line);
       if (record?.type === "turn_context") {
         accumulator.activeModel = normalizeModelName(record?.payload?.model);
-        accumulator.seenUsage = new Set();
       }
     } catch {
       accumulator.invalidLines += 1;
@@ -311,14 +372,19 @@ function consumeRolloutLine(accumulator, line) {
       return;
     }
     if (signature) accumulator.seenUsage.add(signature);
-    addUsage(accumulator, accumulator.activeModel, info?.last_token_usage);
+    const day = normalizedUsageDay(record?.timestamp);
+    if (accumulator.activeModel === "unknown") {
+      addUnattributedUsage(accumulator, info?.last_token_usage, day);
+    } else {
+      addUsage(accumulator, accumulator.activeModel, info?.last_token_usage, day);
+    }
   } catch {
     accumulator.invalidLines += 1;
   }
 }
 
-function finalizeAccumulator(accumulator, metadata = {}) {
-  const models = [...accumulator.models.values()].map(entry => {
+function finalizeModels(models) {
+  return [...models.values()].map(entry => {
     const pricing = getModelPricing(entry.model);
     const cacheHitRate = entry.inputTokens
       ? entry.cachedInputTokens / entry.inputTokens * 100
@@ -340,6 +406,28 @@ function finalizeAccumulator(accumulator, metadata = {}) {
     if (costDifference) return costDifference;
     return (right.inputTokens + right.outputTokens) - (left.inputTokens + left.outputTokens);
   });
+}
+
+function prefixedUnattributedUsage(value) {
+  return {
+    unattributedInputTokens: normalizeCount(value?.inputTokens),
+    unattributedCachedInputTokens: normalizeCount(value?.cachedInputTokens),
+    unattributedCacheWriteInputTokens: normalizeCount(value?.cacheWriteInputTokens),
+    unattributedOutputTokens: normalizeCount(value?.outputTokens),
+    unattributedReasoningOutputTokens: normalizeCount(value?.reasoningOutputTokens),
+    unattributedRequestCount: normalizeCount(value?.requestCount)
+  };
+}
+
+function finalizeAccumulator(accumulator, metadata = {}) {
+  const models = finalizeModels(accumulator.models);
+  const dailyUsage = [...accumulator.dailyUsage.values()]
+    .map(row => ({
+      date: row.date,
+      models: finalizeModels(row.models),
+      ...prefixedUnattributedUsage(row.unattributedUsage)
+    }))
+    .sort((left, right) => left.date.localeCompare(right.date));
   const estimatedCostUsd = models.reduce(
     (total, model) => total + (model.estimatedCostUsd || 0),
     0
@@ -349,7 +437,15 @@ function finalizeAccumulator(accumulator, metadata = {}) {
     pricingDate: PRICING_DATE,
     estimatedCostUsd: Number(estimatedCostUsd.toFixed(6)),
     hasUnpricedModels: models.some(model => !model.priced),
+    hasUnattributedUsage: accumulator.unattributedUsage.requestCount > 0,
+    unattributedInputTokens: accumulator.unattributedUsage.inputTokens,
+    unattributedCachedInputTokens: accumulator.unattributedUsage.cachedInputTokens,
+    unattributedCacheWriteInputTokens: accumulator.unattributedUsage.cacheWriteInputTokens,
+    unattributedOutputTokens: accumulator.unattributedUsage.outputTokens,
+    unattributedReasoningOutputTokens: accumulator.unattributedUsage.reasoningOutputTokens,
+    unattributedRequestCount: accumulator.unattributedUsage.requestCount,
     models,
+    dailyUsage,
     filesScanned: normalizeCount(metadata.filesScanned),
     truncated: Boolean(metadata.truncated),
     duplicateEvents: normalizeCount(accumulator.duplicateEvents),
@@ -431,6 +527,23 @@ function modelsContainAtLeast(candidateModels, floorModels) {
   });
 }
 
+function sumUnattributedUsage(values) {
+  const total = {
+    unattributedInputTokens: 0,
+    unattributedCachedInputTokens: 0,
+    unattributedCacheWriteInputTokens: 0,
+    unattributedOutputTokens: 0,
+    unattributedReasoningOutputTokens: 0,
+    unattributedRequestCount: 0
+  };
+  for (const value of Array.isArray(values) ? values : []) {
+    for (const key of Object.keys(total)) {
+      total[key] = safeAdd(total[key], value?.[key]);
+    }
+  }
+  return total;
+}
+
 function summarizeRolloutLines(files, now = Date.now()) {
   const snapshots = [];
   for (const file of Array.isArray(files) ? files : []) {
@@ -441,6 +554,7 @@ function summarizeRolloutLines(files, now = Date.now()) {
     snapshots.push(finalizeAccumulator(accumulator, { observedAt: now }));
   }
   const models = combineModels(snapshots.map(snapshot => snapshot.models));
+  const unattributedUsage = sumUnattributedUsage(snapshots);
   return {
     scanned: true,
     pricingDate: PRICING_DATE,
@@ -449,6 +563,8 @@ function summarizeRolloutLines(files, now = Date.now()) {
       0
     ).toFixed(6)),
     hasUnpricedModels: models.some(model => !model.priced),
+    hasUnattributedUsage: unattributedUsage.unattributedRequestCount > 0,
+    ...unattributedUsage,
     models,
     filesScanned: Array.isArray(files) ? files.length : 0,
     truncated: false,
@@ -559,9 +675,51 @@ async function scanRolloutFile(file, observedAt) {
     fingerprint: rolloutFingerprint(file),
     size: normalizeCount(file.size),
     models: snapshot.models,
+    dailyUsage: snapshot.dailyUsage,
+    unattributedInputTokens: snapshot.unattributedInputTokens,
+    unattributedCachedInputTokens: snapshot.unattributedCachedInputTokens,
+    unattributedCacheWriteInputTokens: snapshot.unattributedCacheWriteInputTokens,
+    unattributedOutputTokens: snapshot.unattributedOutputTokens,
+    unattributedReasoningOutputTokens: snapshot.unattributedReasoningOutputTokens,
+    unattributedRequestCount: snapshot.unattributedRequestCount,
     duplicateEvents: snapshot.duplicateEvents,
     observedAt: normalizeCount(observedAt)
   };
+}
+
+function normalizeDailyUsageRows(value) {
+  const rows = [];
+  for (const rawRow of Array.isArray(value) ? value.slice(0, 400) : []) {
+    const date = normalizedUsageDay(rawRow?.date);
+    if (!date || !Array.isArray(rawRow?.models)) continue;
+    const normalizedModels = rawRow.models.slice(0, 100).map(normalizeCostModel);
+    const unknownModels = normalizedModels.filter(model => model.model === "unknown");
+    rows.push({
+      date,
+      models: normalizedModels.filter(model => model.model !== "unknown"),
+      ...normalizeUnattributedUsage(rawRow, unknownModels)
+    });
+  }
+  return combineDailyUsage([rows]);
+}
+
+function combineDailyUsage(collections) {
+  const grouped = new Map();
+  for (const rows of Array.isArray(collections) ? collections : []) {
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const date = normalizedUsageDay(row?.date);
+      if (!date) continue;
+      const existing = grouped.get(date) || { date, modelCollections: [], values: [] };
+      existing.modelCollections.push(row.models);
+      existing.values.push(row);
+      grouped.set(date, existing);
+    }
+  }
+  return [...grouped.values()].map(group => ({
+    date: group.date,
+    models: combineModels(group.modelCollections),
+    ...sumUnattributedUsage(group.values)
+  })).sort((left, right) => left.date.localeCompare(right.date));
 }
 
 function normalizeRolloutEntry(value) {
@@ -572,13 +730,19 @@ function normalizeRolloutEntry(value) {
     !/^[a-f0-9]{64}$/.test(value.id) ||
     typeof value.fingerprint !== "string" ||
     !/^[a-f0-9]{64}$/.test(value.fingerprint) ||
-    !Array.isArray(value.models)
+    !Array.isArray(value.models) ||
+    !Array.isArray(value.dailyUsage)
   ) return null;
+  const normalizedModels = value.models.slice(0, 100).map(normalizeCostModel);
+  const unknownModels = normalizedModels.filter(model => model.model === "unknown");
+  const unattributedUsage = normalizeUnattributedUsage(value, unknownModels);
   return {
     id: value.id,
     fingerprint: value.fingerprint,
     size: normalizeCount(value.size),
-    models: value.models.slice(0, 100).map(normalizeCostModel),
+    models: normalizedModels.filter(model => model.model !== "unknown"),
+    dailyUsage: normalizeDailyUsageRows(value.dailyUsage),
+    ...unattributedUsage,
     duplicateEvents: normalizeCount(value.duplicateEvents),
     observedAt: normalizeCount(value.observedAt)
   };
@@ -680,11 +844,9 @@ class CodexCostUsageReader {
       left.id.localeCompare(right.id)
     ));
     const indexedModels = combineModels(rolloutIndex.map(entry => entry.models));
-    const legacyFloorModels = combineModels([
-      previous?.legacyFloorModels || [],
-      previous?.models || []
-    ], "max");
-    const models = combineModels([indexedModels, legacyFloorModels], "max");
+    const models = indexedModels;
+    const dailyUsage = combineDailyUsage(rolloutIndex.map(entry => entry.dailyUsage));
+    const unattributedUsage = sumUnattributedUsage(rolloutIndex);
     const selectedIds = new Set(bounded.files.map(persistedRolloutId));
     const pendingFiles = changed.filter(file => !selectedIds.has(persistedRolloutId(file)));
     const indexComplete = (
@@ -696,7 +858,6 @@ class CodexCostUsageReader {
         return entry?.fingerprint === rolloutFingerprint(file);
       })
     );
-    const legacyFloorApplied = !modelsContainAtLeast(indexedModels, legacyFloorModels);
     const result = {
       scanned: true,
       schemaVersion: COST_SNAPSHOT_SCHEMA_VERSION,
@@ -706,17 +867,18 @@ class CodexCostUsageReader {
         0
       ).toFixed(6)),
       hasUnpricedModels: models.some(model => !model.priced),
+      hasUnattributedUsage: unattributedUsage.unattributedRequestCount > 0,
+      ...unattributedUsage,
       models,
+      dailyUsage,
       filesScanned: rolloutIndex.length,
-      truncated: !indexComplete || legacyFloorApplied,
+      truncated: !indexComplete,
       duplicateEvents: rolloutIndex.reduce(
         (total, entry) => safeAdd(total, entry.duplicateEvents),
         0
       ),
       observedAt: normalizeCount(now),
       indexComplete,
-      legacyFloorApplied,
-      legacyFloorModels,
       rolloutIndex
     };
     this.cachedResult = result;
@@ -760,36 +922,74 @@ function normalizeCostModel(value) {
   };
 }
 
+function normalizeUnattributedUsage(value, unknownModels = []) {
+  const unknown = combineModels([unknownModels]);
+  const sumUnknown = key => unknown.reduce(
+    (total, model) => safeAdd(total, model[key]),
+    0
+  );
+  return {
+    unattributedInputTokens: safeAdd(
+      value?.unattributedInputTokens,
+      sumUnknown("inputTokens")
+    ),
+    unattributedCachedInputTokens: safeAdd(
+      value?.unattributedCachedInputTokens,
+      sumUnknown("cachedInputTokens")
+    ),
+    unattributedCacheWriteInputTokens: safeAdd(
+      value?.unattributedCacheWriteInputTokens,
+      sumUnknown("cacheWriteInputTokens")
+    ),
+    unattributedOutputTokens: safeAdd(
+      value?.unattributedOutputTokens,
+      sumUnknown("outputTokens")
+    ),
+    unattributedReasoningOutputTokens: safeAdd(
+      value?.unattributedReasoningOutputTokens,
+      sumUnknown("reasoningOutputTokens")
+    ),
+    unattributedRequestCount: safeAdd(
+      value?.unattributedRequestCount,
+      sumUnknown("requestCount")
+    )
+  };
+}
+
 function normalizeCostSnapshot(value) {
   if (!value || typeof value !== "object" || !Array.isArray(value.models)) return null;
-  const models = value.models.slice(0, 100).map(normalizeCostModel);
-  const rolloutIndex = Array.isArray(value.rolloutIndex)
+  const isCurrentSchema = (
+    value.schemaVersion === COST_SNAPSHOT_SCHEMA_VERSION &&
+    Array.isArray(value.dailyUsage)
+  );
+  const normalizedModels = value.models.slice(0, 100).map(normalizeCostModel);
+  const unknownModels = normalizedModels.filter(model => model.model === "unknown");
+  const models = normalizedModels.filter(model => model.model !== "unknown");
+  const rolloutIndex = isCurrentSchema && Array.isArray(value.rolloutIndex)
     ? value.rolloutIndex
       .slice(-MAX_PERSISTED_ROLLOUTS)
       .map(normalizeRolloutEntry)
       .filter(Boolean)
     : [];
-  const legacyFloorModels = Array.isArray(value.legacyFloorModels)
-    ? value.legacyFloorModels.slice(0, 100).map(normalizeCostModel)
-    : [];
+  const dailyUsage = isCurrentSchema ? normalizeDailyUsageRows(value.dailyUsage) : [];
+  const unattributedUsage = normalizeUnattributedUsage(value, unknownModels);
   return {
-    schemaVersion: value.schemaVersion === COST_SNAPSHOT_SCHEMA_VERSION
-      ? COST_SNAPSHOT_SCHEMA_VERSION
-      : 1,
+    schemaVersion: isCurrentSchema ? COST_SNAPSHOT_SCHEMA_VERSION : 1,
     pricingDate: typeof value.pricingDate === "string" ? value.pricingDate : PRICING_DATE,
     estimatedCostUsd: models.reduce(
       (total, model) => total + (model.estimatedCostUsd || 0),
       0
     ),
     hasUnpricedModels: models.some(model => !model.priced),
+    hasUnattributedUsage: unattributedUsage.unattributedRequestCount > 0,
+    ...unattributedUsage,
     models,
+    dailyUsage,
     filesScanned: normalizeCount(value.filesScanned),
     truncated: Boolean(value.truncated),
     duplicateEvents: normalizeCount(value.duplicateEvents),
     observedAt: normalizeCount(value.observedAt),
-    indexComplete: value.indexComplete === true,
-    legacyFloorApplied: value.legacyFloorApplied === true,
-    legacyFloorModels,
+    indexComplete: isCurrentSchema && value.indexComplete === true,
     rolloutIndex
   };
 }
@@ -798,20 +998,135 @@ function publicCostSnapshot(snapshot) {
   if (!snapshot) return null;
   const {
     rolloutIndex,
-    legacyFloorModels,
+    dailyUsage,
     indexComplete,
-    legacyFloorApplied,
     schemaVersion,
     ...publicSnapshot
   } = snapshot;
   return publicSnapshot;
 }
 
+function scaledCostModel(value, factor) {
+  const model = normalizeCostModel(value);
+  const scaleCount = count => normalizeCount(Math.round(normalizeCount(count) * factor));
+  return normalizeCostModel({
+    ...model,
+    inputTokens: scaleCount(model.inputTokens),
+    cachedInputTokens: scaleCount(model.cachedInputTokens),
+    cacheWriteInputTokens: scaleCount(model.cacheWriteInputTokens),
+    outputTokens: scaleCount(model.outputTokens),
+    reasoningOutputTokens: scaleCount(model.reasoningOutputTokens),
+    requestCount: scaleCount(model.requestCount),
+    longContextRequests: scaleCount(model.longContextRequests),
+    estimatedCostUsd: model.priced
+      ? Number(((model.estimatedCostUsd || 0) * factor).toFixed(6))
+      : null
+  });
+}
+
+function scaledUnattributedUsage(value, factor) {
+  const scale = key => normalizeCount(Math.round(normalizeCount(value?.[key]) * factor));
+  return {
+    unattributedInputTokens: scale("unattributedInputTokens"),
+    unattributedCachedInputTokens: scale("unattributedCachedInputTokens"),
+    unattributedCacheWriteInputTokens: scale("unattributedCacheWriteInputTokens"),
+    unattributedOutputTokens: scale("unattributedOutputTokens"),
+    unattributedReasoningOutputTokens: scale("unattributedReasoningOutputTokens"),
+    unattributedRequestCount: scale("unattributedRequestCount")
+  };
+}
+
+function calibrateCostSnapshot(snapshot, tokenUsage) {
+  const officialBuckets = Array.isArray(tokenUsage?.dailyUsageBuckets)
+    ? tokenUsage.dailyUsageBuckets
+      .map(row => ({
+        date: normalizedUsageDay(row?.startDate),
+        tokens: normalizeCount(row?.tokens)
+      }))
+      .filter(row => row.date)
+    : [];
+  if (!officialBuckets.length || !snapshot.dailyUsage.length) {
+    return {
+      ...snapshot,
+      calibratedToOfficialUsage: false,
+      replayExcludedInputTokens: 0,
+      officialUnmappedInputTokens: 0
+    };
+  }
+
+  const officialByDate = new Map(officialBuckets.map(row => [row.date, row.tokens]));
+  const calibratedModels = [];
+  const calibratedUnattributedRows = [];
+  let rawDailyInputTokens = 0;
+  for (const row of snapshot.dailyUsage) {
+    const attributedInputTokens = row.models.reduce(
+      (total, model) => safeAdd(total, model.inputTokens),
+      0
+    );
+    const localInputTokens = safeAdd(attributedInputTokens, row.unattributedInputTokens);
+    rawDailyInputTokens = safeAdd(rawDailyInputTokens, localInputTokens);
+    const officialTokens = officialByDate.get(row.date) || 0;
+    const factor = localInputTokens > 0
+      ? Math.min(1, officialTokens / localInputTokens)
+      : 0;
+    calibratedModels.push(row.models.map(model => scaledCostModel(model, factor)));
+    calibratedUnattributedRows.push(scaledUnattributedUsage(row, factor));
+  }
+
+  const models = combineModels(calibratedModels).filter(model => (
+    model.inputTokens > 0 || model.outputTokens > 0 || model.requestCount > 0
+  ));
+  const unattributedUsage = sumUnattributedUsage(calibratedUnattributedRows);
+  const calibratedInputTokens = safeAdd(
+    models.reduce((total, model) => safeAdd(total, model.inputTokens), 0),
+    unattributedUsage.unattributedInputTokens
+  );
+  const rawInputTokens = safeAdd(
+    snapshot.models.reduce((total, model) => safeAdd(total, model.inputTokens), 0),
+    snapshot.unattributedInputTokens
+  );
+  const officialLifetimeTokens = normalizeCount(tokenUsage?.lifetimeTokens);
+  return {
+    ...snapshot,
+    estimatedCostUsd: Number(models.reduce(
+      (total, model) => total + (model.estimatedCostUsd || 0),
+      0
+    ).toFixed(6)),
+    hasUnpricedModels: models.some(model => !model.priced),
+    hasUnattributedUsage: unattributedUsage.unattributedRequestCount > 0,
+    ...unattributedUsage,
+    models,
+    calibratedToOfficialUsage: true,
+    rawLocalInputTokens: rawInputTokens,
+    calibratedInputTokens,
+    replayExcludedInputTokens: Math.max(0, rawInputTokens - calibratedInputTokens),
+    officialUnmappedInputTokens: Math.max(0, officialLifetimeTokens - calibratedInputTokens),
+    rawUndatedInputTokens: Math.max(0, rawInputTokens - rawDailyInputTokens)
+  };
+}
+
 function reconcileCostSnapshots(values) {
-  const snapshots = (Array.isArray(values) ? values : [])
+  const normalized = (Array.isArray(values) ? values : [])
     .map(normalizeCostSnapshot)
     .filter(Boolean);
-  if (!snapshots.length) return null;
+  if (!normalized.length) return null;
+
+  const current = normalized.filter(
+    snapshot => snapshot.schemaVersion === COST_SNAPSHOT_SCHEMA_VERSION
+  );
+  if (!current.length) {
+    const newestLegacy = normalized.sort(
+      (left, right) => right.observedAt - left.observedAt
+    )[0];
+    return {
+      ...newestLegacy,
+      truncated: true,
+      indexComplete: false,
+      rolloutIndex: []
+    };
+  }
+
+  const snapshots = current;
 
   const entries = new Map();
   for (const snapshot of snapshots) {
@@ -822,68 +1137,64 @@ function reconcileCostSnapshots(values) {
   const rolloutIndex = [...entries.values()]
     .sort((left, right) => left.id.localeCompare(right.id))
     .slice(-MAX_PERSISTED_ROLLOUTS);
-  const indexedModels = combineModels(rolloutIndex.map(entry => entry.models));
-  const legacyFloorModels = combineModels(snapshots.flatMap(snapshot => [
-    snapshot.models,
-    snapshot.legacyFloorModels
-  ]), "max");
-  const models = combineModels([indexedModels, legacyFloorModels], "max");
+  const models = combineModels(rolloutIndex.map(entry => entry.models));
+  const dailyUsage = combineDailyUsage(rolloutIndex.map(entry => entry.dailyUsage));
+  const unattributedUsage = sumUnattributedUsage(rolloutIndex);
   const newest = snapshots.sort((left, right) => right.observedAt - left.observedAt)[0];
-  const hasIndex = rolloutIndex.length > 0;
-  const newestIndexed = snapshots.find(snapshot => (
-    snapshot.schemaVersion === COST_SNAPSHOT_SCHEMA_VERSION &&
-    snapshot.rolloutIndex.length > 0
-  ));
-  const indexComplete = hasIndex && newestIndexed?.indexComplete === true;
-  const legacyFloorApplied = hasIndex && !modelsContainAtLeast(indexedModels, legacyFloorModels);
+  const newestIndexed = snapshots.find(snapshot => snapshot.rolloutIndex.length > 0);
+  const indexComplete = newest.indexComplete === true || newestIndexed?.indexComplete === true;
   return {
-    schemaVersion: hasIndex ? COST_SNAPSHOT_SCHEMA_VERSION : 1,
+    schemaVersion: COST_SNAPSHOT_SCHEMA_VERSION,
     pricingDate: PRICING_DATE,
     estimatedCostUsd: Number(models.reduce(
       (total, model) => total + (model.estimatedCostUsd || 0),
       0
     ).toFixed(6)),
     hasUnpricedModels: models.some(model => !model.priced),
+    hasUnattributedUsage: unattributedUsage.unattributedRequestCount > 0,
+    ...unattributedUsage,
     models,
+    dailyUsage,
     filesScanned: Math.max(
       rolloutIndex.length,
       ...snapshots.map(snapshot => snapshot.filesScanned)
     ),
-    truncated: hasIndex
-      ? (!indexComplete || legacyFloorApplied)
-      : snapshots.every(snapshot => snapshot.truncated),
-    duplicateEvents: hasIndex
-      ? rolloutIndex.reduce(
-        (total, entry) => safeAdd(total, entry.duplicateEvents),
-        0
-      )
-      : Math.max(...snapshots.map(snapshot => snapshot.duplicateEvents)),
+    truncated: !indexComplete,
+    duplicateEvents: rolloutIndex.reduce(
+      (total, entry) => safeAdd(total, entry.duplicateEvents),
+      0
+    ),
     observedAt: newest.observedAt,
     indexComplete,
-    legacyFloorApplied,
-    legacyFloorModels,
     rolloutIndex
   };
 }
 
-function normalizeCodexCostUsageResult(raw, previousState = {}, now = Date.now()) {
+function normalizeCodexCostUsageResult(
+  raw,
+  previousState = {},
+  now = Date.now(),
+  tokenUsage = null
+) {
   const current = raw?.scanned ? normalizeCostSnapshot(raw) : null;
   if (current) {
     const snapshot = { ...current, observedAt: normalizeCount(raw.observedAt ?? now) };
+    const calibrated = calibrateCostSnapshot(snapshot, tokenUsage);
     return {
       available: true,
       cached: false,
-      ...publicCostSnapshot(snapshot),
+      ...publicCostSnapshot(calibrated),
       persistence: { tokenCostSnapshot: snapshot }
     };
   }
 
   const cached = normalizeCostSnapshot(previousState?.tokenCostSnapshot);
   if (cached) {
+    const calibrated = calibrateCostSnapshot(cached, tokenUsage);
     return {
       available: true,
       cached: true,
-      ...publicCostSnapshot(cached),
+      ...publicCostSnapshot(calibrated),
       persistence: {}
     };
   }
@@ -894,6 +1205,19 @@ function normalizeCodexCostUsageResult(raw, previousState = {}, now = Date.now()
     pricingDate: PRICING_DATE,
     estimatedCostUsd: null,
     hasUnpricedModels: false,
+    hasUnattributedUsage: false,
+    unattributedInputTokens: 0,
+    unattributedCachedInputTokens: 0,
+    unattributedCacheWriteInputTokens: 0,
+    unattributedOutputTokens: 0,
+    unattributedReasoningOutputTokens: 0,
+    unattributedRequestCount: 0,
+    calibratedToOfficialUsage: false,
+    rawLocalInputTokens: 0,
+    calibratedInputTokens: 0,
+    replayExcludedInputTokens: 0,
+    officialUnmappedInputTokens: 0,
+    rawUndatedInputTokens: 0,
     models: [],
     filesScanned: 0,
     truncated: false,

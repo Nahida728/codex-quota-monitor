@@ -124,12 +124,15 @@ const i18n = {
     estimatedApiCostShort: "API 等价金额",
     estimatedTotalCost: "本机可统计调用",
     openCostDetails: "查看模型用量与 API 成本明细",
-    costEstimateHint: "按 OpenAI 标准 API 价格估算，不代表 Codex 订阅的实际收费。只读取本机 Codex 使用记录中的模型与 Token 统计。",
+    costEstimateHint: "按本机模型明细和 OpenAI 标准 API 价格估算，不代表 Codex 订阅的实际收费。本机重复事件会按官方每日 Token 总账校准；总输入已经包含缓存输入，两项不要相加。",
     costCoverage: "{count} 个模型 · 定价更新 {date}",
     costCoveragePartial: "{count} 个模型 · 部分未计价 · {date}",
     costCoverageTruncated: "本机记录过多，仅统计可安全读取的部分",
-    modelCostInput: "输入",
-    modelCostCached: "缓存输入",
+    costCoverageUnattributed: "另有 {count} 次调用缺少模型上下文，已排除",
+    costCoverageCalibrated: "已按官方每日总账排除 {tokens} 重复 Token",
+    costCoverageUnmapped: "官方还有 {tokens} Token 缺少本机模型明细，未计价",
+    modelCostInput: "总输入（含缓存）",
+    modelCostCached: "其中缓存",
     modelCostOutput: "输出",
     modelCostHitRate: "命中率",
     modelCostUnpriced: "未提供 API 定价",
@@ -362,12 +365,15 @@ const i18n = {
     estimatedApiCostShort: "API cost est.",
     estimatedTotalCost: "Locally measurable calls",
     openCostDetails: "View model usage and API cost details",
-    costEstimateHint: "Estimated with standard OpenAI API prices; this is not an actual Codex subscription charge. Only model and Token statistics from local Codex usage records are read.",
+    costEstimateHint: "Estimated from local model details using standard OpenAI API prices; this is not an actual Codex subscription charge. Replayed local events are capped to the official daily Token ledger. Total input already includes cached input, so do not add them.",
     costCoverage: "{count} models · Pricing updated {date}",
     costCoveragePartial: "{count} models · Some unpriced · {date}",
     costCoverageTruncated: "Only a bounded portion of the local records could be safely scanned",
-    modelCostInput: "Input",
-    modelCostCached: "Cached input",
+    costCoverageUnattributed: "{count} calls had no direct model context and were excluded",
+    costCoverageCalibrated: "Removed {tokens} replayed Tokens against the official daily ledger",
+    costCoverageUnmapped: "{tokens} official Tokens have no local model detail and remain unpriced",
+    modelCostInput: "Total input (incl. cached)",
+    modelCostCached: "Cached portion",
     modelCostOutput: "Output",
     modelCostHitRate: "Cache hit",
     modelCostUnpriced: "No API price",
@@ -1381,7 +1387,8 @@ function formatUsd(value) {
 
 function formatApiEstimate(cost = {}) {
   if (!cost.available || !Number.isFinite(cost.estimatedCostUsd)) return t("tokenUnavailable");
-  const partial = cost.hasUnpricedModels || cost.truncated;
+  const partial = cost.hasUnpricedModels || cost.hasUnattributedUsage ||
+    cost.officialUnmappedInputTokens > 0 || cost.truncated;
   return `${partial ? "≥" : "≈"}${formatUsd(cost.estimatedCostUsd)}`;
 }
 
@@ -1799,15 +1806,33 @@ function appendModelCostStat(container, label, value) {
 
 function renderTokenCostDetails(cost = latestSnapshot?.tokenCost || {}) {
   elements.tokenCostTotal.textContent = formatApiEstimate(cost);
-  const modelCount = Array.isArray(cost.models) ? cost.models.length : 0;
+  const models = Array.isArray(cost.models)
+    ? cost.models.filter(model => model?.model && model.model !== "unknown")
+    : [];
+  const modelCount = models.length;
   const coverageKey = cost.hasUnpricedModels ? "costCoveragePartial" : "costCoverage";
   const coverage = t(coverageKey, {
     count: modelCount,
     date: cost.pricingDate || "—"
   });
-  elements.tokenCostCoverage.textContent = cost.truncated
-    ? `${coverage} · ${t("costCoverageTruncated")}`
-    : coverage;
+  const coverageNotes = [coverage];
+  if (cost.hasUnattributedUsage) {
+    coverageNotes.push(t("costCoverageUnattributed", {
+      count: formatTokenCount(cost.unattributedRequestCount)
+    }));
+  }
+  if (cost.replayExcludedInputTokens > 0) {
+    coverageNotes.push(t("costCoverageCalibrated", {
+      tokens: formatTokenCount(cost.replayExcludedInputTokens, true)
+    }));
+  }
+  if (cost.officialUnmappedInputTokens > 0) {
+    coverageNotes.push(t("costCoverageUnmapped", {
+      tokens: formatTokenCount(cost.officialUnmappedInputTokens, true)
+    }));
+  }
+  if (cost.truncated) coverageNotes.push(t("costCoverageTruncated"));
+  elements.tokenCostCoverage.textContent = coverageNotes.join(" · ");
   elements.modelCostList.replaceChildren();
 
   if (!cost.available || !modelCount) {
@@ -1818,13 +1843,13 @@ function renderTokenCostDetails(cost = latestSnapshot?.tokenCost || {}) {
     return;
   }
 
-  cost.models.forEach(model => {
+  models.forEach(model => {
     const item = document.createElement("article");
     item.className = "model-cost-item";
     const heading = document.createElement("div");
     heading.className = "model-cost-heading";
     const modelName = document.createElement("strong");
-    modelName.textContent = model.model === "unknown" ? t("modelCostUnknown") : model.model;
+    modelName.textContent = model.model;
     const modelCost = document.createElement("span");
     modelCost.textContent = model.priced
       ? `≈${formatUsd(model.estimatedCostUsd)}`

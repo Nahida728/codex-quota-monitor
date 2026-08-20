@@ -135,6 +135,13 @@ test("shows API-equivalent cost with an independent model-detail dialog", () => 
   assert.match(renderer, /model\.cachedInputTokens/);
   assert.match(renderer, /model\.outputTokens/);
   assert.match(renderer, /model\.cacheHitRate/);
+  assert.match(renderer, /modelCostInput:\s*"总输入（含缓存）"/);
+  assert.match(renderer, /modelCostCached:\s*"其中缓存"/);
+  assert.match(renderer, /cost\.hasUnattributedUsage/);
+  assert.match(renderer, /model\.model !== "unknown"/);
+  assert.match(renderer, /本机重复事件会按官方每日 Token 总账校准/);
+  assert.match(renderer, /cost\.replayExcludedInputTokens/);
+  assert.match(renderer, /cost\.officialUnmappedInputTokens/);
   assert.match(renderer, /tokenCostHelp\.addEventListener\("click",[\s\S]*?closeStatScope\(\(\)\s*=>\s*openTokenCost\(\)\)/);
   assert.match(renderer, /event\?\.stopPropagation\(\)/);
   assert.match(css, /\.stat-scope-help\s*\{[\s\S]*?border-radius:\s*50%/);

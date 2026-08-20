@@ -437,7 +437,12 @@ class QuotaService {
       const persisted = normalized.persistence;
       delete normalized.persistence;
       const tokenUsage = normalizeTokenUsageResponse(tokenUsageRaw, this.state.data, checkedAt);
-      const tokenCost = normalizeCodexCostUsageResult(tokenCostRaw, this.state.data, checkedAt);
+      const tokenCost = normalizeCodexCostUsageResult(
+        tokenCostRaw,
+        this.state.data,
+        checkedAt,
+        tokenUsage
+      );
       const activeTasks = activeTasksRaw;
       const clientUpdate = evaluateClientUpdate(installedVersion, this.state.data, checkedAt);
       const subscription = normalizeSubscriptionDetails(subscriptionRaw, {
@@ -470,7 +475,12 @@ class QuotaService {
       this.client.dispose();
       const tokenUsage = normalizeTokenUsageResponse(null, this.state.data, checkedAt);
       const tokenCostRaw = await tokenCostPromise;
-      const tokenCost = normalizeCodexCostUsageResult(tokenCostRaw, this.state.data, checkedAt);
+      const tokenCost = normalizeCodexCostUsageResult(
+        tokenCostRaw,
+        this.state.data,
+        checkedAt,
+        tokenUsage
+      );
       const activeTasksRaw = await activeTasksPromise;
       const activeTasks = activeTasksRaw;
       const installedVersion = await versionPromise;

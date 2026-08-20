@@ -559,6 +559,26 @@ client's visible “Update” button before installation. Do not regress to that
   content, or unrelated thread metadata.
 - `account/usage/read` does not expose a model breakdown. Model cost details come
   from a bounded scan of local Codex rollout JSONL files instead.
+- Persist raw model aggregates by validated event date, then cap each day's local
+  attributed-plus-unattributed input to that day's official account Token bucket
+  before displaying model totals or calculating API-equivalent cost. Scale down
+  local model/cache/output/call evidence proportionally for an overfull day;
+  never scale local evidence up to fill an official gap, and show both removed
+  replay Tokens and official Tokens without local model detail as coverage notes.
+- In model-cost details, `inputTokens` is total request input and already includes
+  cached input. Label cached input as a subset and never present the two columns
+  as additive or comparable to the official account lifetime Token total.
+- A Token-count event without a directly preceding valid model context is
+  unattributed coverage, not an `unknown` model. Exclude it from model totals and
+  estimated cost, retain only normalized aggregate coverage counts, and never
+  guess its model from a later context.
+- A cost-ledger schema change must rebuild model aggregates from readable rollout
+  files. Incompatible primary or archive aggregates may remain on disk for
+  recovery, but must not become a permanent floor or re-enter the current UI.
+- Replay de-duplication spans the whole rollout file. A repeated complete
+  cumulative-plus-last Token signature remains a duplicate across turn-context
+  records; equal per-call usage with different cumulative counters remains a
+  distinct call.
 - Before parsing a rollout line, reject every record except `turn_context` and
   `event_msg` records tagged `token_count`. From accepted records retain only the
   normalized model slug and Token counters. Never retain or expose prompts,
@@ -569,9 +589,10 @@ client's visible “Update” button before installation. Do not regress to that
 - Estimate cost with the checked-in, dated standard OpenAI API price table. Use
   uncached input, cached input, cache-write input, and output rates separately;
   apply documented long-context multipliers per call where applicable.
-- The estimate is not a Codex subscription charge. Unknown, third-party, and
-  otherwise unpriced model slugs remain visible but do not contribute to the USD
-  total; the UI must make partial pricing explicit.
+- The estimate is not a Codex subscription charge. Third-party and otherwise
+  unpriced model slugs remain visible but do not contribute to the USD total;
+  unattributed events are coverage rather than a model card, and the UI must make
+  partial pricing explicit.
 - Cache the expensive rollout scan for 15 minutes and reuse the last normalized
   persisted snapshot across restarts and temporary scan failures. Do not rescan
   multi-gigabyte rollout history every five-second quota refresh.
@@ -589,10 +610,10 @@ client's visible “Update” button before installation. Do not regress to that
 - Scope replay-counter signatures to one rollout. Equal cumulative/last counters
   in two distinct rollouts are distinct usage evidence and must not be globally
   de-duplicated.
-- Reconcile API-equivalent snapshots across immutable archives by their richest
-  per-model evidence. A newer truncated scan must not replace an older, more
-  complete cumulative amount; keep the older evidence as a migration floor until
-  the rollout index covers it.
+- Reconcile API-equivalent snapshots only within the current cost-ledger schema.
+  Merge compatible hashed rollout entries across immutable archives, but never
+  restore an incompatible aggregate or use it as a migration floor; rebuild it
+  from readable rollout files so corrected de-duplication can lower bad totals.
 - Treat each successful `account/usage/read` response as one authoritative
   account snapshot. Replace the cached Token summary and daily buckets together;
   never take historical maxima or merge dated buckets across snapshots because
