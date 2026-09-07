@@ -551,6 +551,13 @@ client's visible “Update” button before installation. Do not regress to that
 - Models without a published standard API-equivalent rate, including research
   previews and third-party providers, remain visibly unpriced rather than
   borrowing a similarly named model's price.
+- Recognized Codex++ routes for DeepSeek, GLM, Qwen, MiniMax, and Kimi may use
+  checked-in vendor prices. Match bounded family/version tokens through explicit
+  regular expressions so safe provider prefixes and routing/date suffixes do not
+  hide a known model; never use a bare substring or price an unknown variant.
+- Codex++ reports third-party uncached input and cached input as disjoint counts.
+  Add them for displayed total input and cost splitting, and do not calibrate
+  recognized third-party usage against OpenAI account-usage buckets.
 - A Token usage endpoint failure must not make an otherwise successful quota read
   appear offline. Preserve and clearly identify the last normalized Token usage
   snapshot instead.
@@ -652,6 +659,11 @@ client's visible “Update” button before installation. Do not regress to that
 - Use the terminal event's duration/end timestamp when present. If an active task
   disappears without a terminal event, freeze it at its last observed elapsed
   time; never add the next refresh interval or continue its renderer timer.
+- If a rollout still ends in `task_started` but has produced no filesystem or
+  event evidence for 15 minutes, classify it as abnormally interrupted and
+  freeze it at the last timestamp in that rollout. This prevents abandoned or
+  crashed sessions from remaining active forever without relying on modification
+  time as the sole evidence that a task started.
 - Show the red-glass abnormal-interruption dialog once per newly observed event.
   Both completed and interrupted handoffs remain in the pending area until the
   user confirms them or returns to Codex.

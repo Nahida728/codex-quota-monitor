@@ -5,6 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const {
+  ACTIVE_INACTIVITY_TIMEOUT_MS,
   CodexActiveTaskReader,
   normalizeActiveTaskResult,
   normalizeProjectName,
@@ -104,7 +105,7 @@ test("identifies an explicit in-progress task and prices only that task", () => 
   assert.equal(task.projectName, "sample-project");
   assert.equal(task.startedAt, 200);
   assert.equal(task.elapsedSeconds, 60);
-  assert.equal(task.estimatedCostUsd, 0.145);
+  assert.equal(task.estimatedCostUsd, 0.116);
   assert.deepEqual(task.models.map(model => model.model), ["gpt-5.6-terra"]);
   assert.doesNotMatch(JSON.stringify(task), /private prompt|must never escape|Users|Desktop/);
 });
@@ -183,6 +184,29 @@ test("reads multiple active rollout files as concurrent tasks", async t => {
   assert.equal(result.available, true);
   assert.equal(result.count, 2);
   assert.deepEqual(result.tasks.map(task => task.projectName).sort(), ["alpha", "beta"]);
+});
+
+test("freezes an unclosed task after its rollout stops producing evidence", async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-stale-task-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const now = Date.now();
+  const startedAt = Math.floor((now - ACTIVE_INACTIVITY_TIMEOUT_MS - 60_000) / 1_000);
+  const filePath = path.join(root, "rollout-stale.jsonl");
+  fs.writeFileSync(filePath, [
+    sessionMeta("C:\\work\\stale-project"),
+    taskStarted("stale-turn", startedAt),
+    turnContext("gpt-5.6-sol"),
+    tokenCount(1_000, 800, 10)
+  ].join("\n"));
+  const staleMtime = new Date(now - ACTIVE_INACTIVITY_TIMEOUT_MS - 1_000);
+  fs.utimesSync(filePath, staleMtime, staleMtime);
+
+  const result = await new CodexActiveTaskReader({ sessionsRoot: root }).read(now);
+
+  assert.equal(result.tasks.length, 0);
+  assert.equal(result.terminalTasks.length, 1);
+  assert.equal(result.terminalTasks[0].outcome, "abnormal-interrupted");
+  assert.equal(result.terminalTasks[0].elapsedSeconds, 0);
 });
 
 test("retains only the project basename when session metadata is outside the active tail", async t => {

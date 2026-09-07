@@ -131,7 +131,7 @@ test("does not revive a larger incompatible API-equivalent aggregate from backup
   });
   const reconciled = reconcileQuotaStates({
     tokenCostSnapshot: {
-      pricingDate: "2026-07-26",
+      pricingDate: "2026-09-07",
       estimatedCostUsd: 70,
       models: [model(70, 7_000_000)],
       filesScanned: 8,
@@ -140,7 +140,7 @@ test("does not revive a larger incompatible API-equivalent aggregate from backup
     }
   }, [{
     tokenCostSnapshot: {
-      pricingDate: "2026-07-26",
+      pricingDate: "2026-09-07",
       estimatedCostUsd: 100,
       models: [model(100, 10_000_000)],
       filesScanned: 10,
@@ -441,8 +441,8 @@ test("backs up a richer cumulative cost index immediately", t => {
 
   now += 1_000;
   store.set("tokenCostSnapshot", {
-    schemaVersion: 4,
-    pricingDate: "2026-07-26",
+    schemaVersion: 5,
+    pricingDate: "2026-09-07",
     estimatedCostUsd: 10,
     models: [{
       model: "gpt-5.6-sol",

@@ -9,13 +9,14 @@ const MAX_ROLLOUT_FILES = 1_000;
 const MAX_ROLLOUT_FILE_BYTES = 512 * 1024 * 1024;
 const MAX_ROLLOUT_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 const SCAN_CACHE_MS = 15 * 60 * 1_000;
-const COST_SNAPSHOT_SCHEMA_VERSION = 4;
+const COST_SNAPSHOT_SCHEMA_VERSION = 5;
 const MAX_PERSISTED_ROLLOUTS = 1_000;
-const PRICING_DATE = "2026-07-26";
+const PRICING_DATE = "2026-09-07";
 const LONG_CONTEXT_THRESHOLD = 272_000;
 
 // Standard API text-token prices in USD per one million tokens.
-// Unknown and third-party model slugs are deliberately left unpriced.
+// Unknown slugs are deliberately left unpriced; recognized third-party models
+// are resolved through the bounded rules below.
 const MODEL_PRICING = Object.freeze({
   "codex-mini-latest": {
     input: 1.5,
@@ -112,27 +113,159 @@ const MODEL_PRICING = Object.freeze({
     output: 120
   },
   "gpt-5.6-sol": {
-    input: 5,
-    cachedInput: 0.5,
-    cacheWrite: 6.25,
-    output: 30,
+    input: 4,
+    cachedInput: 0.4,
+    cacheWrite: 5,
+    output: 20,
     longContext: true
   },
   "gpt-5.6-terra": {
-    input: 2.5,
-    cachedInput: 0.25,
-    cacheWrite: 3.125,
-    output: 15,
+    input: 2,
+    cachedInput: 0.2,
+    cacheWrite: 2.5,
+    output: 12,
     longContext: true
   },
   "gpt-5.6-luna": {
-    input: 1,
-    cachedInput: 0.1,
-    cacheWrite: 1.25,
-    output: 6,
+    input: 0.2,
+    cachedInput: 0.02,
+    cacheWrite: 0.25,
+    output: 1.2,
     longContext: true
+  },
+  "gpt-6-astra": {
+    input: 10,
+    cachedInput: 1,
+    cacheWrite: 12.5,
+    output: 50,
+    longContext: true
+  },
+  "deepseek-v4-pro": {
+    input: 0.435,
+    cachedInput: 0.003625,
+    cacheWrite: 0.435,
+    output: 0.87
+  },
+  "deepseek-v4-flash": {
+    input: 0.14,
+    cachedInput: 0.0028,
+    cacheWrite: 0.14,
+    output: 0.28
+  },
+  "deepseek-reasoner": {
+    input: 0.55,
+    cachedInput: 0.14,
+    cacheWrite: 0.55,
+    output: 2.19
+  },
+  "deepseek-chat": {
+    input: 0.27,
+    cachedInput: 0.07,
+    cacheWrite: 0.27,
+    output: 1.1
+  },
+  "glm-5.3": {
+    input: 1.4,
+    cachedInput: 0.26,
+    cacheWrite: 1.4,
+    output: 4.4
+  },
+  "glm-5.3-flash": {
+    input: 0.15,
+    cachedInput: 0.03,
+    cacheWrite: 0.15,
+    output: 0.5
+  },
+  "glm-5.2": {
+    input: 1.4,
+    cachedInput: 0.26,
+    cacheWrite: 1.4,
+    output: 4.4
+  },
+  "qwen3.8-max": {
+    input: 1.65,
+    cachedInput: 0.206,
+    cacheWrite: 2.063,
+    output: 4.951
+  },
+  "minimax-m3": {
+    input: 0.6,
+    cachedInput: 0.12,
+    cacheWrite: 0.6,
+    output: 2.4
+  },
+  "minimax-m2.7": {
+    input: 0.3,
+    cachedInput: 0.06,
+    cacheWrite: 0.375,
+    output: 1.2
+  },
+  "minimax-m2.7-highspeed": {
+    input: 0.6,
+    cachedInput: 0.06,
+    cacheWrite: 0.375,
+    output: 2.4
+  },
+  "minimax-m2.5": {
+    input: 0.3,
+    cachedInput: 0.03,
+    cacheWrite: 0.375,
+    output: 1.2
+  },
+  "minimax-m2.5-highspeed": {
+    input: 0.6,
+    cachedInput: 0.03,
+    cacheWrite: 0.375,
+    output: 2.4
+  },
+  "kimi-k3": {
+    input: 3,
+    cachedInput: 3,
+    cacheWrite: 3,
+    output: 15
+  },
+  "kimi-k2.7-code": {
+    input: 0.95,
+    cachedInput: 0.95,
+    cacheWrite: 0.95,
+    output: 4
+  },
+  "kimi-k2.6": {
+    input: 0.8939,
+    cachedInput: 0.8939,
+    cacheWrite: 0.8939,
+    output: 3.7131
+  },
+  "kimi-k2.5": {
+    input: 0.574,
+    cachedInput: 0.574,
+    cacheWrite: 0.574,
+    output: 3.011
   }
 });
+
+// Codex++ gateways commonly add provider names, routing tiers, or availability
+// suffixes. Match a bounded family/version token inside those decorated slugs,
+// with the most specific variants first.
+const THIRD_PARTY_MODEL_RULES = Object.freeze([
+  [/^(?:.*[/_.:-])?deepseek[-_.:/]*v?4[-_.:/]*pro(?:$|[-_.:/])/, "deepseek-v4-pro"],
+  [/^(?:.*[/_.:-])?deepseek[-_.:/]*v?4[-_.:/]*flash(?:$|[-_.:/])/, "deepseek-v4-flash"],
+  [/^(?:.*[/_.:-])?deepseek[-_.:/]*(?:r1|reasoner)(?:$|[-_.:/])/, "deepseek-reasoner"],
+  [/^(?:.*[/_.:-])?deepseek[-_.:/]*(?:v?3(?:\.\d+)?|chat)(?:$|[-_.:/])/, "deepseek-chat"],
+  [/^(?:.*[/_.:-])?(?:z-ai[-_.:/]*)?glm[-_.:/]*5\.3[-_.:/]*flash(?:$|[-_.:/])/, "glm-5.3-flash"],
+  [/^(?:.*[/_.:-])?(?:z-ai[-_.:/]*)?glm[-_.:/]*5\.3(?:$|[-_.:/])/, "glm-5.3"],
+  [/^(?:.*[/_.:-])?(?:z-ai[-_.:/]*)?glm[-_.:/]*5\.2(?:$|[-_.:/])/, "glm-5.2"],
+  [/^(?:.*[/_.:-])?qwen(?:[-_.:/]*qwen)?[-_.:/]*3\.8[-_.:/]*max(?:$|[-_.:/])/, "qwen3.8-max"],
+  [/^(?:.*[/_.:-])?minimax[-_.:/]*m?2\.7[-_.:/]*highspeed(?:$|[-_.:/])/, "minimax-m2.7-highspeed"],
+  [/^(?:.*[/_.:-])?minimax[-_.:/]*m?2\.7(?:$|[-_.:/])/, "minimax-m2.7"],
+  [/^(?:.*[/_.:-])?minimax[-_.:/]*m?2\.5[-_.:/]*highspeed(?:$|[-_.:/])/, "minimax-m2.5-highspeed"],
+  [/^(?:.*[/_.:-])?minimax[-_.:/]*m?2\.5(?:$|[-_.:/])/, "minimax-m2.5"],
+  [/^(?:.*[/_.:-])?minimax[-_.:/]*m?3(?:$|[-_.:/])/, "minimax-m3"],
+  [/^(?:.*[/_.:-])?(?:moonshot[-_.:/]*)?kimi[-_.:/]*k?2\.7[-_.:/]*code(?:$|[-_.:/])/, "kimi-k2.7-code"],
+  [/^(?:.*[/_.:-])?(?:moonshot[-_.:/]*)?kimi[-_.:/]*k?2\.6(?:$|[-_.:/])/, "kimi-k2.6"],
+  [/^(?:.*[/_.:-])?(?:moonshot[-_.:/]*)?kimi[-_.:/]*k?2\.5(?:$|[-_.:/])/, "kimi-k2.5"],
+  [/^(?:.*[/_.:-])?(?:moonshot[-_.:/]*)?kimi[-_.:/]*k?3(?:$|[-_.:/])/, "kimi-k3"]
+]);
 
 const MODEL_ALIASES = Object.freeze({
   "codex-auto-review": "gpt-5.3-codex",
@@ -166,21 +299,30 @@ function canonicalModelName(value) {
   const model = normalizeModelName(value);
   const aliased = MODEL_ALIASES[model] || model;
   if (MODEL_PRICING[aliased]) return aliased;
+  const thirdParty = THIRD_PARTY_MODEL_RULES.find(([pattern]) => pattern.test(aliased));
+  if (thirdParty) return thirdParty[1];
   if (!SNAPSHOT_MODEL_PATTERN.test(aliased)) return aliased;
   const base = aliased.replace(SNAPSHOT_MODEL_PATTERN, "");
   return MODEL_ALIASES[base] || base;
+}
+
+function isThirdPartyModel(value) {
+  return THIRD_PARTY_MODEL_RULES.some(([pattern]) => pattern.test(normalizeModelName(value)));
 }
 
 function getModelPricing(value) {
   return MODEL_PRICING[canonicalModelName(value)] || null;
 }
 
-function normalizeUsage(value) {
-  const inputTokens = normalizeCount(value?.input_tokens ?? value?.inputTokens);
-  const cachedInputTokens = Math.min(
-    inputTokens,
-    normalizeCount(value?.cached_input_tokens ?? value?.cachedInputTokens)
+function normalizeUsage(value, cachedInputIsExclusive = false) {
+  const reportedInputTokens = normalizeCount(value?.input_tokens ?? value?.inputTokens);
+  const reportedCachedInputTokens = normalizeCount(
+    value?.cached_input_tokens ?? value?.cachedInputTokens
   );
+  const inputTokens = cachedInputIsExclusive
+    ? safeAdd(reportedInputTokens, reportedCachedInputTokens)
+    : reportedInputTokens;
+  const cachedInputTokens = Math.min(inputTokens, reportedCachedInputTokens);
   const cacheWriteInputTokens = Math.min(
     Math.max(0, inputTokens - cachedInputTokens),
     normalizeCount(value?.cache_write_input_tokens ?? value?.cacheWriteInputTokens)
@@ -199,7 +341,10 @@ function normalizeUsage(value) {
 function calculateUsageCost(model, value) {
   const pricing = getModelPricing(model);
   if (!pricing) return null;
-  const usage = normalizeUsage(value);
+  const usage = normalizeUsage(
+    value,
+    isThirdPartyModel(model) && Object.hasOwn(value || {}, "input_tokens")
+  );
   const uncachedInputTokens = Math.max(
     0,
     usage.inputTokens - usage.cachedInputTokens - usage.cacheWriteInputTokens
@@ -335,7 +480,7 @@ function addUsageToModels(models, modelName, usage) {
 }
 
 function addUsage(accumulator, model, rawUsage, day = null) {
-  const usage = normalizeUsage(rawUsage);
+  const usage = normalizeUsage(rawUsage, isThirdPartyModel(model));
   if (!usage.inputTokens && !usage.outputTokens && !usage.cacheWriteInputTokens) return;
   const modelName = normalizeModelName(model);
   addUsageToModels(accumulator.models, modelName, usage);
@@ -1058,8 +1203,12 @@ function calibrateCostSnapshot(snapshot, tokenUsage) {
   const calibratedModels = [];
   const calibratedUnattributedRows = [];
   let rawDailyInputTokens = 0;
+  let rawOfficialComparableInputTokens = 0;
+  let calibratedOfficialComparableInputTokens = 0;
   for (const row of snapshot.dailyUsage) {
-    const attributedInputTokens = row.models.reduce(
+    const comparableModels = row.models.filter(model => !isThirdPartyModel(model.model));
+    const thirdPartyModels = row.models.filter(model => isThirdPartyModel(model.model));
+    const attributedInputTokens = comparableModels.reduce(
       (total, model) => safeAdd(total, model.inputTokens),
       0
     );
@@ -1069,7 +1218,18 @@ function calibrateCostSnapshot(snapshot, tokenUsage) {
     const factor = localInputTokens > 0
       ? Math.min(1, officialTokens / localInputTokens)
       : 0;
-    calibratedModels.push(row.models.map(model => scaledCostModel(model, factor)));
+    rawOfficialComparableInputTokens = safeAdd(
+      rawOfficialComparableInputTokens,
+      localInputTokens
+    );
+    calibratedOfficialComparableInputTokens = safeAdd(
+      calibratedOfficialComparableInputTokens,
+      Math.round(localInputTokens * factor)
+    );
+    calibratedModels.push([
+      ...comparableModels.map(model => scaledCostModel(model, factor)),
+      ...thirdPartyModels
+    ]);
     calibratedUnattributedRows.push(scaledUnattributedUsage(row, factor));
   }
 
@@ -1099,8 +1259,14 @@ function calibrateCostSnapshot(snapshot, tokenUsage) {
     calibratedToOfficialUsage: true,
     rawLocalInputTokens: rawInputTokens,
     calibratedInputTokens,
-    replayExcludedInputTokens: Math.max(0, rawInputTokens - calibratedInputTokens),
-    officialUnmappedInputTokens: Math.max(0, officialLifetimeTokens - calibratedInputTokens),
+    replayExcludedInputTokens: Math.max(
+      0,
+      rawOfficialComparableInputTokens - calibratedOfficialComparableInputTokens
+    ),
+    officialUnmappedInputTokens: Math.max(
+      0,
+      officialLifetimeTokens - calibratedOfficialComparableInputTokens
+    ),
     rawUndatedInputTokens: Math.max(0, rawInputTokens - rawDailyInputTokens)
   };
 }

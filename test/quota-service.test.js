@@ -9,7 +9,7 @@ const { AppServerClient, QuotaService } = require("../src/quota-service");
 const emptyCostUsageReader = {
   read: async now => ({
     scanned: true,
-    pricingDate: "2026-07-26",
+    pricingDate: "2026-09-07",
     estimatedCostUsd: 0,
     hasUnpricedModels: false,
     models: [],
@@ -435,7 +435,7 @@ test("returns normalized account token usage and retains it when only the usage 
     costUsageReader: {
       read: async now => ({
         scanned: true,
-        pricingDate: "2026-07-26",
+        pricingDate: "2026-09-07",
         models: [{
           model: "gpt-5.6-sol",
           inputTokens: 1000,

@@ -11,6 +11,7 @@ const {
 } = require("./codex-cost-usage");
 
 const ACTIVE_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1_000;
+const ACTIVE_INACTIVITY_TIMEOUT_MS = 15 * 60 * 1_000;
 const PROJECT_HEAD_BYTES = 64 * 1024;
 const INITIAL_TAIL_BYTES = 256 * 1024;
 const MAX_ACTIVE_TURN_BYTES = 64 * 1024 * 1024;
@@ -985,6 +986,19 @@ class CodexActiveTaskReader {
             durationKnown: true,
             outcome: "abnormal-interrupted"
           });
+        } else if (now - file.mtimeMs > ACTIVE_INACTIVITY_TIMEOUT_MS) {
+          const endedAt = Math.max(
+            summary.task.startedAt,
+            latestTimestampFromLines(window.lines, summary.task.startedAt)
+          );
+          terminalTasks.push({
+            ...summary.task,
+            endedAt,
+            completedAt: endedAt * 1_000,
+            elapsedSeconds: Math.max(0, endedAt - summary.task.startedAt),
+            durationKnown: true,
+            outcome: "abnormal-interrupted"
+          });
         } else if (tasks.length < MAX_ACTIVE_TASKS) {
           tasks.push(summary.task);
         } else {
@@ -1077,6 +1091,7 @@ function normalizeActiveTaskResult(raw, now = Date.now()) {
 }
 
 module.exports = {
+  ACTIVE_INACTIVITY_TIMEOUT_MS,
   ACTIVE_LOOKBACK_MS,
   CodexActiveTaskReader,
   normalizeActiveTaskResult,

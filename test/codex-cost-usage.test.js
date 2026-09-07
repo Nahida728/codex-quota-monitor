@@ -187,7 +187,7 @@ test("prices cached, uncached, cache-write, output, and long-context tokens", ()
     outputTokens: 10_000
   });
   assert.equal(regular.isLongContext, true);
-  assert.equal(regular.cost, 3.5);
+  assert.equal(regular.cost, 2.74);
 
   const short = calculateUsageCost("gpt-5.6-terra", {
     inputTokens: 100_000,
@@ -195,8 +195,16 @@ test("prices cached, uncached, cache-write, output, and long-context tokens", ()
     outputTokens: 5_000
   });
   assert.equal(short.isLongContext, false);
-  assert.equal(short.cost, 0.145);
-  assert.equal(calculateUsageCost("deepseek-v4-pro", {
+  assert.equal(short.cost, 0.116);
+  const latest = calculateUsageCost("gpt-6-astra-2026-09-03", {
+    inputTokens: 100_000,
+    cachedInputTokens: 80_000,
+    cacheWriteInputTokens: 10_000,
+    outputTokens: 5_000
+  });
+  assert.equal(latest.isLongContext, false);
+  assert.equal(latest.cost, 0.555);
+  assert.equal(calculateUsageCost("private-vendor-model", {
     inputTokens: 100,
     outputTokens: 20
   }), null);
@@ -225,6 +233,8 @@ test("prices every current and historical native Codex model and dated snapshot"
     "gpt-5.6-sol",
     "gpt-5.6-terra",
     "gpt-5.6-luna",
+    "gpt-6-astra",
+    "gpt-6-astra-2026-09-03",
     "gpt-5-2025-08-07",
     "gpt-5.4-2026-03-05",
     "gpt-5.4-mini-2026-03-17",
@@ -247,10 +257,77 @@ test("prices every current and historical native Codex model and dated snapshot"
   }), null);
 });
 
+test("matches decorated Codex++ third-party model names and counts exclusive cache tokens", () => {
+  const result = summarizeRolloutLines([{ lines: [
+    turnContext("router/z-ai/glm-5.3-flash-free"),
+    tokenCount({ input: 100, cached: 900, output: 50 }),
+    turnContext("openrouter/qwen-qwen3.8-max-free"),
+    tokenCount({ input: 200, cached: 800, output: 40 }),
+    turnContext("vendor-deepseek-v4-pro-preview"),
+    tokenCount({ input: 300, cached: 700, output: 30 }),
+    turnContext("proxy/minimax-m2.7-highspeed-latest"),
+    tokenCount({ input: 400, cached: 600, output: 20 }),
+    turnContext("gateway/moonshot-kimi-k3-turbo"),
+    tokenCount({ input: 500, cached: 500, output: 10 })
+  ] }]);
+
+  assert.deepEqual(
+    result.models.map(model => model.model).sort(),
+    [
+      "openrouter/qwen-qwen3.8-max-free",
+      "proxy/minimax-m2.7-highspeed-latest",
+      "router/z-ai/glm-5.3-flash-free",
+      "gateway/moonshot-kimi-k3-turbo",
+      "vendor-deepseek-v4-pro-preview"
+    ].sort()
+  );
+  assert.ok(result.models.every(model => model.priced));
+  assert.ok(result.models.every(model => model.inputTokens === 1_000));
+  assert.equal(result.hasUnpricedModels, false);
+});
+
+test("official account calibration does not discard Codex++ third-party usage", () => {
+  const openAiModel = {
+    model: "gpt-5.6-sol",
+    inputTokens: 1_000,
+    cachedInputTokens: 800,
+    outputTokens: 10,
+    requestCount: 1,
+    estimatedCostUsd: 0.0024
+  };
+  const glmModel = {
+    model: "z-ai/glm-5.3-free",
+    inputTokens: 1_000,
+    cachedInputTokens: 900,
+    outputTokens: 20,
+    requestCount: 1,
+    estimatedCostUsd: 0.000067
+  };
+  const raw = {
+    scanned: true,
+    schemaVersion: 5,
+    pricingDate: "2026-09-07",
+    models: [openAiModel, glmModel],
+    dailyUsage: [{ date: "2026-09-01", models: [openAiModel, glmModel] }],
+    observedAt: 1_000
+  };
+  const normalized = normalizeCodexCostUsageResult(raw, {}, Date.now(), {
+    lifetimeTokens: 500,
+    dailyUsageBuckets: [{ startDate: "2026-09-01", tokens: 500 }]
+  });
+  const openAi = normalized.models.find(model => model.model === "gpt-5.6-sol");
+  const glm = normalized.models.find(model => model.model === "z-ai/glm-5.3-free");
+
+  assert.equal(openAi.inputTokens, 500);
+  assert.equal(glm.inputTokens, 1_000);
+  assert.equal(normalized.calibratedInputTokens, 1_500);
+  assert.equal(normalized.replayExcludedInputTokens, 500);
+});
+
 test("retains the last normalized local cost snapshot after a scan failure", () => {
   const live = normalizeCodexCostUsageResult({
     scanned: true,
-    pricingDate: "2026-07-26",
+    pricingDate: "2026-09-07",
     estimatedCostUsd: 1,
     models: [{
       model: "gpt-5.6-sol",
@@ -286,8 +363,8 @@ test("reuses a recent persisted scan instead of repeatedly walking large rollout
     cacheMs: 15 * 60 * 1000
   });
   const restored = await reader.read(1_000_000, {
-    schemaVersion: 4,
-    pricingDate: "2026-07-26",
+    schemaVersion: 5,
+    pricingDate: "2026-09-07",
     estimatedCostUsd: 0.305,
     models: [{
       model: "gpt-5.6-sol",
@@ -467,7 +544,7 @@ test("rebuilds an old aggregate instead of keeping it as a permanent floor", asy
     tokenCount({ input: 100_000, cached: 50_000, output: 1_000 })
   ].join("\n"));
   const previous = {
-    pricingDate: "2026-07-26",
+    pricingDate: "2026-09-07",
     estimatedCostUsd: 100,
     models: [{
       model: "gpt-5.6-sol",
@@ -485,9 +562,9 @@ test("rebuilds an old aggregate instead of keeping it as a permanent floor", asy
   }).read(1_000, previous);
   const normalized = normalizeCodexCostUsageResult(raw, { tokenCostSnapshot: previous }, 1_000);
 
-  assert.equal(raw.estimatedCostUsd, 0.305);
-  assert.equal(raw.schemaVersion, 4);
-  assert.equal(normalized.estimatedCostUsd, 0.305);
+  assert.equal(raw.estimatedCostUsd, 0.24);
+  assert.equal(raw.schemaVersion, 5);
+  assert.equal(normalized.estimatedCostUsd, 0.24);
   assert.equal(normalized.rolloutIndex, undefined);
   assert.equal(normalized.persistence.tokenCostSnapshot.rolloutIndex.length, 1);
   assert.equal(
@@ -509,8 +586,8 @@ test("does not merge incompatible archived aggregates into the current ledger", 
     observedAt: 900
   };
   const currentSnapshot = {
-    schemaVersion: 4,
-    pricingDate: "2026-07-26",
+    schemaVersion: 5,
+    pricingDate: "2026-09-07",
     models: [{
       model: "gpt-5.6-sol",
       inputTokens: 100_000,
@@ -556,7 +633,7 @@ test("does not merge incompatible archived aggregates into the current ledger", 
   };
 
   const reconciled = reconcileCostSnapshots([oldSnapshot, currentSnapshot]);
-  assert.equal(reconciled.schemaVersion, 4);
+  assert.equal(reconciled.schemaVersion, 5);
   assert.equal(reconciled.models.length, 1);
   assert.equal(reconciled.models[0].model, "gpt-5.6-sol");
   assert.equal(reconciled.estimatedCostUsd, 0.305);
@@ -574,8 +651,8 @@ test("caps replay-inflated daily model usage to the official Token ledger", () =
   };
   const result = normalizeCodexCostUsageResult({
     scanned: true,
-    schemaVersion: 4,
-    pricingDate: "2026-07-26",
+    schemaVersion: 5,
+    pricingDate: "2026-09-07",
     models: [model],
     dailyUsage: [{
       date: "2026-08-12",
@@ -608,7 +685,7 @@ test("does not invent model usage when the official Token ledger is larger", () 
   };
   const result = normalizeCodexCostUsageResult({
     scanned: true,
-    schemaVersion: 4,
+    schemaVersion: 5,
     models: [model],
     dailyUsage: [{ date: "2026-08-12", models: [model] }],
     observedAt: 1_000
