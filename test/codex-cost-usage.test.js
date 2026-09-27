@@ -234,6 +234,8 @@ test("prices every current and historical native Codex model and dated snapshot"
     "gpt-5.6-terra",
     "gpt-5.6-luna",
     "gpt-6-astra",
+    "gpt-6-sol",
+    "gpt-6-luna",
     "gpt-6-astra-2026-09-03",
     "gpt-5-2025-08-07",
     "gpt-5.4-2026-03-05",
@@ -255,6 +257,14 @@ test("prices every current and historical native Codex model and dated snapshot"
     inputTokens: 1_000,
     outputTokens: 100
   }), null);
+});
+
+test("prices GPT-6 Sol/Luna and GPT Reserve at the Luna-equivalent rate", () => {
+  const usage = { inputTokens: 100_000, cachedInputTokens: 50_000, outputTokens: 10_000 };
+  assert.equal(calculateUsageCost("gpt-6-sol", usage).cost, 0.21);
+  assert.equal(calculateUsageCost("gpt-6-luna", usage).cost, 0.0105);
+  assert.equal(calculateUsageCost("gptreverse", usage).cost,
+    calculateUsageCost("gpt-5.6-luna", usage).cost);
 });
 
 test("matches decorated Codex++ third-party model names and counts exclusive cache tokens", () => {
@@ -305,8 +315,8 @@ test("official account calibration does not discard Codex++ third-party usage", 
   };
   const raw = {
     scanned: true,
-    schemaVersion: 5,
-    pricingDate: "2026-09-07",
+    schemaVersion: 6,
+    pricingDate: "2026-09-27",
     models: [openAiModel, glmModel],
     dailyUsage: [{ date: "2026-09-01", models: [openAiModel, glmModel] }],
     observedAt: 1_000
@@ -327,7 +337,7 @@ test("official account calibration does not discard Codex++ third-party usage", 
 test("retains the last normalized local cost snapshot after a scan failure", () => {
   const live = normalizeCodexCostUsageResult({
     scanned: true,
-    pricingDate: "2026-09-07",
+    pricingDate: "2026-09-27",
     estimatedCostUsd: 1,
     models: [{
       model: "gpt-5.6-sol",
@@ -363,8 +373,8 @@ test("reuses a recent persisted scan instead of repeatedly walking large rollout
     cacheMs: 15 * 60 * 1000
   });
   const restored = await reader.read(1_000_000, {
-    schemaVersion: 5,
-    pricingDate: "2026-09-07",
+    schemaVersion: 6,
+    pricingDate: "2026-09-27",
     estimatedCostUsd: 0.305,
     models: [{
       model: "gpt-5.6-sol",
@@ -544,7 +554,7 @@ test("rebuilds an old aggregate instead of keeping it as a permanent floor", asy
     tokenCount({ input: 100_000, cached: 50_000, output: 1_000 })
   ].join("\n"));
   const previous = {
-    pricingDate: "2026-09-07",
+    pricingDate: "2026-09-27",
     estimatedCostUsd: 100,
     models: [{
       model: "gpt-5.6-sol",
@@ -563,7 +573,7 @@ test("rebuilds an old aggregate instead of keeping it as a permanent floor", asy
   const normalized = normalizeCodexCostUsageResult(raw, { tokenCostSnapshot: previous }, 1_000);
 
   assert.equal(raw.estimatedCostUsd, 0.24);
-  assert.equal(raw.schemaVersion, 5);
+  assert.equal(raw.schemaVersion, 6);
   assert.equal(normalized.estimatedCostUsd, 0.24);
   assert.equal(normalized.rolloutIndex, undefined);
   assert.equal(normalized.persistence.tokenCostSnapshot.rolloutIndex.length, 1);
@@ -586,8 +596,8 @@ test("does not merge incompatible archived aggregates into the current ledger", 
     observedAt: 900
   };
   const currentSnapshot = {
-    schemaVersion: 5,
-    pricingDate: "2026-09-07",
+    schemaVersion: 6,
+    pricingDate: "2026-09-27",
     models: [{
       model: "gpt-5.6-sol",
       inputTokens: 100_000,
@@ -633,7 +643,7 @@ test("does not merge incompatible archived aggregates into the current ledger", 
   };
 
   const reconciled = reconcileCostSnapshots([oldSnapshot, currentSnapshot]);
-  assert.equal(reconciled.schemaVersion, 5);
+  assert.equal(reconciled.schemaVersion, 6);
   assert.equal(reconciled.models.length, 1);
   assert.equal(reconciled.models[0].model, "gpt-5.6-sol");
   assert.equal(reconciled.estimatedCostUsd, 0.305);
@@ -651,8 +661,8 @@ test("caps replay-inflated daily model usage to the official Token ledger", () =
   };
   const result = normalizeCodexCostUsageResult({
     scanned: true,
-    schemaVersion: 5,
-    pricingDate: "2026-09-07",
+    schemaVersion: 6,
+    pricingDate: "2026-09-27",
     models: [model],
     dailyUsage: [{
       date: "2026-08-12",
@@ -685,7 +695,7 @@ test("does not invent model usage when the official Token ledger is larger", () 
   };
   const result = normalizeCodexCostUsageResult({
     scanned: true,
-    schemaVersion: 5,
+    schemaVersion: 6,
     models: [model],
     dailyUsage: [{ date: "2026-08-12", models: [model] }],
     observedAt: 1_000

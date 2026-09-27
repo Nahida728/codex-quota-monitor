@@ -9,9 +9,9 @@ const MAX_ROLLOUT_FILES = 1_000;
 const MAX_ROLLOUT_FILE_BYTES = 512 * 1024 * 1024;
 const MAX_ROLLOUT_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 const SCAN_CACHE_MS = 15 * 60 * 1_000;
-const COST_SNAPSHOT_SCHEMA_VERSION = 5;
+const COST_SNAPSHOT_SCHEMA_VERSION = 6;
 const MAX_PERSISTED_ROLLOUTS = 1_000;
-const PRICING_DATE = "2026-09-07";
+const PRICING_DATE = "2026-09-27";
 const LONG_CONTEXT_THRESHOLD = 272_000;
 
 // Standard API text-token prices in USD per one million tokens.
@@ -138,6 +138,27 @@ const MODEL_PRICING = Object.freeze({
     cachedInput: 1,
     cacheWrite: 12.5,
     output: 50,
+    longContext: true
+  },
+  "gpt-6-sol": {
+    input: 2,
+    cachedInput: 0.2,
+    cacheWrite: 2.5,
+    output: 10,
+    longContext: true
+  },
+  "gpt-6-luna": {
+    input: 0.1,
+    cachedInput: 0.01,
+    cacheWrite: 0.125,
+    output: 0.5,
+    longContext: true
+  },
+  "gpt-reserve": {
+    input: 0.2,
+    cachedInput: 0.02,
+    cacheWrite: 0.25,
+    output: 1.2,
     longContext: true
   },
   "deepseek-v4-pro": {
@@ -268,6 +289,8 @@ const THIRD_PARTY_MODEL_RULES = Object.freeze([
 ]);
 
 const MODEL_ALIASES = Object.freeze({
+  "gptreverse": "gpt-reserve",
+  "gptreserve": "gpt-reserve",
   "codex-auto-review": "gpt-5.3-codex",
   "gpt-5.0": "gpt-5",
   "gpt-5.0-codex": "gpt-5-codex",

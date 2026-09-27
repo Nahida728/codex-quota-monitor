@@ -10,13 +10,15 @@ const renderer = fs.readFileSync(path.join(rendererRoot, "renderer.js"), "utf8")
 const main = fs.readFileSync(path.join(rendererRoot, "..", "main.js"), "utf8");
 const preload = fs.readFileSync(path.join(rendererRoot, "..", "preload.js"), "utf8");
 
-test("lays out the two quota panels in equal side-by-side columns", () => {
+test("lays out three quota rings in equal side-by-side columns", () => {
   assert.match(
     css,
-    /\.quota-section\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/
+    /\.quota-section\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/
   );
   assert.match(html, /id="fiveHourPanel"/);
   assert.match(html, /id="weeklyPanel"/);
+  assert.match(html, /id="reservePanel"/);
+  assert.match(css, /conic-gradient\(var\(--ring-color/);
 });
 
 test("renders every reset credit into a dedicated list row", () => {

@@ -140,6 +140,21 @@
             <span id="weeklyUsed">--</span>
           </div>
         </article>
+        <article class="quota-panel reserve-panel" id="reservePanel">
+          <div class="quota-heading">
+            <div class="quota-icon violet" aria-hidden="true">◔</div>
+            <div class="quota-name" data-i18n="reserve">GPT Reserve</div>
+            <div class="quota-number" id="reserveNumber"><span>--</span><small>%</small></div>
+          </div>
+          <div class="quota-reset" id="reserveReset">--</div>
+          <div class="progress-track" id="reserveTrack">
+            <div class="progress-glow violet-progress" id="reserveProgress"></div>
+          </div>
+          <div class="quota-caption">
+            <span data-i18n="remaining">剩余</span>
+            <span id="reserveUsed">--</span>
+          </div>
+        </article>
       </section>
 
       <section class="signals" id="statusSection" aria-label="状态提醒">

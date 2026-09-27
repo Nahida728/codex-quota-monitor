@@ -205,7 +205,7 @@ test("detects a usage drop before the scheduled reset as unexpected", () => {
   );
 });
 
-test("official full reset requires both windows at 100% before their scheduled reset", () => {
+test("official full reset requires an early weekly recovery and restored five-hour window", () => {
   const previous = {
     fiveHour: { usedPercent: 65, remainingPercent: 35, resetsAt: 4000 },
     weekly: { usedPercent: 42, remainingPercent: 58, resetsAt: 9000 }
@@ -219,7 +219,50 @@ test("official full reset requires both windows at 100% before their scheduled r
     ...bothRestored,
     weekly: { usedPercent: 1, remainingPercent: 99, resetsAt: 12000 }
   }, 2000), false);
-  assert.equal(didOfficialFullReset(previous, bothRestored, 4000), false);
+  assert.equal(didOfficialFullReset(previous, bothRestored, 4000), true);
+});
+
+test("does not infer a reset merely because the five-hour window disappeared", () => {
+  assert.equal(didOfficialFullReset({
+    fiveHour: { usedPercent: 65, remainingPercent: 35, resetsAt: 4000 },
+    weekly: { usedPercent: 42, remainingPercent: 58, resetsAt: 9000 }
+  }, {
+    fiveHour: null,
+    weekly: { usedPercent: 0, remainingPercent: 100, resetsAt: 12000 }
+  }, 2000), false);
+});
+
+test("reads GPT Reserve weekly quota from its own limit bucket", () => {
+  const normalized = normalizeQuotaResponse({
+    rateLimitsByLimitId: {
+      codex: { primary: { usedPercent: 25, windowDurationMins: 10080, resetsAt: 9000 } },
+      "gpt-reserve": { primary: { usedPercent: 40, windowDurationMins: 10080, resetsAt: 10000 } }
+    },
+    rateLimitResetCredits: { availableCount: 0, credits: [] }
+  }, {}, 2000);
+  assert.equal(normalized.windows.weekly.remainingPercent, 75);
+  assert.equal(normalized.reserve.remainingPercent, 60);
+  assert.equal(normalized.reserve.resetsAt, 10000);
+});
+
+test("does not record an official reset when reset-credit count falls without item detail", () => {
+  const normalized = normalizeQuotaResponse({
+    rateLimits: {
+      primary: { usedPercent: 0, windowDurationMins: 10080, resetsAt: 12000 },
+      secondary: { usedPercent: 0, windowDurationMins: 300, resetsAt: 6000 }
+    },
+    rateLimitResetCredits: { availableCount: 1, credits: [] }
+  }, {
+    hasBaseline: true,
+    lastSnapshot: {
+      windows: {
+        fiveHour: { usedPercent: 65, remainingPercent: 35, resetsAt: 4000 },
+        weekly: { usedPercent: 42, remainingPercent: 58, resetsAt: 9000 }
+      },
+      resets: { availableCount: 2 }
+    }
+  }, 2000);
+  assert.equal(normalized.events.officialReset.detectedNow, false);
 });
 
 test("detects an early weekly reset while the five-hour window is officially disabled", () => {

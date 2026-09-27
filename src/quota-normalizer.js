@@ -89,6 +89,12 @@ function getRateLimit(raw) {
   return raw?.rateLimitsByLimitId?.codex || raw?.rateLimits || null;
 }
 
+function getReserveRateLimit(raw) {
+  const buckets = raw?.rateLimitsByLimitId;
+  if (!buckets || typeof buckets !== "object") return null;
+  return buckets["gpt-reserve"] || buckets.gpt_reserve || null;
+}
+
 function didUnexpectedReset(previous, current, nowSeconds, creditCountDecreased) {
   if (!previous || !current || creditCountDecreased) return false;
   if (current.usedPercent > previous.usedPercent - 10) return false;
@@ -112,15 +118,24 @@ function getOfficialResetDetectionMode(previousWindows, currentWindows, nowSecon
     nowSeconds < previousWeekly.resetsAt - 90;
   if (!beforeWeeklyReset) return null;
 
-  if (!currentFiveHour) {
+  if (!currentFiveHour && !previousFiveHour) {
     return "weekly-only-five-hour-disabled";
   }
 
+  if (!currentFiveHour) return null;
+
   if (!previousFiveHour) return null;
-  if (currentFiveHour.remainingPercent !== 100 || previousFiveHour.usedPercent <= 0) return null;
+  if (currentFiveHour.remainingPercent !== 100) return null;
+  // A global weekly reset can coincide with the ordinary five-hour recovery,
+  // or the short window can be unused. Weekly early recovery is still evidence.
+  if (previousFiveHour.usedPercent <= 0) return "weekly-early-five-hour-unused";
   const beforeFiveHourReset = Number.isFinite(previousFiveHour.resetsAt) &&
     nowSeconds < previousFiveHour.resetsAt - 90;
-  return beforeFiveHourReset ? "all-limits" : null;
+  if (beforeFiveHourReset) return "all-limits";
+  return Number.isFinite(previousFiveHour.resetsAt) &&
+    nowSeconds >= previousFiveHour.resetsAt - 90
+    ? "weekly-early-five-hour-natural"
+    : null;
 }
 
 function didOfficialFullReset(previousWindows, currentWindows, nowSeconds) {
@@ -439,6 +454,7 @@ function deriveEvents(previousState, normalized, nowSeconds) {
   const currentOfficialReset = (
     !manualResetDetected &&
     !shouldStartPendingConsumedReset &&
+    !resetCreditCountDecreased &&
     resetPatternMode
   )
     ? {
@@ -546,6 +562,7 @@ function normalizeQuotaResponse(raw, previousState = {}, nowSeconds = Math.floor
     limitReached: Boolean(rateLimit.rateLimitReachedType),
     limitReachedType: rateLimit.rateLimitReachedType || null,
     windows: identifyWindows(rateLimit),
+    reserve: identifyWindows(getReserveRateLimit(raw)).weekly,
     resets: restoreCachedCreditDetails(
       normalizeCredits(raw.rateLimitResetCredits),
       previousState

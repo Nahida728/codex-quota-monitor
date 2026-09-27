@@ -24,6 +24,8 @@ The monitor must:
 
 - Show the 5-hour quota, remaining percentage, and scheduled recovery.
 - Show the weekly quota, remaining percentage, and scheduled recovery.
+- Show the GPT Reserve weekly quota as a third ring when the independent
+  `gpt-reserve` app-server bucket is present; never infer it from Codex usage.
 - Handle the official special state in which the 5-hour window is not returned.
 - Show every available reset credit, with localized type and its own expiry.
 - Detect newly received reset credits without treating the first run as an event.
@@ -325,7 +327,8 @@ Do not call a dragging change complete from static inspection. Manually verify:
 
 ## Layout and readability invariants
 
-- The two quota panels are equal-width cards in one left/right row.
+- The three quota panels are equal-width rings in one row: 5-hour, weekly,
+  and GPT Reserve. An unavailable Reserve bucket stays explicitly unavailable.
 - The three status cards are one row immediately below the quota row, ordered:
   available reset credits, official reset, Codex client update.
 - The available-reset card is the entry point to a secondary detail view that
@@ -460,6 +463,10 @@ Supported modes:
   restore early to 100%.
 - `weekly-only-five-hour-disabled`: the official 5-hour window is absent and the
   weekly quota alone restores early to 100%.
+- `weekly-early-five-hour-natural` and `weekly-early-five-hour-unused`: the
+  weekly window restores early to 100% while the five-hour window is present
+  and either naturally due or had no prior usage. The weekly before/after
+  evidence remains mandatory.
 
 Never infer an official reset from:
 
@@ -470,6 +477,12 @@ Never infer an official reset from:
 - a 5-hour window merely disappearing;
 - a quota increase that does not reach 100%;
 - a simultaneous decrease in reset credits.
+
+A count-only reset-credit decrease still blocks official-reset classification;
+missing item details do not prove that no credit was consumed. Conversely, a
+weekly reset can be missed if the five-hour window happens to reach its normal
+expiry in the same polling interval. Use the early weekly before/after proof in
+that case, while retaining the no-decrease credit guard.
 
 Official-reset records are permanent:
 
@@ -547,6 +560,9 @@ client's visible “Update” button before installation. Do not regress to that
   GPT-5.2/Codex, GPT-5.3-Codex, GPT-5.4/mini, GPT-5.5/Cyber, and the GPT-5.6
   family. Match official dated snapshot suffixes without treating arbitrary
   provider suffixes as an OpenAI model.
+- Include GPT-6 Sol and Luna standard rates. Treat `gpt-reserve`/`gptreverse`
+  cost as a user-requested GPT-5.6 Luna equivalent, not a published Reserve
+  API price.
 - `codex-auto-review` uses the documented GPT-5.3-Codex code-review rate.
 - Models without a published standard API-equivalent rate, including research
   previews and third-party providers, remain visibly unpriced rather than
@@ -839,7 +855,7 @@ the fix. At minimum, automated tests must continue covering:
   task-level cost isolation, and monotonic performance-record recovery;
 - five-second complete refresh policy in both active and idle states;
 - crop containment, movement, resize, ratio, and source-to-output mapping;
-- side-by-side quota cards, the clickable reset entry in the three-card status
+- three side-by-side quota rings, the clickable reset entry in the three-card status
   row, reset-detail/history dialog, the connection-status dialog, and the reserved
   bottom area;
 - one-shot automatic offline-dialog display per app session, no eligibility reset

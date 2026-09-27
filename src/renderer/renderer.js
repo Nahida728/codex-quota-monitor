@@ -39,6 +39,7 @@ const i18n = {
     subscriptionProjectedNote: "Codex 当前仅提供上个账期时间，已按原月度周期推算；实际续费时间以订阅平台为准。",
     fiveHour: "5 小时额度",
     weekly: "1 周额度",
+    reserve: "GPT Reserve",
     remaining: "剩余",
     used: "已使用 {value}%",
     restores: "{time} 恢复",
@@ -91,6 +92,8 @@ const i18n = {
     officialResetDetectedAt: "检测于 {time}",
     officialResetModeAll: "双额度提前恢复",
     officialResetModeWeekly: "5 小时关闭 · 周额度提前恢复",
+    officialResetModeNatural: "周额度提前恢复 · 5 小时正常到期",
+    officialResetModeUnused: "周额度提前恢复 · 5 小时未使用",
     officialResetModeLegacy: "旧版检测记录",
     manualResetExcluded: "检测到手动重置，未计入官方记录",
     manualResetCardExcluded: "手动重置已排除",
@@ -280,6 +283,7 @@ const i18n = {
     subscriptionProjectedNote: "Codex currently exposes the previous billing period, so this is projected using its monthly cycle. Check your subscription platform for the final renewal time.",
     fiveHour: "5-hour quota",
     weekly: "Weekly quota",
+    reserve: "GPT Reserve",
     remaining: "Remaining",
     used: "{value}% used",
     restores: "Resets {time}",
@@ -332,6 +336,8 @@ const i18n = {
     officialResetDetectedAt: "Detected {time}",
     officialResetModeAll: "Both limits restored early",
     officialResetModeWeekly: "5-hour paused · Weekly restored early",
+    officialResetModeNatural: "Weekly restored early · 5-hour naturally due",
+    officialResetModeUnused: "Weekly restored early · 5-hour unused",
     officialResetModeLegacy: "Legacy detection record",
     manualResetExcluded: "Manual reset detected; excluded from official history",
     manualResetCardExcluded: "Manual reset excluded",
@@ -499,6 +505,7 @@ const elements = Object.fromEntries([
   "cropResizeHandle", "cropSourceInfo",
   "fiveHourPanel", "fiveHourReset", "fiveHourNumber", "fiveHourProgress", "fiveHourUsed",
   "weeklyPanel", "weeklyReset", "weeklyNumber", "weeklyProgress", "weeklyUsed",
+  "reservePanel", "reserveReset", "reserveNumber", "reserveProgress", "reserveUsed",
   "resetCreditButton", "resetCreditIcon", "resetStatusCount", "resetCreditStatus",
   "resetCreditDetail", "resetCreditModal", "resetCreditClose", "resetCreditDone",
   "resetDetailCount", "resetCreditList", "receivedResetHistoryList", "consumedResetHistoryList",
@@ -985,22 +992,22 @@ function formatResetTime(timestamp) {
 function setQuota(panel, reset, number, progress, used, quotaWindow, unavailable = false) {
   panel.classList.toggle("is-unavailable", unavailable);
   if (unavailable) {
-    reset.textContent = t("unavailableDetail");
+    reset.textContent = panel === elements.fiveHourPanel ? t("unavailableDetail") : t("noData");
     number.innerHTML = `<span class="unavailable-pill">${t("unavailable")}</span>`;
-    progress.style.width = "0%";
+    panel.style.setProperty("--quota-progress", "0%");
     used.textContent = "—";
     return;
   }
   if (!quotaWindow) {
     reset.textContent = t("noData");
     number.innerHTML = "<span>--</span><small>%</small>";
-    progress.style.width = "0%";
+    panel.style.setProperty("--quota-progress", "0%");
     used.textContent = "—";
     return;
   }
   reset.textContent = t("restores", { time: formatResetTime(quotaWindow.resetsAt) });
   number.innerHTML = `<span>${quotaWindow.remainingPercent}</span><small>%</small>`;
-  progress.style.width = `${quotaWindow.remainingPercent}%`;
+  panel.style.setProperty("--quota-progress", `${quotaWindow.remainingPercent}%`);
   used.textContent = t("used", { value: quotaWindow.usedPercent });
 }
 
@@ -1258,7 +1265,9 @@ function renderOfficialResetHistory(event = {}, manualReset = {}) {
     const title = document.createElement("strong");
     const modeLabel = {
       "all-limits": t("officialResetModeAll"),
-      "weekly-only-five-hour-disabled": t("officialResetModeWeekly")
+      "weekly-only-five-hour-disabled": t("officialResetModeWeekly"),
+      "weekly-early-five-hour-natural": t("officialResetModeNatural"),
+      "weekly-early-five-hour-unused": t("officialResetModeUnused")
     }[record.detectionMode] || t("officialResetModeLegacy");
     title.textContent = index === 0
       ? `${modeLabel} · ${t("officialResetNewest")}`
@@ -2572,6 +2581,15 @@ function renderOnline(snapshot) {
     elements.weeklyProgress,
     elements.weeklyUsed,
     data.windows.weekly
+  );
+  setQuota(
+    elements.reservePanel,
+    elements.reserveReset,
+    elements.reserveNumber,
+    elements.reserveProgress,
+    elements.reserveUsed,
+    data.reserve,
+    !data.reserve
   );
 
   renderResetCredits(data.resets, data.events.newReset, data.events.manualReset);

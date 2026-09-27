@@ -2502,8 +2502,8 @@ h2 {
 
 .quota-section {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .quota-panel,
@@ -2526,8 +2526,8 @@ h2 {
 .quota-panel {
   position: relative;
   min-width: 0;
-  min-height: 110px;
-  padding: 9px 12px 8px;
+  min-height: 128px;
+  padding: 8px 7px;
   overflow: hidden;
   border-radius: 18px;
 }
@@ -2547,15 +2547,15 @@ h2 {
 
 .quota-heading {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
+  grid-template-columns: 20px minmax(0, 1fr);
   align-items: center;
-  gap: 7px;
+  gap: 4px;
 }
 
 .quota-icon {
   display: grid;
-  width: 30px;
-  height: 30px;
+  width: 20px;
+  height: 20px;
   place-items: center;
   border-radius: 10px;
 }
@@ -2584,18 +2584,18 @@ h2 {
 
 .quota-name {
   min-width: 0;
-  font-size: 12.5px;
+  font-size: 10.5px;
   font-weight: 620;
   line-height: 1.2;
 }
 
 .quota-reset {
   display: -webkit-box;
-  min-height: 27px;
-  margin-top: 5px;
+  min-height: 25px;
+  margin-top: 66px;
   overflow: hidden;
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: 9px;
   line-height: 1.35;
   white-space: normal;
   -webkit-box-orient: vertical;
@@ -2603,14 +2603,20 @@ h2 {
 }
 
 .quota-number {
-  align-self: center;
+  position: absolute;
+  z-index: 2;
+  top: 49px;
+  left: 50%;
+  width: 58px;
+  text-align: center;
+  transform: translateX(-50%);
   color: #f8feff;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 
 .quota-number span {
-  font-size: 23px;
+  font-size: 20px;
   font-weight: 650;
   letter-spacing: -.055em;
 }
@@ -2622,20 +2628,32 @@ h2 {
 }
 
 .progress-track {
-  position: relative;
-  height: 5px;
+  position: absolute;
+  top: 29px;
+  left: 50%;
+  width: 58px;
+  height: 58px;
   overflow: hidden;
-  margin-top: 5px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, .065);
+  margin: 0;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  background: conic-gradient(var(--ring-color, var(--mint)) var(--quota-progress, 0%), rgba(255,255,255,.09) 0);
+}
+
+.progress-track::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  background: #1b2933;
 }
 
 .progress-glow {
-  width: 0;
-  height: 100%;
-  border-radius: inherit;
-  transition: width .75s cubic-bezier(.2,.8,.2,1);
+  display: none;
 }
+
+#weeklyPanel .progress-track,
+#reservePanel .progress-track { --ring-color: var(--violet); }
 
 .mint-progress {
   background: linear-gradient(90deg, #56cbb7, #98f3df);
@@ -2650,14 +2668,13 @@ h2 {
 .quota-caption {
   display: flex;
   justify-content: space-between;
-  margin-top: 5px;
+  margin-top: 0;
   color: var(--faint);
   font-size: 10.5px;
 }
 
 .is-unavailable .progress-track {
-  overflow: visible;
-  background: repeating-linear-gradient(90deg, rgba(255,255,255,.07) 0 7px, transparent 7px 11px);
+  background: conic-gradient(rgba(255,255,255,.12) 100%, transparent 0);
 }
 
 .is-unavailable .progress-glow {
