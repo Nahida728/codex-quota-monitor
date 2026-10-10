@@ -3523,4 +3523,8 @@ footer {
 .task-performance-heading { gap: 2px; line-height: 1.25; max-height: 48px; overflow-y: auto; margin-bottom: 5px; scrollbar-width: thin; }
 .task-performance-grid { row-gap: 6px; }
 .overview-grid > * { min-height: 0; }
+.task-performance-title { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; }
+.task-performance-title > strong { min-width: 0; white-space: normal; }
+.task-concurrency { flex: none; color: var(--muted); font-size: 10px; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.task-concurrency.is-running { color: var(--mint); font-weight: 650; }
 footer { gap: 8px; }

@@ -77,3 +77,19 @@ test("read-only SQLite shared-memory notifications never wake the monitor itself
   assert.equal(h.sync.localDirty, true);
   h.sync.dispose();
 });
+
+test("live telemetry changes reach the task channel before a turn completes",async()=>{
+  let tokens=100,running=true;
+  const snapshot=()=>({available:true,count:running?1:0,tasks:running?[{id:'parent',startedAt:1,telemetry:{totalTokens:tokens}}]:[],
+    latestTask:{id:'parent',startedAt:1,telemetry:{totalTokens:tokens}},records:{}});
+  const h=harness({client:{},read:async()=>({online:true,activeTasks:snapshot()}),readActiveTasks:async()=>snapshot()});
+  h.sync.changed('sessions/live.jsonl');await h.advance(250);
+  tokens=220;h.sync.changed('sessions/live.jsonl');await h.advance(250);
+  const updates=h.events.filter(([kind])=>kind==='local').map(([,value])=>value);
+  assert.equal(updates.length,2);
+  assert.equal(updates[1].count,1);
+  assert.equal(updates[1].latestTask.telemetry.totalTokens,220);
+  running=false;h.sync.changed('sessions/live.jsonl');await h.advance(250);
+  assert.equal(h.events.filter(([kind])=>kind==='local').at(-1)[1].count,0);
+  h.sync.dispose();
+});

@@ -209,6 +209,16 @@ function latestTimestampFromLines(lines, fallback = null) {
   return latest;
 }
 
+function latestTimestampMsFromLines(lines, fallback = null) {
+  let latest = Number.isFinite(fallback) ? fallback : null;
+  for (const line of Array.isArray(lines) ? lines : []) {
+    const match = line.match(/"timestamp"\s*:\s*"([^"]{10,40})"/);
+    const at = match ? Date.parse(match[1]) : NaN;
+    if (Number.isFinite(at) && at > 0 && (latest === null || at > latest)) latest = at;
+  }
+  return latest;
+}
+
 function compactTaskLines(lines) {
   const compact = [];
   for (const line of lines) {
@@ -233,8 +243,8 @@ function compactTaskLines(lines) {
       }
     } catch {}
   }
-  const latest = latestTimestampFromLines(lines);
-  if (latest) compact.push(JSON.stringify({ timestamp: new Date(latest * 1000).toISOString() }));
+  const latest = latestTimestampMsFromLines(lines);
+  if (latest) compact.push(JSON.stringify({ timestamp: new Date(latest).toISOString() }));
   return compact;
 }
 
@@ -969,9 +979,15 @@ class CodexActiveTaskReader {
       cached = { contextKey, summary, priorTerminals };
       this.windowComputations.set(window.lines, cached);
     }
+    const active = cached.summary.task;
+    const elapsedMs = active ? Math.max(0, now - active.startedAt * 1000) : 0;
+    const telemetry = active?.telemetry;
     return {
       summary: cached.summary.task ? { ...cached.summary, task: {
-        ...cached.summary.task, elapsedSeconds: Math.max(0, Math.floor(now / 1000) - cached.summary.task.startedAt)
+        ...active, elapsedSeconds: Math.floor(elapsedMs / 1000),
+        telemetry: telemetry ? { ...telemetry, averageTokensPerSecond:
+          !telemetry.partial && Number.isFinite(telemetry.outputTokens) && elapsedMs > 0
+            ? telemetry.outputTokens / (elapsedMs / 1000) : null } : null
       } } : cached.summary,
       priorTerminals: cached.priorTerminals
     };
@@ -1131,7 +1147,15 @@ class CodexActiveTaskReader {
         }`
       );
       if (summary.task) {
-        if (file.archived || (summary.task.goalStatus && summary.task.goalStatus !== "active")) {
+        const latestEventAtMs = latestTimestampMsFromLines(window.lines, summary.task.startedAt * 1000);
+        const latestEventAt = Math.floor(latestEventAtMs / 1000);
+        const goalStopped = summary.task.goalStatus && summary.task.goalStatus !== "active" &&
+          Number.isFinite(summary.task.goalUpdatedAtMs) &&
+          summary.task.goalUpdatedAtMs >= summary.task.startedAt * 1000 &&
+          summary.task.goalUpdatedAtMs >= latestEventAtMs;
+        // Goal rows survive subsequent manual turns and are inherited by
+        // children. An old paused/blocked goal cannot terminate fresh activity.
+        if (file.archived || goalStopped) {
           const endedAt = Math.max(
             summary.task.startedAt,
             latestTimestampFromLines(window.lines, summary.task.startedAt)
@@ -1144,7 +1168,7 @@ class CodexActiveTaskReader {
             durationKnown: true,
             outcome: summary.task.goalStatus ? "managed-stopped" : "abnormal-interrupted"
           });
-        } else if (now - Math.max(file.mtimeMs, (latestTimestampFromLines(window.lines, summary.task.startedAt) || 0) * 1000) > ACTIVE_INACTIVITY_TIMEOUT_MS && !summary.task.goalStatus) {
+        } else if (now - Math.max(file.mtimeMs, (latestEventAt || 0) * 1000) > ACTIVE_INACTIVITY_TIMEOUT_MS && summary.task.goalStatus !== "active") {
           const endedAt = Math.max(
             summary.task.startedAt,
             latestTimestampFromLines(window.lines, summary.task.startedAt)
@@ -1155,7 +1179,7 @@ class CodexActiveTaskReader {
             completedAt: endedAt * 1_000,
             elapsedSeconds: Math.max(0, endedAt - summary.task.startedAt),
             durationKnown: true,
-            outcome: "abnormal-interrupted"
+            outcome: summary.task.goalStatus ? "managed-stopped" : "abnormal-interrupted"
           });
         } else if (tasks.length < MAX_ACTIVE_TASKS) {
           tasks.push(summary.task);
@@ -1244,8 +1268,9 @@ function normalizeActiveTaskResult(raw, now = Date.now()) {
     available: true,
     tasks,
     terminalTasks,
-    latestTask: [...tasks, ...terminalTasks.filter(task => task.outcome === "completed")]
-      .sort((left, right) => right.startedAt - left.startedAt)[0] || null,
+    latestTask: tasks.slice().sort((left, right) => right.startedAt - left.startedAt)[0] ||
+      terminalTasks.filter(task => task.outcome === "completed")
+        .sort((left, right) => right.completedAt - left.completedAt)[0] || null,
     history: historySnapshot
       ? { ...normalizeTaskHistory(historySnapshot, now), deferred: Boolean(raw.history?.deferred) }
       : normalizeTaskHistory(null, now),

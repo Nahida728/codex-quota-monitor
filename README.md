@@ -37,6 +37,8 @@ Windows x64；需要能够连接 OpenAI 服务的网络。API Key 登录通常�
 
 ## 1.3.0 带来了什么
 
+1.3.1 是紧急补丁，修复任务漏报和看板停留在已完成回合的问题，并在看板右上角加入运行并发数和子智能体提示。建议 1.3.0 用户升级；错误来源和修复详情见更新日志。
+
 - 三额度和最近任务左右排列；重置管理、概率和客户端状态各有独立入口。
 - 最近任务在执行过程中同步用量和缓存命中率，支持多个模型参与。
 - 大目标和子智能体有明确标记。目标累计 Tokens、累计耗时与本轮模型消费分别展示。
@@ -114,6 +116,8 @@ Codex Quota Monitor is a compact Windows desktop companion for Codex. A floating
 Requires Windows x64 and network access to OpenAI. API-key mode usually does not supply subscription quota. GPT Reserve stays unavailable when its independent bucket is absent.
 
 ### What's new in 1.3.0
+
+The 1.3.1 emergency patch restores hidden live tasks, keeps the dashboard on running turns, and adds a concurrent-task count with subagent details. It is recommended for 1.3.0 users; the changelog documents the causes and fixes.
 
 The quota panel now sits beside the live task dashboard. Reset management, reset estimates and client updates have separate entry points. Goals and subagents show their context and participating models; goal-wide tokens/time are kept separate from current-turn costs. Completed tasks can be confirmed together, and managed goal/subagent stops are distinguished from abnormal interruptions.
 

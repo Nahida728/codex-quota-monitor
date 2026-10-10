@@ -1,5 +1,41 @@
 # Changelog / 更新日志
 
+## 1.3.1 紧急补丁 / Emergency patch — 2026-10-10
+
+### 中文
+
+**建议 1.3.0 用户升级。** 此补丁修复任务漏报和实时看板停住的问题，保留现有统计、背景和设置。
+
+**错误来源**
+
+1. 任务读取器直接把旧 `/goal` 的非活动状态用于当前回合。目标因暂停、阻塞或达到限额而停止后，新手动回合及仍在运行的子智能体也可能被排除，导致任务列表和运行计数显示为 0。
+2. 看板把运行中和已完成回合混在一起按开始时间选取；渲染器又拒绝更早开始的回合。因此，一个较晚开始、已经完成的子任务会挡住仍在运行的主任务，使 Token 和速率看起来没有更新。
+3. 日志缓存复用时只推进任务耗时，没有更新平均速率，导致等待期间平均值停留在旧读数。
+
+**修复情况**
+
+- 修复旧 `/goal` 的暂停、阻塞或限额状态隐藏新回合及运行中的子智能体的问题。目标状态与最新任务证据按时间比较。
+- 最近任务看板优先显示运行中的回合；已完成的子任务不再挡住较早开始的主任务，新增 Token 计数在结束前更新。
+- 右上角新增并发数，统计本机所有运行中的主任务和子智能体；提示中单列子智能体数量。不完整读取标为下限，读取失败显示不可用。
+- 修复复用日志缓存时平均速率停住的问题。平均速率包含运行期间的等待时间；不会估算尚未写入日志的生成中 Tokens。
+
+### English
+
+**Recommended for 1.3.0 users.** This emergency patch restores live task detection and dashboard updates while retaining existing records, backgrounds and settings.
+
+**Causes**
+
+1. The reader applied a persisted inactive goal state to the current turn. After a goal was paused, blocked or limited, a new manual turn or a running subagent could be excluded, leaving the task list and running count at zero.
+2. The dashboard selected from running and completed turns by start time, and the renderer rejected earlier-started turns. A later-started completed child could hide its still-running parent and leave the displayed counters unchanged.
+3. Cached log windows advanced elapsed time without updating the whole-turn average rate, leaving that value unchanged during waits.
+
+**Fixes**
+
+- Fixed older paused, blocked or limited goals hiding new turns and running subagents. Goal transitions are compared with the latest task evidence.
+- Prioritized running turns on the task dashboard. Completed children no longer hide an earlier-started live parent, and appended token counters update before completion.
+- Added an upper-right count of all locally observed running tasks, with a separate subagent count in the tooltip. Partial counts are lower bounds; failed reads remain unavailable.
+- Kept whole-turn average rates advancing when log counters are cached, including wait time. Unlogged in-flight tokens are not estimated.
+
 ## 1.3.0 — 2026-10-10
 
 首个 1.3 正式版本，整合今天的界面、任务、用量和更新功能改动。

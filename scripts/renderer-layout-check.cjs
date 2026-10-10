@@ -18,6 +18,26 @@ app.whenReady().then(async()=>{
       const scenario=process.argv.includes('--edge-cases')?'fiveHour=0&reserve=0&tasks=2&completed=1&credits=9&offline=1&pending=1&stale=1&bg=1':'fiveHour=1&reserve=1&tasks=2&completed=1';
       await win.loadURL(`http://127.0.0.1:4194/?fixed=1&lang=${lang}&${scenario}`);
       await wait(450);
+      const liveChecks=await win.webContents.executeJavaScript(`(() => {
+        const base=latestSnapshot.activeTasks;
+        const parent={...base.tasks[0],id:'live-parent',startedAt:Math.floor(Date.now()/1000)-2000,telemetry:{totalTokens:100,outputTokens:20,partial:false}};
+        const child={...base.tasks[1],id:'live-child',taskKind:'subagent'};
+        renderActiveTasks({...base,latestTask:{...parent,id:'finished-child',startedAt:parent.startedAt+100,endedAt:parent.startedAt+200},tasks:[]});
+        renderActiveTasks({...base,latestTask:parent,tasks:[parent,child]});
+        const checks={liveParent:latestPerformanceTask.id==='live-parent',count:elements.taskConcurrency.textContent.includes('2'),subagent:elements.taskConcurrency.title.includes('1')};
+        renderActiveTasks({...base,latestTask:{...parent,telemetry:{...parent.telemetry,totalTokens:200}},tasks:[parent,child]});
+        checks.tokens=elements.latestTaskTokens.title==='200 Tokens';
+        renderActiveTasks({...base,tasks:[],available:false});
+        checks.unavailable=elements.taskConcurrency.textContent.includes('—');
+        renderActiveTasks({...base,tasks:[],available:true});
+        checks.stopped=elements.taskConcurrency.textContent.includes('0')&&!elements.taskConcurrency.classList.contains('is-running');
+        renderActiveTasks({...base,tasks:[parent,child],truncated:true});
+        checks.partial=elements.taskConcurrency.textContent.includes('≥2');
+        renderActiveTasks(base);
+        return checks;
+      })()`);
+      console.log(JSON.stringify({lang,liveChecks}));
+      if(Object.values(liveChecks).some(value=>!value))throw new Error('Live task rendering regression');
       await win.webContents.executeJavaScript(`
         for (const task of activeTasks) { task.goalStatus='active'; task.goalTokensUsed=56789012; task.goalTimeUsedSeconds=86500; task.goalTokenBudget=100000000; }
         activeTasks[0].taskKind='subagent';

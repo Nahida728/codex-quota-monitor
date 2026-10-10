@@ -20,7 +20,7 @@
       <header class="titlebar" id="titlebar">
         <div class="brand">
           <div>
-            <div class="eyebrow">CODEX PULSE  V1.3.0</div>
+            <div class="eyebrow" id="appVersion">CODEX PULSE</div>
             <h1 data-i18n="title">Codex监测台</h1>
           </div>
         </div>
@@ -165,7 +165,7 @@
       </section>
 
       <section class="task-performance no-drag" id="taskPerformance" role="button" tabindex="0">
-        <div class="task-performance-heading"><strong data-i18n="latestTaskTitle">最近任务</strong><span id="latestTaskIdentity">—</span><small data-i18n="taskRateShort">区间输出，tok/s</small></div>
+        <div class="task-performance-heading"><div class="task-performance-title"><strong data-i18n="latestTaskTitle">最近任务</strong><span class="task-concurrency" id="taskConcurrency">并发：—</span></div><span id="latestTaskIdentity">—</span><small data-i18n="taskRateShort">区间输出，tok/s</small></div>
         <div class="task-performance-grid">
           <div><span data-i18n="taskFirstToken">首字响应</span><strong id="latestTaskFirstToken">—</strong></div>
           <div><span data-i18n="taskTotalTokens">总 Tokens</span><strong id="latestTaskTokens">—</strong></div>
