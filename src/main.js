@@ -770,6 +770,7 @@ function registerIpc() {
     };
   });
   ipcMain.handle("settings:read", () => ({
+    monitorVersion: app.getVersion(),
     language: store.get("language", "zh"),
     alwaysOnTop: store.get("alwaysOnTop", true),
     positionLocked: store.get("positionLocked", false),

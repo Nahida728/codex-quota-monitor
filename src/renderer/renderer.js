@@ -20,6 +20,9 @@ const i18n = {
     modelCostPricingPending: "金额待重算",
     latestTaskTitle: "最近任务",
     latestTaskEmpty: "等待任务",
+    taskConcurrency: "并发：{count}",
+    taskConcurrencyHint: "并发数：{count}，其中子智能体 {agents}。统计本机所有运行中的任务，不含已完成或已停止任务。",
+    taskConcurrencyUnknown: "并发数暂不可用",
     taskFirstToken: "首字响应",
     taskTotalTokens: "总 Tokens",
     taskPeakRate: "峰值 tok/s",
@@ -330,6 +333,9 @@ const i18n = {
     modelCostPricingPending: "Cost needs recalculation",
     latestTaskTitle: "Latest task",
     latestTaskEmpty: "Waiting for a task",
+    taskConcurrency: "Live: {count}",
+    taskConcurrencyHint: "Concurrent tasks: {count}, including {agents} subagents. All locally observed running tasks; completed and stopped tasks are excluded.",
+    taskConcurrencyUnknown: "Concurrent task count unavailable",
     taskFirstToken: "First token",
     taskTotalTokens: "Total tokens",
     taskPeakRate: "Peak tok/s",
@@ -630,8 +636,8 @@ const elements = Object.fromEntries([
   "resetProbabilityModal", "resetProbabilityClose", "resetProbabilityDone", "checkpointSummary",
   "checkpointMethod", "checkpointFreshness", "checkpointHistory", "resetOfficialLink",
   "taskFilter", "taskSort", "confirmAllTasks",
-  "taskPerformance", "latestTaskIdentity", "latestTaskFirstToken", "latestTaskTokens",
-  "latestTaskPeak", "latestTaskMin", "latestTaskAverage", "latestTaskCacheHit", "taskPerformanceScope",
+  "appVersion", "taskPerformance", "latestTaskIdentity", "latestTaskFirstToken", "latestTaskTokens",
+  "latestTaskPeak", "latestTaskMin", "latestTaskAverage", "latestTaskCacheHit", "taskPerformanceScope", "taskConcurrency",
   "monitorUpdateStatus", "monitorUpdateCheck", "monitorUpdateInstall",
   "settingsButton", "settingsPopover", "settingsClose", "topDockToggle",
   "chooseBackground", "clearBackground",
@@ -2325,6 +2331,12 @@ function renderActiveTaskRecords() {
 function renderActiveTaskClock() {
   renderActiveTaskRecords();
   if (!activeTasksAvailable || !activeTasks.length) return;
+  const boardTask = activeTasks.find(task => task.id === latestPerformanceTask?.id && task.startedAt === latestPerformanceTask?.startedAt);
+  if (boardTask?.telemetry && !boardTask.telemetry.partial && Number.isFinite(boardTask.telemetry.outputTokens)) {
+    const elapsed = Math.max(0, Date.now() / 1000 - boardTask.startedAt);
+    elements.latestTaskAverage.textContent = elapsed > 0
+      ? new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en-US", { maximumFractionDigits: 1 }).format(boardTask.telemetry.outputTokens / elapsed) : "—";
+  }
   elements.activeTaskList.querySelectorAll("[data-task-elapsed-index]").forEach(node => {
     const task = activeTasks[Number(node.dataset.taskElapsedIndex)];
     if (task) node.textContent = formatTaskDuration(getTaskElapsedSeconds(task));
@@ -2593,7 +2605,9 @@ function renderActiveTaskDetails() {
 }
 
 function renderTaskPerformance(task = latestPerformanceTask) {
-  if (task && (!latestPerformanceTask || !Number.isFinite(latestPerformanceTask.startedAt) || task.startedAt >= latestPerformanceTask.startedAt)) latestPerformanceTask = task;
+  // Snapshot freshness is checked at the IPC boundary. A live parent can start
+  // before a completed child; do not let its older start time freeze the board.
+  if (task) latestPerformanceTask = task;
   const latest = latestPerformanceTask;
   const telemetry = latest?.telemetry || {};
   const valid = value => Number.isFinite(value) && value >= 0;
@@ -2618,12 +2632,20 @@ function renderTaskPerformance(task = latestPerformanceTask) {
 }
 
 function renderActiveTasks(result = {}) {
-  renderTaskPerformance(result.latestTask);
   activeTasksAvailable = Boolean(result.available);
   activeTasksTruncated = Boolean(result.truncated);
   activeTasks = activeTasksAvailable && Array.isArray(result.tasks)
     ? result.tasks.slice().sort((left, right) => left.startedAt - right.startedAt)
     : [];
+  renderTaskPerformance(result.latestTask);
+  const concurrentCount = activeTasksAvailable ? `${activeTasksTruncated ? "≥" : ""}${activeTasks.length}` : "—";
+  const agentCount = activeTasks.filter(task => task.taskKind === "subagent").length;
+  elements.taskConcurrency.textContent = t("taskConcurrency", { count: concurrentCount });
+  const concurrentHint = activeTasksAvailable ? t("taskConcurrencyHint", { count: concurrentCount,
+    agents: `${activeTasksTruncated ? "≥" : ""}${agentCount}` }) : t("taskConcurrencyUnknown");
+  elements.taskConcurrency.title = concurrentHint;
+  elements.taskConcurrency.setAttribute("aria-label", concurrentHint);
+  elements.taskConcurrency.classList.toggle("is-running", activeTasksAvailable && activeTasks.length > 0);
   activeTaskRecords = normalizeActiveTaskRecords(result.records);
   mergePendingTasks(
     Array.isArray(result.pendingTasks) ? result.pendingTasks : result.completedTasks
@@ -3104,6 +3126,9 @@ async function initialize() {
     finally { elements.monitorUpdateInstall.disabled = false; }
   });
   const settings = await window.codexMonitor.readSettings();
+  if (typeof settings.monitorVersion === "string" && /^[0-9][a-zA-Z0-9.+-]{0,49}$/.test(settings.monitorVersion)) {
+    elements.appVersion.textContent = `CODEX PULSE V${settings.monitorVersion}`;
+  }
   language = settings.language;
   alwaysOnTop = settings.alwaysOnTop;
   positionLocked = settings.positionLocked;

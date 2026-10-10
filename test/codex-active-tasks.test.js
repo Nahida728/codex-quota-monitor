@@ -102,6 +102,65 @@ function tokenCount(input, cached, output) {
   });
 }
 
+test("stale stopped goals cannot hide newer manual turns or live child activity", async t => {
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'codex-goal-live-'));
+  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const now=Date.now(),start=Math.floor(now/1000)-60;
+  const parent=JSON.stringify({type:'session_meta',payload:{id:'parent',cwd:'C:\\work\\parent'}});
+  const child=JSON.stringify({type:'session_meta',payload:{id:'child',cwd:'C:\\work\\parent',source:{subagent:{thread_spawn:{parent_thread_id:'parent'}}}}});
+  const counter=JSON.parse(tokenCount(100,20,10));counter.timestamp=new Date(now-1000).toISOString();
+  fs.writeFileSync(path.join(root,'parent.jsonl'),[parent,taskStarted('parent-turn',start),turnContext('gpt-6.1-sol'),JSON.stringify(counter)].join('\n'));
+  fs.writeFileSync(path.join(root,'child.jsonl'),[child,taskStarted('child-turn',start-20),turnContext('gpt-6.1-sol'),JSON.stringify(counter)].join('\n'));
+  const reader=new CodexActiveTaskReader({sessionsRoot:root,goalContextReader:()=>new Map([['parent',{goalStatus:'usage_limited',goalUpdatedAtMs:(start-10)*1000}]])});
+  reader.readHistory=async()=>({available:false});
+  const result=await reader.read(now);
+  assert.equal(result.count,2);
+  assert.equal(result.tasks.find(task=>task.id==='child-turn').taskKind,'subagent');
+  assert.equal(result.terminalTasks.length,0);
+  const laterStart=JSON.parse(taskStarted('same-second',start));
+  laterStart.timestamp=new Date(start*1000+750).toISOString();
+  fs.writeFileSync(path.join(root,'same-second.jsonl'),[parent,JSON.stringify(laterStart)].join('\n'));
+  reader.goalContextReader=()=>new Map([['parent',{goalStatus:'paused',goalUpdatedAtMs:start*1000+500}]]);
+  const sameSecond=await reader.read(now);
+  assert.ok(sameSecond.tasks.some(task=>task.id==='same-second'));
+  fs.unlinkSync(path.join(root,'same-second.jsonl'));
+  reader.goalContextReader=()=>new Map([['parent',{goalStatus:'paused',goalUpdatedAtMs:now}]]);
+  const stopped=await reader.read(now+1);
+  assert.equal(stopped.count,0);
+  assert.ok(stopped.terminalTasks.every(task=>task.outcome==='managed-stopped'));
+});
+
+test("live parents take dashboard priority over newer completed children", () => {
+  const active={id:'parent',startedAt:100,models:[],telemetry:{totalTokens:100}};
+  const child={id:'child',startedAt:120,endedAt:130,completedAt:130000,outcome:'completed',models:[]};
+  const result=normalizeActiveTaskResult({available:true,tasks:[active],terminalTasks:[child]},150000);
+  assert.equal(result.latestTask.id,'parent');
+  const laterFinished={...child,id:'older-start',startedAt:90,endedAt:140,completedAt:140000};
+  assert.equal(normalizeActiveTaskResult({available:true,tasks:[],terminalTasks:[child,laterFinished]},150000).latestTask.id,'older-start');
+});
+
+test("cached live telemetry advances its average while appended counters update before completion", async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'codex-live-telemetry-'));
+  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const file=path.join(root,'live.jsonl'),start=Math.floor(Date.now()/1000)-100;
+  const counter=JSON.parse(tokenCount(100,20,10));counter.timestamp=new Date((start+10)*1000).toISOString();
+  fs.writeFileSync(file,[sessionMeta('C:\\work\\live'),taskStarted('live',start),turnContext('gpt-6.1-sol'),JSON.stringify(counter)].join('\n')+'\n');
+  const reader=new CodexActiveTaskReader({sessionsRoot:root,goalContextReader:()=>new Map()});
+  reader.readHistory=async()=>({available:false});
+  const first=await reader.read((start+20)*1000);
+  const waiting=await reader.read((start+40)*1000);
+  assert.equal(first.tasks[0].telemetry.averageTokensPerSecond,0.5);
+  assert.equal(waiting.tasks[0].telemetry.averageTokensPerSecond,0.25);
+  counter.timestamp=new Date((start+45)*1000).toISOString();
+  counter.payload.info.total_token_usage.input_tokens=200;
+  counter.payload.info.total_token_usage.output_tokens=20;
+  fs.appendFileSync(file,JSON.stringify(counter)+'\n');
+  const appended=normalizeActiveTaskResult(await reader.read((start+50)*1000),(start+50)*1000);
+  assert.equal(appended.count,1);
+  assert.equal(appended.latestTask.telemetry.totalTokens,220);
+  assert.equal(appended.latestTask.telemetry.averageTokensPerSecond,0.4);
+});
+
 test("compact tails reuse unchanged files, read appended bytes, and safely join partial records", async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codex-tail-cache-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));

@@ -21,6 +21,13 @@ test("combines three independent quota bars in one panel", () => {
   assert.match(css, /width: var\(--quota-progress/);
 });
 
+test("header version comes from the installed monitor rather than stale literal copy",()=>{
+  assert.match(html,/id="appVersion"/);
+  assert.doesNotMatch(html,/CODEX PULSE\s+V\d/);
+  assert.match(main,/monitorVersion:\s*app\.getVersion\(\)/);
+  assert.match(renderer,/CODEX PULSE V\$\{settings\.monitorVersion\}/);
+});
+
 test("renders every reset credit into a dedicated list row", () => {
   assert.match(html, /id="resetCreditList"/);
   assert.match(renderer, /items\.forEach\(\(credit,\s*index\)\s*=>/);

@@ -982,6 +982,19 @@ Verify:
   Resume persisted work after restart. Coalesce worker requests and use bounded
   64 MiB passes with adaptive rest time; never parse history on the main thread.
 - The larger three-quota panel and latest-task board share one left/right row.
+  Running turns take precedence over completed turns, even if a child started
+  later than its live parent. Accept newer snapshots by observation time, never
+  freeze telemetry by comparing only turn start times. Unchanged cached windows
+  must advance whole-turn averages without parsing their counters again.
+  The upper-right concurrent count includes all observed running main/subagent
+  turns; its bilingual tooltip identifies subagent count. Mark incomplete counts
+  as lower bounds and failed reads as unavailable, never a confirmed zero.
+  A persisted paused/blocked/limited Goal can predate a new manual turn or live
+  child. Only a timestamped Goal transition at/after the turn's start and latest
+  evidence can stop it; subsequent log activity supersedes that transition.
+  Keep millisecond precision so a new start later in the same second is not
+  stopped by an earlier transition. Obtain the header version from local package
+  metadata through settings IPC rather than a hardcoded renderer string.
   Set min-height: 0 on its grid children; wrapped telemetry must stay within
   the fixed row. Verify panel bounds and text bounds in both languages so the
   reset row cannot cover the Reserve progress bar when metrics are added.

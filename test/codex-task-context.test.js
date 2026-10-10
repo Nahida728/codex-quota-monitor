@@ -16,6 +16,8 @@ test("goal context reads only status and budget counters, omitting objectives", 
   const contexts = readGoalContexts(root);
   assert.equal(contexts.get("thread-one").goalStatus, "active");
   assert.equal(contexts.get("thread-one").goalTokenBudget, 10000);
+  assert.equal(contexts.get("thread-one").goalUpdatedAtMs,100);
+  assert.equal(normalizeTaskContext({goalUpdatedAtMs:'unsafe'}).goalUpdatedAtMs,null);
   assert.doesNotMatch(JSON.stringify([...contexts]), /objective|private/);
   assert.equal(normalizeTaskContext({ ...contexts.get("thread-one"), taskKind: "subagent" }).taskKind, "subagent");
   assert.equal(normalizeTaskContext({ parentThreadId: "<unsafe>" }).parentThreadId, null);
