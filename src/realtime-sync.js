@@ -43,6 +43,7 @@ class RealtimeSync {
     const started = this.now();
     try {
       const result = await this.service.readActiveTasks(started);
+      this.latestTasks = result;
       const stableTask = task => { const { elapsedSeconds, ...stable } = task; return stable; };
       const fingerprint = JSON.stringify({
         tasks: (result.tasks || []).map(stableTask), latestTask: result.latestTask,

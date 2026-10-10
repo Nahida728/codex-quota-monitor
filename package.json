@@ -1,6 +1,6 @@
 {
   "name": "codex-quota-monitor",
-  "version": "1.3.0-beta",
+  "version": "1.3.0",
   "description": "A bilingual liquid-glass desktop monitor for Codex rate limits and reset credits.",
   "main": "src/main.js",
   "author": "Codex Quota Monitor",
@@ -48,17 +48,23 @@
       ]
     },
     "nsis": {
-      "artifactName": "${productName}-1.3.0-beta-setup-${arch}.${ext}",
+      "artifactName": "codex-quota-monitor-${version}-setup-${arch}.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "shortcutName": "Codex监测台"
     },
     "portable": {
-      "artifactName": "${productName}-1.3.0-beta-portable-${arch}.${ext}"
+      "artifactName": "codex-quota-monitor-${version}-portable-${arch}.${ext}"
     },
     "buildVersion": "1.3.0.0",
-    "beforePack": "./scripts/filter-packaged-docs.cjs"
+    "beforePack": "./scripts/filter-packaged-docs.cjs",
+    "publish": {
+      "provider": "github",
+      "owner": "Nahida728",
+      "repo": "codex-quota-monitor",
+      "releaseType": "release"
+    }
   },
   "devDependencies": {
     "electron": "43.1.1",
@@ -66,7 +72,9 @@
     "sharp": "0.34.3"
   },
   "dependencies": {
-    "koffi": "^3.1.2"
+    "electron-updater": "6.8.9",
+    "koffi": "^3.1.2",
+    "semver": "7.7.3"
   },
-  "displayVersion": "1.3.0-beta"
+  "displayVersion": "1.3.0"
 }

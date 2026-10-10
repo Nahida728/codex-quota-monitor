@@ -22,6 +22,20 @@ test("turn telemetry separates total tokens, interval extrema, and whole-turn av
   assert.equal(result.minTokensPerSecond, 4);
   assert.equal(result.averageTokensPerSecond, 130 / 30); // terminal tool/wait time stays in denominator
   assert.equal(result.intervalCount, 2); // replay is not a zero-speed sample
+  assert.equal(result.cacheHitRate, 120 / 170 * 100);
+});
+
+test("cache hit rate weights every participating model by input tokens and never counts output", () => {
+  const result = summarizeTaskTelemetry([counter(10, 40)], terminal, { models: [
+    { inputTokens: 100, cachedInputTokens: 80, outputTokens: 40 },
+    { inputTokens: 900, cachedInputTokens: 90, outputTokens: 1000 }
+  ] });
+  assert.equal(result.cacheHitRate, 17);
+  assert.equal(summarizeTaskTelemetry([], terminal, cost).cacheHitRate, null);
+  assert.equal(summarizeTaskTelemetry([counter(10,40)], terminal, {models:[]}).cacheHitRate,null);
+  assert.equal(normalizeTaskTelemetry({cacheHitRate:101}).cacheHitRate,null);
+  const missingCache=JSON.parse(counter(10,40));delete missingCache.payload.info.last_token_usage.cached_input_tokens;
+  assert.equal(summarizeTaskTelemetry([JSON.stringify(missingCache)],terminal,cost).cacheHitRate,null);
 });
 
 test("missing timestamps and incomplete scans never invent interval speeds", () => {

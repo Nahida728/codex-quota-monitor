@@ -1,16 +1,15 @@
-const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const crypto = require("node:crypto");
 const os = require("node:os");
 const path = require("node:path");
-const readline = require("node:readline");
+const { StringDecoder } = require("node:string_decoder");
+const { CostRecordProjector } = require("./cost-record-projector");
 
 const MAX_ROLLOUT_FILES = 1_000;
 const MAX_ROLLOUT_FILE_BYTES = 512 * 1024 * 1024;
 const MAX_ROLLOUT_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 const SCAN_CACHE_MS = 15 * 60 * 1_000;
 const COST_SNAPSHOT_SCHEMA_VERSION = 7;
-const MAX_PERSISTED_ROLLOUTS = 1_000;
 const PRICING_DATE = "2026-10-10";
 const LONG_CONTEXT_THRESHOLD = 272_000;
 
@@ -408,7 +407,7 @@ function usageSignature(info) {
     "reasoning_output_tokens",
     "total_tokens"
   ];
-  return keys.flatMap(key => [normalizeCount(total[key]), normalizeCount(last[key])]).join(":");
+  return crypto.createHash("sha256").update(keys.flatMap(key => [normalizeCount(total[key]), normalizeCount(last[key])]).join(":")).digest("hex");
 }
 
 function normalizedUsageDay(value) {
@@ -522,7 +521,7 @@ function addUsage(accumulator, model, rawUsage, day = null) {
 function consumeRolloutLine(accumulator, line) {
   if (typeof line !== "string" || !line) return;
 
-  if (line.includes('"type":"turn_context"')) {
+  if (/"type"\s*:\s*"turn_context"/.test(line)) {
     try {
       const record = JSON.parse(line);
       if (record?.type === "turn_context") {
@@ -534,7 +533,7 @@ function consumeRolloutLine(accumulator, line) {
     return;
   }
 
-  if (!line.includes('"type":"event_msg"') || !line.includes('"type":"token_count"')) {
+  if (!/"type"\s*:\s*"event_msg"/.test(line) || !/"type"\s*:\s*"token_count"/.test(line)) {
     return;
   }
 
@@ -567,7 +566,7 @@ function finalizeModels(models) {
       : 0;
     return {
       ...entry,
-      estimatedCostUsd: pricing ? Number(entry.estimatedCostUsd.toFixed(6)) : null,
+      estimatedCostUsd: pricing && !entry.pricingPending ? Number((entry.estimatedCostUsd || 0).toFixed(6)) : null,
       cacheHitRate: Number(cacheHitRate.toFixed(2)),
       pricing: pricing ? {
         input: pricing.input,
@@ -658,6 +657,7 @@ function combineModels(modelCollections, mode = "sum") {
         longContextRequests: 0,
         estimatedCostUsd: model.priced ? 0 : null
       };
+      entry.pricingPending = Boolean(entry.pricingPending || model.pricingPending);
       entry.inputTokens = safeAdd(entry.inputTokens, model.inputTokens);
       entry.cachedInputTokens = safeAdd(entry.cachedInputTokens, model.cachedInputTokens);
       entry.cacheWriteInputTokens = safeAdd(
@@ -682,7 +682,7 @@ function combineModels(modelCollections, mode = "sum") {
   }
   return [...combined.values()].map(model => normalizeCostModel({
     ...model,
-    estimatedCostUsd: model.priced
+    estimatedCostUsd: model.priced && !model.pricingPending
       ? Number((model.estimatedCostUsd || 0).toFixed(6))
       : null
   })).sort((left, right) => {
@@ -814,55 +814,6 @@ async function listRolloutFiles(roots) {
   ));
 }
 
-function selectBoundedFiles(files, {
-  maxFiles = MAX_ROLLOUT_FILES,
-  maxFileBytes = MAX_ROLLOUT_FILE_BYTES,
-  maxTotalBytes = MAX_ROLLOUT_TOTAL_BYTES
-} = {}) {
-  let truncated = files.length > maxFiles;
-  const candidates = files.slice(-maxFiles);
-  const selected = [];
-  let totalBytes = 0;
-  for (let index = candidates.length - 1; index >= 0; index -= 1) {
-    const file = candidates[index];
-    if (file.size > maxFileBytes) {
-      truncated = true;
-      continue;
-    }
-    if (totalBytes + file.size > maxTotalBytes) {
-      truncated = true;
-      continue;
-    }
-    selected.push(file);
-    totalBytes += file.size;
-  }
-  selected.reverse();
-  return { files: selected, truncated, candidates };
-}
-
-async function scanRolloutFile(file, observedAt) {
-  const accumulator = createAccumulator();
-  const stream = fs.createReadStream(file.path, { encoding: "utf8" });
-  const lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
-  for await (const line of lines) consumeRolloutLine(accumulator, line);
-  const snapshot = finalizeAccumulator(accumulator, { observedAt });
-  return {
-    id: persistedRolloutId(file),
-    fingerprint: rolloutFingerprint(file),
-    size: normalizeCount(file.size),
-    models: snapshot.models,
-    dailyUsage: snapshot.dailyUsage,
-    unattributedInputTokens: snapshot.unattributedInputTokens,
-    unattributedCachedInputTokens: snapshot.unattributedCachedInputTokens,
-    unattributedCacheWriteInputTokens: snapshot.unattributedCacheWriteInputTokens,
-    unattributedOutputTokens: snapshot.unattributedOutputTokens,
-    unattributedReasoningOutputTokens: snapshot.unattributedReasoningOutputTokens,
-    unattributedRequestCount: snapshot.unattributedRequestCount,
-    duplicateEvents: snapshot.duplicateEvents,
-    observedAt: normalizeCount(observedAt)
-  };
-}
-
 function normalizeDailyUsageRows(value) {
   const rows = [];
   for (const rawRow of Array.isArray(value) ? value.slice(0, 400) : []) {
@@ -920,13 +871,19 @@ function normalizeRolloutEntry(value) {
     dailyUsage: normalizeDailyUsageRows(value.dailyUsage),
     ...unattributedUsage,
     duplicateEvents: normalizeCount(value.duplicateEvents),
-    observedAt: normalizeCount(value.observedAt)
+    observedAt: normalizeCount(value.observedAt),
+    byteOffset: Number.isSafeInteger(value.byteOffset) && value.byteOffset >= 0 ? value.byteOffset : null,
+    scanComplete: value.scanComplete !== false,
+    scanState: value.scanState && typeof value.scanState === "object" ? value.scanState : null,
+    scanEpoch: normalizeCount(value.scanEpoch)
   };
 }
 
 function preferRolloutEntry(existing, candidate) {
   if (!existing) return candidate;
   if (!candidate) return existing;
+  if ((candidate.scanEpoch || 0) !== (existing.scanEpoch || 0)) return (candidate.scanEpoch || 0) > (existing.scanEpoch || 0) ? candidate : existing;
+  if (candidate.scanState && existing.scanState && candidate.byteOffset !== existing.byteOffset) return candidate.byteOffset > existing.byteOffset ? candidate : existing;
   if (candidate.fingerprint === existing.fingerprint) {
     return candidate.observedAt >= existing.observedAt ? candidate : existing;
   }
@@ -966,14 +923,17 @@ class CodexCostUsageReader {
     this.maxTotalBytes = Math.max(1, normalizeCount(maxTotalBytes));
     this.cachedResult = null;
     this.cachedAt = 0;
+    this.fullScanRequested = false;
   }
 
-  async read(now = Date.now(), previousSnapshot = null) {
-    if (this.cachedResult && now - this.cachedAt < this.cacheMs) {
+  requestFullScan() { this.fullScanRequested = true; this.cachedAt = 0; }
+
+  async read(now = Date.now(), previousSnapshot = null, { force = false } = {}) {
+    if (!force && !this.fullScanRequested && this.cachedResult && now - this.cachedAt < this.cacheMs) {
       return this.cachedResult;
     }
     if (
-      previousSnapshot?.schemaVersion === COST_SNAPSHOT_SCHEMA_VERSION &&
+      !force && !this.fullScanRequested && previousSnapshot?.schemaVersion === COST_SNAPSHOT_SCHEMA_VERSION &&
       previousSnapshot?.indexComplete === true &&
       previousSnapshot?.pricingDate === PRICING_DATE &&
       Number.isFinite(previousSnapshot?.observedAt) &&
@@ -988,29 +948,55 @@ class CodexCostUsageReader {
       }
     }
 
-    const previous = normalizeCostSnapshot(previousSnapshot);
+    const supplied = normalizeCostSnapshot(previousSnapshot);
+    const cachedLedger = normalizeCostSnapshot(this.cachedResult);
+    const previous = cachedLedger && (!supplied || cachedLedger.ledgerGeneration > supplied.ledgerGeneration || cachedLedger.ledgerGeneration === supplied.ledgerGeneration && cachedLedger.observedAt > supplied.observedAt) ? cachedLedger : supplied;
     const previousEntries = new Map(
       (previous?.rolloutIndex || []).map(entry => [entry.id, entry])
     );
     const inventory = await listRolloutFiles(this.sessionRoots);
-    const visibleInventory = inventory.slice(-this.maxFiles);
+    const visibleInventory = inventory;
+    const restarting = this.fullScanRequested;
+    const generation = restarting ? Math.max(now, (previous?.ledgerGeneration || 0) + 1) : previous?.ledgerGeneration || 0;
+    const rescanWork = restarting ? {} : { ...(previous?.rescanWork || {}) };
+    const rescanPending = new Set(this.fullScanRequested ? inventory.map(persistedRolloutId) : previous?.rescanPending || []);
+    this.fullScanRequested = false;
+    const inventoryIds = new Set(inventory.map(persistedRolloutId));
+    for (const id of rescanPending) if (!inventoryIds.has(id)) { rescanPending.delete(id); delete rescanWork[id]; }
     const changed = visibleInventory.filter(file => {
       const existing = previousEntries.get(persistedRolloutId(file));
-      return !existing || existing.fingerprint !== rolloutFingerprint(file);
+      return rescanPending.has(persistedRolloutId(file)) || !existing ||
+        existing.scanState && (existing.scanComplete === false || existing.fingerprint !== rolloutFingerprint(file));
     });
-    const bounded = selectBoundedFiles(changed, {
-      maxFiles: this.maxFiles,
-      maxFileBytes: this.maxFileBytes,
-      maxTotalBytes: this.maxTotalBytes
-    });
+    let remaining = this.maxTotalBytes;
+    const selectedIds = new Set();
     let scanFailed = false;
-    for (const file of bounded.files) {
+    for (const file of changed.slice().reverse().slice(0, this.maxFiles)) {
+      if (remaining <= 0) break;
       try {
-        const candidate = await scanRolloutFile(file, now);
-        const existing = previousEntries.get(candidate.id);
-        const accepted = preferRolloutEntry(existing, candidate);
-        previousEntries.set(candidate.id, accepted);
-        if (accepted !== candidate) scanFailed = true;
+        const id = persistedRolloutId(file);
+        const existing = previousEntries.get(id);
+        // During a manual rebuild, retain the old committed entry until the
+        // replacement has reached EOF. Its separate numeric work state resumes.
+        const rebuilding = rescanPending.has(id);
+        let work = rebuilding ? rescanWork[id] || null : existing;
+        if (work?.byteOffset > file.size) {
+          if (!rebuilding) { scanFailed = true; continue; }
+          // Restart only the explicitly requested replacement when its source
+          // is truncated. Keep the committed record until the new EOF.
+          work = null;
+        }
+        const candidate = await this.scanChunk(file, work, remaining, now);
+        candidate.scanEpoch = rebuilding ? generation : existing?.scanEpoch || 0;
+        remaining -= candidate.bytesRead;
+        selectedIds.add(id);
+        if (rebuilding && !candidate.scanComplete) {
+          rescanWork[id] = candidate;
+        } else {
+          previousEntries.set(id, candidate);
+          rescanPending.delete(id);
+          delete rescanWork[id];
+        }
       } catch {
         scanFailed = true;
       }
@@ -1023,19 +1009,27 @@ class CodexCostUsageReader {
     const models = indexedModels;
     const dailyUsage = combineDailyUsage(rolloutIndex.map(entry => entry.dailyUsage));
     const unattributedUsage = sumUnattributedUsage(rolloutIndex);
-    const selectedIds = new Set(bounded.files.map(persistedRolloutId));
     const pendingFiles = changed.filter(file => !selectedIds.has(persistedRolloutId(file)));
+    const legacyStale = visibleInventory.filter(file => {
+      const entry = previousEntries.get(persistedRolloutId(file));
+      return entry && !entry.scanState && entry.fingerprint !== rolloutFingerprint(file);
+    }).length;
     const indexComplete = (
-      inventory.length <= this.maxFiles &&
       pendingFiles.length === 0 &&
+      rescanPending.size === 0 &&
+      legacyStale === 0 &&
       !scanFailed &&
       visibleInventory.every(file => {
         const entry = previousEntries.get(persistedRolloutId(file));
-        return entry?.fingerprint === rolloutFingerprint(file);
+        return entry?.fingerprint === rolloutFingerprint(file) && entry.scanComplete !== false;
       })
     );
     const result = {
       scanned: true,
+      ledgerGeneration: generation,
+      rescanPending: [...rescanPending],
+      rescanWork,
+      scanProgress: { totalFiles: inventory.length, pendingFiles: rescanPending.size || visibleInventory.filter(file => !previousEntries.has(persistedRolloutId(file)) || previousEntries.get(persistedRolloutId(file)).scanComplete === false).length, legacyStale, bytesRead: this.maxTotalBytes - remaining, rebuilding: rescanPending.size > 0 },
       schemaVersion: COST_SNAPSHOT_SCHEMA_VERSION,
       pricingDate: PRICING_DATE,
       estimatedCostUsd: Number(models.reduce(
@@ -1060,6 +1054,51 @@ class CodexCostUsageReader {
     this.cachedResult = result;
     this.cachedAt = now; // Partial recovery also needs breathing room between bounded passes.
     return result;
+  }
+
+  async scanChunk(file, existing, budget, now) {
+    const accumulator = createAccumulator();
+    if (existing) {
+      accumulator.models = new Map(existing.models.map(m => [m.model, { ...m }]));
+      accumulator.unattributedUsage = Object.fromEntries(Object.keys(accumulator.unattributedUsage).map(key => [key, normalizeCount(existing['unattributed' + key[0].toUpperCase() + key.slice(1)])]));
+      accumulator.dailyUsage = new Map(existing.dailyUsage.map(row => [row.date, { date: row.date, models: new Map(row.models.map(m => [m.model, { ...m }])), unattributedUsage: Object.fromEntries(Object.keys(accumulator.unattributedUsage).map(key => [key, normalizeCount(row['unattributed' + key[0].toUpperCase() + key.slice(1)])])) }]));
+      accumulator.activeModel = normalizeModelName(existing.scanState?.activeModel);
+      accumulator.seenUsage = new Set(existing.scanState?.seenUsage || []);
+      accumulator.duplicateEvents = existing.duplicateEvents || 0;
+    }
+    const decoder = new StringDecoder('utf8');
+    if (existing?.scanState?.decoder) {
+      decoder.write(Buffer.from(existing.scanState.decoder.bytes || []));
+    }
+    let projector = new CostRecordProjector(existing?.scanState?.projector);
+    let offset = existing?.byteOffset || 0, bytesRead = 0;
+    const handle = await fsp.open(file.path, 'r');
+    const buffer = Buffer.alloc(Math.min(65536, budget));
+    try {
+      while (offset < file.size && bytesRead < budget) {
+        const read = await handle.read(buffer, 0, Math.min(buffer.length, budget - bytesRead, file.size - offset), offset);
+        if (!read.bytesRead) break;
+        offset += read.bytesRead; bytesRead += read.bytesRead;
+        const pieces = decoder.write(buffer.subarray(0, read.bytesRead)).split('\n');
+        for (let i = 0; i < pieces.length; i++) {
+          projector.feed(pieces[i]);
+          if (i < pieces.length - 1) {
+            const record = projector.result();
+            if (record) consumeRolloutLine(accumulator, JSON.stringify(record));
+            projector = new CostRecordProjector();
+          }
+        }
+      }
+      if (offset === file.size && projector.result()) {
+        consumeRolloutLine(accumulator, JSON.stringify(projector.result()));
+        projector = new CostRecordProjector();
+      }
+    } finally { await handle.close(); }
+    const snapshot = finalizeAccumulator(accumulator, { observedAt: now });
+    return { ...snapshot, id: persistedRolloutId(file), fingerprint: rolloutFingerprint(file), size: file.size,
+      byteOffset: offset, scanComplete: offset === file.size && !decoder.lastNeed && (projector.ignored || !projector.stack.length),
+      scanState: { activeModel: accumulator.activeModel, seenUsage: [...accumulator.seenUsage], projector: projector.snapshot(),
+        decoder: { bytes: [...decoder.lastChar.subarray(0, decoder.lastNeed ? decoder.lastTotal - decoder.lastNeed : 0)] } }, bytesRead };
   }
 }
 
@@ -1088,7 +1127,8 @@ function normalizeCostModel(value) {
     longContextRequests: normalizeCount(value?.longContextRequests),
     cacheHitRate: inputTokens ? Number((cachedInputTokens / inputTokens * 100).toFixed(2)) : 0,
     estimatedCostUsd,
-    priced: Boolean(pricing),
+    priced: Boolean(pricing) && !(value?.pricingPending || !Number.isFinite(value?.estimatedCostUsd)),
+    pricingPending: Boolean(value?.pricingPending || pricing && !Number.isFinite(value?.estimatedCostUsd)),
     pricing: pricing ? {
       input: pricing.input,
       cachedInput: pricing.cachedInput,
@@ -1135,7 +1175,7 @@ function normalizeUnattributedUsage(value, unknownModels = []) {
 function normalizeCostSnapshot(value) {
   if (!value || typeof value !== "object" || !Array.isArray(value.models)) return null;
   const isCurrentSchema = (
-    value.schemaVersion === COST_SNAPSHOT_SCHEMA_VERSION &&
+    [6, COST_SNAPSHOT_SCHEMA_VERSION].includes(value.schemaVersion) &&
     Array.isArray(value.dailyUsage)
   );
   const normalizedModels = value.models.slice(0, 100).map(normalizeCostModel);
@@ -1143,7 +1183,6 @@ function normalizeCostSnapshot(value) {
   const models = normalizedModels.filter(model => model.model !== "unknown");
   const rolloutIndex = isCurrentSchema && Array.isArray(value.rolloutIndex)
     ? value.rolloutIndex
-      .slice(-MAX_PERSISTED_ROLLOUTS)
       .map(normalizeRolloutEntry)
       .filter(Boolean)
     : [];
@@ -1166,7 +1205,11 @@ function normalizeCostSnapshot(value) {
     duplicateEvents: normalizeCount(value.duplicateEvents),
     observedAt: normalizeCount(value.observedAt),
     indexComplete: isCurrentSchema && value.indexComplete === true,
-    rolloutIndex
+    rolloutIndex,
+    ledgerGeneration: normalizeCount(value.ledgerGeneration),
+    rescanPending: Array.isArray(value.rescanPending) ? value.rescanPending.filter(id => typeof id === 'string' && /^[a-f0-9]{64}$/.test(id)) : [],
+    rescanWork: value.rescanWork || {},
+    scanProgress: value.scanProgress || null
   };
 }
 
@@ -1177,6 +1220,8 @@ function publicCostSnapshot(snapshot) {
     dailyUsage,
     indexComplete,
     schemaVersion,
+    rescanPending,
+    rescanWork,
     ...publicSnapshot
   } = snapshot;
   return publicSnapshot;
@@ -1323,7 +1368,8 @@ function reconcileCostSnapshots(values) {
     };
   }
 
-  const snapshots = current;
+  const generation = Math.max(...current.map(snapshot => snapshot.ledgerGeneration || 0));
+  const snapshots = current.filter(snapshot => (snapshot.ledgerGeneration || 0) === generation);
 
   const entries = new Map();
   for (const snapshot of snapshots) {
@@ -1332,16 +1378,19 @@ function reconcileCostSnapshots(values) {
     }
   }
   const rolloutIndex = [...entries.values()]
-    .sort((left, right) => left.id.localeCompare(right.id))
-    .slice(-MAX_PERSISTED_ROLLOUTS);
+    .sort((left, right) => left.id.localeCompare(right.id));
   const models = combineModels(rolloutIndex.map(entry => entry.models));
   const dailyUsage = combineDailyUsage(rolloutIndex.map(entry => entry.dailyUsage));
   const unattributedUsage = sumUnattributedUsage(rolloutIndex);
   const newest = snapshots.sort((left, right) => right.observedAt - left.observedAt)[0];
   const newestIndexed = snapshots.find(snapshot => snapshot.rolloutIndex.length > 0);
-  const indexComplete = newest.indexComplete === true || newestIndexed?.indexComplete === true;
+  const indexComplete = newest.indexComplete === true;
   return {
     schemaVersion: COST_SNAPSHOT_SCHEMA_VERSION,
+    ledgerGeneration: generation,
+    rescanPending: newest.rescanPending,
+    rescanWork: newest.rescanWork,
+    scanProgress: newest.scanProgress,
     pricingDate: PRICING_DATE,
     estimatedCostUsd: Number(models.reduce(
       (total, model) => total + (model.estimatedCostUsd || 0),
@@ -1373,7 +1422,10 @@ function normalizeCodexCostUsageResult(
   now = Date.now(),
   tokenUsage = null
 ) {
-  const current = raw?.scanned ? normalizeCostSnapshot(raw) : null;
+  const stored = normalizeCostSnapshot(previousState?.tokenCostSnapshot);
+  const candidate = raw?.scanned ? normalizeCostSnapshot(raw) : null;
+  const current = candidate && (!stored || candidate.ledgerGeneration > stored.ledgerGeneration ||
+    candidate.ledgerGeneration === stored.ledgerGeneration && candidate.observedAt >= stored.observedAt) ? candidate : null;
   if (current) {
     const snapshot = { ...current, observedAt: normalizeCount(raw.observedAt ?? now) };
     const calibrated = calibrateCostSnapshot(snapshot, tokenUsage);

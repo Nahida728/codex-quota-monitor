@@ -64,6 +64,21 @@ function turnContext(model) {
   return JSON.stringify({ type: "turn_context", payload: { model } });
 }
 
+test("running goals and subagents expose live multi-model telemetry and goal totals independently", () => {
+  const lines = [sessionMeta("C:\\Workspace\\Project"), taskStarted("goal-turn", 100), turnContext("gpt-5.6-sol"), tokenCount(100, 40, 10),
+    turnContext("gpt-6.1-sol"), tokenCount(200, 80, 20)];
+  const task = summarizeTaskWindow(lines, 130000, {taskKind:"subagent",goalStatus:"active",goalTokensUsed:2000,goalTimeUsedSeconds:500}).task;
+  const result = normalizeActiveTaskResult({available:true,tasks:[task],terminalTasks:[]},130000);
+  assert.equal(result.latestTask.id,"goal-turn");
+  assert.equal(result.latestTask.telemetry.totalTokens,330);
+  assert.equal(result.latestTask.models.length,2);
+  assert.equal(result.latestTask.goalTokensUsed,2000);
+  assert.equal(result.latestTask.goalTimeUsedSeconds,500);
+  assert.equal(result.latestTask.taskKind,"subagent");
+  const next = summarizeTaskWindow([...lines,tokenCount(300,100,30)],140000,{goalStatus:"active"}).task;
+  assert.ok(next.telemetry.totalTokens > task.telemetry.totalTokens);
+});
+
 function tokenCount(input, cached, output) {
   return JSON.stringify({
     type: "event_msg",

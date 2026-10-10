@@ -1,14 +1,33 @@
 const i18n = {
   zh: {
+    monitorUpdateTitle: "监测台更新",
+    monitorUpdateHint: "自动检查并下载，任务空闲时重启监测台。Codex 任务不受影响。",
+    monitorUpdateCheck: "检查更新",
+    monitorUpdateInstall: "重启并更新",
+    monitorUpdateIdle: "当前版本 {version}",
+    monitorUpdateChecking: "正在检查 GitHub",
+    monitorUpdateDownloading: "下载 v{version}，{percent}%",
+    monitorUpdateReady: "v{version} 已就绪，等待任务空闲",
+    monitorUpdateError: "更新暂不可用，稍后自动重试",
+    monitorUpdateDevelopment: "开发模式不安装更新",
+    goalUsage: "目标累计 {tokens} Tokens，耗时 {time}",
+    taskModelUsage: "输入 {input}（含缓存 {cached}），输出 {output}",
+    fullCostScan: "全量扫描全部会话",
+    costScanRunning: "正在重扫；剩余 {pending}/{total} 份",
+    costScanRecorded: "历史记录已保留；{count} 份可手动更新",
+    costScanIdle: "已扫描 {count} 份，包含归档",
+    costScanFailed: "扫描暂不可用，可稍后重试",
+    modelCostPricingPending: "金额待重算",
     latestTaskTitle: "最近任务",
-    latestTaskEmpty: "等待完成任务",
+    latestTaskEmpty: "等待任务",
     taskFirstToken: "首字响应",
     taskTotalTokens: "总 Tokens",
     taskPeakRate: "峰值 tok/s",
     taskMinRate: "最低 tok/s",
     taskAverageRate: "平均 tok/s",
-    taskRateShort: "区间输出 · tok/s",
-    taskTelemetryScope: "最近观测完成回合：{task}。范围为本机最近 7 天、最多 96 份普通/归档会话，不含其他设备或未写入日志的调用。首字响应读取官方日志耗时；总 Tokens 为回合输入（含缓存）加输出。峰值/最低为相邻日志间的输出速率，平均为输出 Tokens / 整个回合耗时，含工具等待，不是逐 Token 解码速度。缺失字段显示 —；不完整扫描只显示 Tokens 下限。",
+    taskCacheHitRate: "缓存命中率",
+    taskRateShort: "区间输出；tok/s",
+    taskTelemetryScope: "最近观测回合（运行时同步）：{task}。范围为本机最近 7 天、最多 96 份普通/归档会话，不含其他设备或未写入日志的调用。首字响应读取官方日志耗时；总 Tokens 为回合输入（含缓存）加输出。峰值/最低为相邻日志间的输出速率，平均为输出 Tokens / 整个回合耗时，含工具等待，不是逐 Token 解码速度。缓存命中率为已观测调用的缓存输入 / 输入 Tokens，多模型按输入量加权，不含输出。缺失字段显示 —；不完整扫描只显示 Tokens 下限。",
     quotaPausedShort: "官方暂停",
     reserveBucketShort: "独立额度未返回",
     resetAvailableShort: "可用次数",
@@ -16,17 +35,17 @@ const i18n = {
     resetProbabilityTitle: "重置概率",
     checkpointUnavailable: "检查站数据不足",
     checkpointStale: "检查站数据过期",
-    checkpointTrend: "社区统计 · 非承诺",
+    checkpointTrend: "社区估计值",
     checkpointTitle: "公开重置公告",
     checkpointLocal: "本机账户观测",
-    checkpointLatest: "公告 · {time}",
+    checkpointLatest: "{time}",
     checkpointMethod: "社区历史中最近 {days} 天的 {count} 段全局重置间隔；中位数 {median} 天，按指数分布半衰期估算未来 24/48 小时概率。排除重置卡发放、预告及未确认记录。这是全局公告趋势，不代表你的账户必定重置，也不随等待时间增加。",
-    checkpointFreshness: "来源：{source} · 源检查 {time} · 本机读取 {fetched}",
+    checkpointFreshness: "来源：{source}；源检查 {time}；本机读取 {fetched}",
     checkpointWarning: "源检查超过 24 小时或不可用，隐藏概率；可能有新重置未收录。",
     checkpointAccountHint: "公告可在恢复联网后补看；只有本机额度证据才能确认账户实际重置。",
     checkpointSourceLink: "查看来源 ↗",
     checkpointSourceMethod: "Codex Reset 检查站的实验性历史概率模型，最近 {count} 个完整重置间隔，未证明优于所有基准。排除重置卡发放、预告与未确认记录；全局趋势不保证本账户重置。详情中的公告汇总来自两个检查站。",
-    checkpointOdds: "24 小时 {p24} · 48 小时 {p48}",
+    checkpointOdds: "24 小时 {p24}；48 小时 {p48}",
     reserveUnavailable: "未返回",
     reserveUnavailableDetail: "独立 Reserve 额度暂未返回",
     confirmAllTasks: "确认已完成",
@@ -36,16 +55,16 @@ const i18n = {
     taskSortTime: "按时间",
     taskSortCost: "按金额",
     taskSortDuration: "按时长",
-    taskKindGoal: "/goal",
-    taskKindSubagent: "子代理",
+    taskKindGoal: "大目标 /goal",
+    taskKindSubagent: "子智能体",
     taskKindTask: "任务",
     taskManagedStopped: "目标阶段停止",
-    taskGoalActive: "目标进行中",
+    taskGoalActive: "大目标进行中",
     taskGoalPaused: "目标暂停",
     taskGoalBlocked: "目标受阻",
     taskGoalLimited: "目标达到限制",
     taskGoalComplete: "目标已完成",
-    taskIdentity: "回合 {id} · {time}",
+    taskIdentity: "回合 {id}；{time}",
     taskGoalBudget: "目标 Token {used} / {budget}",
     appTitle: "Codex监测台",
     title: "Codex监测台",
@@ -54,7 +73,7 @@ const i18n = {
     quotaRegion: "额度",
     statusRegion: "状态提醒",
     checking: "正在连接 Codex…",
-    connected: "Codex 已连接 · {plan}",
+    connected: "Codex 已连接（{plan}）",
     openSubscription: "查看 Codex 订阅详情",
     openConnectionStatus: "查看当前连接状态",
     connectionDisconnectedLabel: "连接断开",
@@ -134,9 +153,9 @@ const i18n = {
     officialResetNewest: "最近一次",
     officialResetDetectedAt: "检测于 {time}",
     officialResetModeAll: "双额度提前恢复",
-    officialResetModeWeekly: "5 小时关闭 · 周额度提前恢复",
-    officialResetModeNatural: "周额度提前恢复 · 5 小时正常到期",
-    officialResetModeUnused: "周额度提前恢复 · 5 小时未使用",
+    officialResetModeWeekly: "5 小时关闭；周额度提前恢复",
+    officialResetModeNatural: "周额度提前恢复；5 小时正常到期",
+    officialResetModeUnused: "周额度提前恢复；5 小时未使用",
     officialResetModeLegacy: "旧版检测记录",
     manualResetExcluded: "检测到手动重置，未计入官方记录",
     manualResetCardExcluded: "手动重置已排除",
@@ -171,8 +190,8 @@ const i18n = {
     estimatedTotalCost: "本机可统计调用",
     openCostDetails: "查看模型用量与 API 成本明细",
     costEstimateHint: "按本机模型明细和 OpenAI 标准 API 价格估算，不代表 Codex 订阅的实际收费。本机重复事件会按官方每日 Token 总账校准；总输入已经包含缓存输入，两项不要相加。",
-    costCoverage: "{count} 个模型 · 定价更新 {date}",
-    costCoveragePartial: "{count} 个模型 · 部分未计价 · {date}",
+    costCoverage: "{count} 个模型；定价更新 {date}",
+    costCoveragePartial: "{count} 个模型；部分未计价；{date}",
     costCoverageTruncated: "本机记录过多，仅统计可安全读取的部分",
     costCoverageUnattributed: "另有 {count} 次调用缺少模型上下文，已排除",
     costCoverageCalibrated: "已按官方每日总账排除 {tokens} 重复 Token",
@@ -184,7 +203,7 @@ const i18n = {
     modelCostUnpriced: "未提供 API 定价",
     modelCostUnknown: "未识别模型",
     modelCostEmpty: "暂无可统计的本机模型用量",
-    modelCostRate: "每百万 Token：输入 ${input} · 缓存 ${cached} · 输出 ${output}",
+    modelCostRate: "每百万 Token：输入 ${input}；缓存 ${cached}；输出 ${output}",
     modelCostRequests: "{count} 次调用",
     modelCostCacheWrite: "缓存写入 {tokens}",
     modelCostLongContext: "{count} 次长上下文按官方倍率计价",
@@ -213,8 +232,8 @@ const i18n = {
     activeTaskUnpriced: "含未定价模型",
     activeTaskPartialCost: "仅统计可读取部分",
     activeTaskDetailsHint: "统计会从本机可读取的普通与归档会话恢复；已完成和中断任务会保留到确认或返回 Codex。",
-    activeTaskDetailCount: "{count} 个进行中 · {completed} 个待处理",
-    activeTaskLongest: "历史最长 {time} · 最高消费 {cost}",
+    activeTaskDetailCount: "{count} 个进行中；{completed} 个待处理",
+    activeTaskLongest: "历史最长 {time}；最高消费 {cost}",
     activeTaskEmptyDetail: "暂无进行中或待确认的 Codex 任务",
     activeTaskCompletedStatus: "已完成",
     activeTaskManualInterruptedStatus: "手动中断",
@@ -223,7 +242,7 @@ const i18n = {
     activeTaskPendingSection: "待处理",
     taskAbnormalTitle: "任务异常中断",
     taskAbnormalMessage: "{project} 的任务未检测到正常结束或手动停止事件，已在 {time} 停止计时。请检查 Codex 客户端、网络、系统休眠或进程异常。",
-    statScopeTitle: "{metric} · 统计口径",
+    statScopeTitle: "{metric}；统计口径",
     statScopeOpen: "查看“{metric}”统计口径说明",
     statScopeTokenDailyCost: "日均消费使用“本机可读取会话的 API 等价金额 ÷ 官方账号记录到 Token 的工作天数”。它不是订阅实际收费；未定价模型、已删除或无法读取的会话不会计入，历史扫描被截断时也只能覆盖已安全读取的部分。",
     statScopeTaskRunning: "进行中任务来自近期本机会话的明确 task_started 状态。当前扫描达到安全文件或字节上限，可能还有未显示的任务；列表不会根据文件更新时间猜测任务状态。",
@@ -248,11 +267,11 @@ const i18n = {
     tokenChartTooltipValue: "{tokens} Token",
     tokenLive: "已同步账号数据",
     tokenCached: "显示最近缓存",
-    tokenLatestValue: "{date} · {tokens}",
+    tokenLatestValue: "{date}；{tokens}",
     waiting: "等待首次检测",
     checkedNow: "刚刚检测",
     checkedMinutes: "{count} 分钟前检测",
-    autoRefresh: "事件同步 · 低频兜底",
+    autoRefresh: "实时同步",
     autoRefreshActive: "事件实时同步",
     reading: "读取 Codex 数据…",
     pinOn: "解锁位置",
@@ -291,15 +310,34 @@ const i18n = {
     cropSaving: "正在保存…"
   },
   en: {
+    monitorUpdateTitle: "Monitor updates",
+    monitorUpdateHint: "Checks and downloads automatically. The monitor restarts when tasks are idle. Codex tasks keep running.",
+    monitorUpdateCheck: "Check updates",
+    monitorUpdateInstall: "Restart and update",
+    monitorUpdateIdle: "Current version {version}",
+    monitorUpdateChecking: "Checking GitHub",
+    monitorUpdateDownloading: "Downloading v{version}, {percent}%",
+    monitorUpdateReady: "v{version} ready. Waiting for idle tasks.",
+    monitorUpdateError: "Update unavailable. Will retry later.",
+    monitorUpdateDevelopment: "Development build. Updates disabled.",
+    goalUsage: "Goal total: {tokens} Tokens, time {time}",
+    taskModelUsage: "Input {input} (cached {cached}), output {output}",
+    fullCostScan: "Rescan all sessions",
+    costScanRunning: "Rescanning; {pending}/{total} remaining",
+    costScanRecorded: "History retained; {count} ready for manual update",
+    costScanIdle: "{count} sessions recorded, including archives",
+    costScanFailed: "Scan unavailable. Please retry later.",
+    modelCostPricingPending: "Cost needs recalculation",
     latestTaskTitle: "Latest task",
-    latestTaskEmpty: "Waiting for completion",
+    latestTaskEmpty: "Waiting for a task",
     taskFirstToken: "First token",
     taskTotalTokens: "Total tokens",
     taskPeakRate: "Peak tok/s",
     taskMinRate: "Min tok/s",
     taskAverageRate: "Avg tok/s",
-    taskRateShort: "Output intervals · tok/s",
-    taskTelemetryScope: "Latest observed completed turn: {task}. Covers up to 96 local/archived sessions modified in the last 7 days, excluding other devices and unlogged calls. First-token latency comes from the official log. Total tokens = input (including cache) + output. Peak/min are output rates between log records; average = output tokens / entire turn duration, including tool waits, not per-token decoding speed. Missing fields show —; partial scans show a token lower bound.",
+    taskCacheHitRate: "Cache hits",
+    taskRateShort: "Output intervals; tok/s",
+    taskTelemetryScope: "Latest observed turn (live while running): {task}. Covers up to 96 local/archived sessions modified in the last 7 days, excluding other devices and unlogged calls. First-token latency comes from the official log. Total tokens = input (including cache) + output. Peak/min are output rates between log records; average = output tokens / entire turn duration, including tool waits, not per-token decoding speed. Missing fields show —; partial scans show a token lower bound.",
     quotaPausedShort: "Officially paused",
     reserveBucketShort: "Independent bucket",
     resetAvailableShort: "Available",
@@ -307,17 +345,17 @@ const i18n = {
     resetProbabilityTitle: "Reset odds",
     checkpointUnavailable: "Insufficient source data",
     checkpointStale: "Source data is stale",
-    checkpointTrend: "Community trend · estimate",
+    checkpointTrend: "Community estimate",
     checkpointTitle: "Public reset announcements",
     checkpointLocal: "Local account observations",
-    checkpointLatest: "Public · {time}",
+    checkpointLatest: "{time}",
     checkpointMethod: "From {count} gaps between confirmed global resets in the last {days} days; median {median} days, modeled as an exponential half-life for 24/48-hour odds. Excludes credit grants, teasers and unconfirmed records. This is a global announcement trend, not a guarantee for your account; waiting longer does not increase it.",
-    checkpointFreshness: "Source: {source} · Source check {time} · Retrieved {fetched}",
+    checkpointFreshness: "Source: {source}; Source check {time}; Retrieved {fetched}",
     checkpointWarning: "Source check is older than 24 hours or unavailable. Odds are hidden; newer resets may be missing.",
     checkpointAccountHint: "Announcements can be recovered after reconnecting. Account resets require local quota evidence.",
     checkpointSourceLink: "View source ↗",
     checkpointSourceMethod: "Experimental historical probability model from Codex Reset, using the latest {count} completed reset intervals. It has not beaten every baseline. Excludes credit grants, teasers and unconfirmed resets; global trends do not guarantee an account reset. Announcements below combine two checkpoints.",
-    checkpointOdds: "24 hours {p24} · 48 hours {p48}",
+    checkpointOdds: "24 hours {p24}; 48 hours {p48}",
     reserveUnavailable: "Not returned",
     reserveUnavailableDetail: "Independent Reserve quota not returned",
     confirmAllTasks: "Confirm completed",
@@ -327,7 +365,7 @@ const i18n = {
     taskSortTime: "By time",
     taskSortCost: "By cost",
     taskSortDuration: "By duration",
-    taskKindGoal: "/goal",
+    taskKindGoal: "Goal /goal",
     taskKindSubagent: "Subagent",
     taskKindTask: "Task",
     taskManagedStopped: "Goal step stopped",
@@ -336,7 +374,7 @@ const i18n = {
     taskGoalBlocked: "Goal blocked",
     taskGoalLimited: "Goal limit reached",
     taskGoalComplete: "Goal complete",
-    taskIdentity: "Turn {id} · {time}",
+    taskIdentity: "Turn {id}; {time}",
     taskGoalBudget: "Goal tokens {used} / {budget}",
     appTitle: "Codex Quota Monitor",
     title: "Quota Monitor",
@@ -345,7 +383,7 @@ const i18n = {
     quotaRegion: "Quotas",
     statusRegion: "Status alerts",
     checking: "Connecting to Codex…",
-    connected: "Codex connected · {plan}",
+    connected: "Codex connected ({plan})",
     openSubscription: "View Codex subscription details",
     openConnectionStatus: "View current connection status",
     connectionDisconnectedLabel: "Connection lost",
@@ -425,18 +463,18 @@ const i18n = {
     officialResetNewest: "Latest",
     officialResetDetectedAt: "Detected {time}",
     officialResetModeAll: "Both limits restored early",
-    officialResetModeWeekly: "5-hour paused · Weekly restored early",
-    officialResetModeNatural: "Weekly restored early · 5-hour naturally due",
-    officialResetModeUnused: "Weekly restored early · 5-hour unused",
+    officialResetModeWeekly: "5-hour paused; Weekly restored early",
+    officialResetModeNatural: "Weekly restored early; 5-hour naturally due",
+    officialResetModeUnused: "Weekly restored early; 5-hour unused",
     officialResetModeLegacy: "Legacy detection record",
     manualResetExcluded: "Manual reset detected; excluded from official history",
     manualResetCardExcluded: "Manual reset excluded",
     openOfficialResetHistory: "View official reset history",
     clientUpdateDetected: "New version installed",
     clientUpdateReady: "Update available",
-    clientUpdateNotDetected: "No new update found",
+    clientUpdateNotDetected: "No pending update",
     clientUpdateUnknown: "Version unavailable",
-    clientUpdateVersion: "Current v{version}",
+    clientUpdateVersion: "v{version}",
     clientUpdateVersionChange: "Now v{version}",
     clientUpdateTarget: "Update to v{version}",
     openClientUpdateHistory: "View Codex client update timeline",
@@ -462,8 +500,8 @@ const i18n = {
     estimatedTotalCost: "Locally measurable calls",
     openCostDetails: "View model usage and API cost details",
     costEstimateHint: "Estimated from local model details using standard OpenAI API prices; this is not an actual Codex subscription charge. Replayed local events are capped to the official daily Token ledger. Total input already includes cached input, so do not add them.",
-    costCoverage: "{count} models · Pricing updated {date}",
-    costCoveragePartial: "{count} models · Some unpriced · {date}",
+    costCoverage: "{count} models; Pricing updated {date}",
+    costCoveragePartial: "{count} models; Some unpriced; {date}",
     costCoverageTruncated: "Only a bounded portion of the local records could be safely scanned",
     costCoverageUnattributed: "{count} calls had no direct model context and were excluded",
     costCoverageCalibrated: "Removed {tokens} replayed Tokens against the official daily ledger",
@@ -475,7 +513,7 @@ const i18n = {
     modelCostUnpriced: "No API price",
     modelCostUnknown: "Unidentified model",
     modelCostEmpty: "No local model usage is available",
-    modelCostRate: "Per 1M Tokens: input ${input} · cached ${cached} · output ${output}",
+    modelCostRate: "Per 1M Tokens: input ${input}; cached ${cached}; output ${output}",
     modelCostRequests: "{count} calls",
     modelCostCacheWrite: "Cache writes {tokens}",
     modelCostLongContext: "{count} long-context calls use official multipliers",
@@ -498,14 +536,14 @@ const i18n = {
     activeTaskTotalCountLabel: "Total tasks",
     activeTaskTotalTimeLabel: "Total time",
     activeTaskMore: "{count} more",
-    activeTaskCostLabel: "API equivalent",
-    activeTaskTimeLabel: "Time spent",
+    activeTaskCostLabel: "This turn cost",
+    activeTaskTimeLabel: "This turn time",
     activeTaskModelsLabel: "Models",
     activeTaskUnpriced: "Includes unpriced models",
     activeTaskPartialCost: "Only the readable portion is counted",
     activeTaskDetailsHint: "Statistics are recovered from readable local and archived sessions. Completed and interrupted tasks stay until confirmed or returned to Codex.",
-    activeTaskDetailCount: "{count} running · {completed} to review",
-    activeTaskLongest: "Longest ever {time} · Highest cost {cost}",
+    activeTaskDetailCount: "{count} running; {completed} to review",
+    activeTaskLongest: "Longest ever {time}; Highest cost {cost}",
     activeTaskEmptyDetail: "No active or unconfirmed Codex tasks",
     activeTaskCompletedStatus: "Completed",
     activeTaskManualInterruptedStatus: "Manually interrupted",
@@ -514,7 +552,7 @@ const i18n = {
     activeTaskPendingSection: "Pending",
     taskAbnormalTitle: "Task interrupted unexpectedly",
     taskAbnormalMessage: "{project} ended without a normal completion or manual stop event. Timing stopped at {time}. Check the Codex client, network, system sleep, or an unexpected process exit.",
-    statScopeTitle: "{metric} · Coverage",
+    statScopeTitle: "{metric}; Coverage",
     statScopeOpen: "View the coverage notes for {metric}",
     statScopeTokenDailyCost: "Daily average cost is the API-equivalent value from readable local sessions divided by work days with Tokens in the official account data. It is not an actual subscription charge. Unpriced models and deleted or unreadable sessions are excluded, and a bounded scan can cover only the safely read portion.",
     statScopeTaskRunning: "Running tasks require an explicit task_started state in recent readable local sessions. This scan reached a safe file or byte bound, so another task may be omitted. File modification time is never used to guess that a task is running.",
@@ -539,11 +577,11 @@ const i18n = {
     tokenChartTooltipValue: "{tokens} Tokens",
     tokenLive: "Account data synced",
     tokenCached: "Showing recent cache",
-    tokenLatestValue: "{date} · {tokens}",
+    tokenLatestValue: "{date}; {tokens}",
     waiting: "Waiting for first check",
     checkedNow: "Checked just now",
     checkedMinutes: "Checked {count}m ago",
-    autoRefresh: "Live events · fallback checks",
+    autoRefresh: "Live sync",
     autoRefreshActive: "Live event sync",
     reading: "Reading Codex data…",
     pinOn: "Unlock position",
@@ -593,7 +631,8 @@ const elements = Object.fromEntries([
   "checkpointMethod", "checkpointFreshness", "checkpointHistory", "resetOfficialLink",
   "taskFilter", "taskSort", "confirmAllTasks",
   "taskPerformance", "latestTaskIdentity", "latestTaskFirstToken", "latestTaskTokens",
-  "latestTaskPeak", "latestTaskMin", "latestTaskAverage", "taskPerformanceScope",
+  "latestTaskPeak", "latestTaskMin", "latestTaskAverage", "latestTaskCacheHit", "taskPerformanceScope",
+  "monitorUpdateStatus", "monitorUpdateCheck", "monitorUpdateInstall",
   "settingsButton", "settingsPopover", "settingsClose", "topDockToggle",
   "chooseBackground", "clearBackground",
   "opacitySlider", "opacityValue", "backgroundError", "customBackground", "backgroundDropZone",
@@ -620,7 +659,7 @@ const elements = Object.fromEntries([
   "tokenChartRange", "tokenChartLatest", "tokenChartTooltip", "tokenChartTooltipDate",
   "tokenChartTooltipValue",
   "tokenCostModal", "tokenCostClose", "tokenCostDone", "tokenCostTotal",
-  "tokenCostCoverage", "modelCostList",
+  "tokenCostCoverage", "modelCostList", "fullCostScan", "costScanProgress",
   "activeTaskCard", "activeTaskCount", "activeTaskPending", "activeTaskElapsed",
   "activeTaskTotalCost", "activeTaskAverageTime", "activeTaskAverageCost",
   "activeTaskTotalCount", "activeTaskTotalElapsed",
@@ -807,6 +846,7 @@ function applyLanguage() {
   document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
   document.querySelectorAll("[data-label-key]").forEach(node => node.setAttribute("aria-label", t(node.dataset.labelKey)));
   document.title = t("appTitle");
+  renderMonitorUpdate();
   document.querySelectorAll("[data-i18n]").forEach(node => {
     node.textContent = t(node.dataset.i18n);
   });
@@ -930,7 +970,7 @@ function openCropper(dataUrl, name = "") {
       crop: null
     };
     elements.cropImage.src = dataUrl;
-    elements.cropSourceInfo.textContent = `${name ? `${name} · ` : ""}${probe.naturalWidth} × ${probe.naturalHeight}`;
+    elements.cropSourceInfo.textContent = `${name ? `${name}; ` : ""}${probe.naturalWidth} × ${probe.naturalHeight}`;
     openSecondaryModal(elements.cropModal, elements.cropClose);
     requestAnimationFrame(() => {
       const displayedImage = window.CropGeometry.containedImageRect(
@@ -1085,7 +1125,7 @@ function formatResetTime(timestamp) {
   const relative = language === "zh"
     ? (hours >= 24 ? `${Math.floor(hours / 24)} 天 ${hours % 24} 小时后` : `${hours} 小时 ${minutes} 分后`)
     : (hours >= 24 ? `in ${Math.floor(hours / 24)}d ${hours % 24}h` : `in ${hours}h ${minutes}m`);
-  return `${formatDate(timestamp)} · ${relative}`;
+  return `${formatDate(timestamp)}; ${relative}`;
 }
 
 function setQuota(panel, reset, number, progress, used, quotaWindow, unavailable = false) {
@@ -1177,8 +1217,8 @@ function renderReceivedResetHistory(history = []) {
       : [];
     detail.textContent = [
       t("receivedResetAt", { time: formatDate(event.detectedAt, true) }),
-      types.join(" · ")
-    ].filter(Boolean).join(" · ");
+      types.join("; ")
+    ].filter(Boolean).join("; ");
 
     copy.append(title, detail);
     row.append(marker, copy);
@@ -1238,8 +1278,8 @@ function renderConsumedResetHistory(history = []) {
     detail.textContent = [
       t("consumedResetAt", { time: formatDate(event.detectedAt, true) }),
       balance,
-      types.join(" · ")
-    ].filter(Boolean).join(" · ");
+      types.join("; ")
+    ].filter(Boolean).join("; ");
 
     copy.append(title, detail);
     row.append(marker, copy);
@@ -1337,13 +1377,13 @@ function appendCheckpointRows(container, checkpoint) {
   container.append(heading);
   const source = document.createElement("button");
   source.type = "button"; source.className = "checkpoint-source";
-  source.textContent = `${checkpoint.sourceUrl === "https://codex-reset.com/" ? "Codex Reset" : "Codex Reset Tracker"} · ${t("checkpointSourceLink")}`;
+  source.textContent = `${checkpoint.sourceUrl === "https://codex-reset.com/" ? "Codex Reset" : "Codex Reset Tracker"}; ${t("checkpointSourceLink")}`;
   source.addEventListener("click", () => window.codexMonitor.openResetSource?.(checkpoint.sourceUrl));
   container.append(source);
   for (const event of (checkpoint.events || []).slice().sort((a, b) => b.at - a.at)) {
     const row = document.createElement("button");
     row.type = "button"; row.className = "checkpoint-event";
-    row.textContent = `${formatDate(event.at, true)} · ${t("checkpointSourceLink")}`;
+    row.textContent = `${formatDate(event.at, true)}; ${t("checkpointSourceLink")}`;
     row.addEventListener("click", () => window.codexMonitor.openResetSource?.(event.sourceUrl));
     container.append(row);
   }
@@ -1912,6 +1952,9 @@ function appendModelCostStat(container, label, value) {
 }
 
 function renderTokenCostDetails(cost = latestSnapshot?.tokenCost || {}) {
+  const progress = cost.scanProgress || {};
+  elements.fullCostScan.disabled = Boolean(progress.rebuilding);
+  elements.costScanProgress.textContent = progress.rebuilding ? t("costScanRunning", { pending: progress.pendingFiles, total: progress.totalFiles }) : progress.legacyStale ? t("costScanRecorded", {count: progress.legacyStale}) : t("costScanIdle", {count: cost.filesScanned || 0});
   elements.tokenCostTotal.textContent = formatApiEstimate(cost);
   const models = Array.isArray(cost.models)
     ? cost.models.filter(model => model?.model && model.model !== "unknown")
@@ -1939,7 +1982,7 @@ function renderTokenCostDetails(cost = latestSnapshot?.tokenCost || {}) {
     }));
   }
   if (cost.truncated) coverageNotes.push(t("costCoverageTruncated"));
-  elements.tokenCostCoverage.textContent = coverageNotes.join(" · ");
+  elements.tokenCostCoverage.textContent = coverageNotes.join("; ");
   elements.modelCostList.replaceChildren();
 
   if (!cost.available || !modelCount) {
@@ -1960,7 +2003,7 @@ function renderTokenCostDetails(cost = latestSnapshot?.tokenCost || {}) {
     const modelCost = document.createElement("span");
     modelCost.textContent = model.priced
       ? `≈${formatUsd(model.estimatedCostUsd)}`
-      : t("modelCostUnpriced");
+      : t(model.pricingPending ? "modelCostPricingPending" : "modelCostUnpriced");
     modelCost.classList.toggle("is-unpriced", !model.priced);
     heading.append(modelName, modelCost);
 
@@ -1998,7 +2041,7 @@ function renderTokenCostDetails(cost = latestSnapshot?.tokenCost || {}) {
     }
     const rate = document.createElement("div");
     rate.className = "model-cost-rate";
-    rate.textContent = details.join(" · ");
+    rate.textContent = details.join("; ");
     item.append(rate);
     elements.modelCostList.append(item);
   });
@@ -2326,7 +2369,7 @@ function renderActiveTaskPreview() {
     const modelNames = getActiveTaskModelNames(task);
     model.textContent = pending
       ? t(pendingTaskStatusKey(task))
-      : (modelNames.length ? modelNames.slice(0, 2).join(" · ") : "—");
+      : (modelNames.length ? modelNames.slice(0, 2).join("; ") : "—");
     identity.append(project, model);
 
     const elapsed = document.createElement("strong");
@@ -2372,8 +2415,12 @@ function appendTaskContext(item, task, pending = false) {
     const goal = document.createElement("small");
     goal.className = "task-goal-state";
     const key = { active: "taskGoalActive", paused: "taskGoalPaused", blocked: "taskGoalBlocked", complete: "taskGoalComplete" }[task.goalStatus] || "taskGoalLimited";
-    goal.textContent = [t(key), task.goalTokenBudget ? t("taskGoalBudget", { used: formatTokenCount(task.goalTokensUsed), budget: formatTokenCount(task.goalTokenBudget) }) : null].filter(Boolean).join(" · ");
+    goal.textContent = [t(key), task.goalTokenBudget ? t("taskGoalBudget", { used: formatTokenCount(task.goalTokensUsed), budget: formatTokenCount(task.goalTokenBudget) }) : null].filter(Boolean).join("; ");
     item.append(goal);
+    const usage = document.createElement("div");
+    usage.className = "task-goal-usage";
+    usage.textContent = t("goalUsage", { tokens: formatTokenCount(task.goalTokensUsed), time: task.goalTimeUsedSeconds === null ? "—" : formatTaskDuration(task.goalTimeUsedSeconds) });
+    item.append(usage);
   }
 }
 
@@ -2382,6 +2429,36 @@ function confirmAllCompletedTasks() {
   pendingTasks = pendingTasks.filter(task => task.outcome !== "completed");
   renderActiveTaskPreview();
   renderActiveTaskDetails();
+}
+
+let monitorUpdateState = null;
+function renderMonitorUpdate(state = monitorUpdateState) {
+  monitorUpdateState = state;
+  if (!state) return;
+  const key = { checking: "monitorUpdateChecking", downloading: "monitorUpdateDownloading", ready: "monitorUpdateReady", error: "monitorUpdateError", development: "monitorUpdateDevelopment" }[state.status] || "monitorUpdateIdle";
+  elements.monitorUpdateStatus.textContent = t(key, { version: state.version || state.currentVersion, percent: state.percent });
+  elements.monitorUpdateStatus.dataset.state = state.status;
+  elements.monitorUpdateInstall.hidden = state.status !== "ready";
+  elements.monitorUpdateCheck.disabled = ["checking", "downloading", "ready", "development"].includes(state.status);
+}
+
+function createTaskModelRows(task) {
+  const list = document.createElement("div");
+  list.className = "task-model-table";
+  for (const model of task.models || []) {
+    const row = document.createElement("div");
+    row.className = "task-model-row";
+    const name = document.createElement("strong");
+    name.textContent = model.model;
+    const cost = document.createElement("strong");
+    cost.className = "task-model-cost";
+    cost.textContent = Number.isFinite(model.estimatedCostUsd) ? formatUsd(model.estimatedCostUsd) : t("modelCostUnpriced");
+    const usage = document.createElement("small");
+    usage.textContent = t("taskModelUsage", { input: formatTokenCount(model.inputTokens), cached: formatTokenCount(model.cachedInputTokens), output: formatTokenCount(model.outputTokens) });
+    row.append(name, cost, usage);
+    list.append(row);
+  }
+  return list;
 }
 
 function renderActiveTaskDetails() {
@@ -2436,10 +2513,7 @@ function renderActiveTaskDetails() {
     );
     appendActiveTaskStat(stats, t("activeTaskCostLabel"), formatActiveTaskCost(task));
 
-    const models = document.createElement("div");
-    models.className = "active-task-models";
-    const modelNames = getActiveTaskModelNames(task);
-    models.textContent = `${t("activeTaskModelsLabel")} · ${modelNames.length ? modelNames.join(" · ") : "—"}`;
+    const models = createTaskModelRows(task);
 
     item.append(heading);
     appendTaskContext(item, task);
@@ -2450,7 +2524,7 @@ function renderActiveTaskDetails() {
       note.textContent = [
         task.hasUnpricedModels ? t("activeTaskUnpriced") : null,
         task.partial ? t("activeTaskPartialCost") : null
-      ].filter(Boolean).join(" · ");
+      ].filter(Boolean).join("; ");
       item.append(note);
     }
     elements.activeTaskList.append(item);
@@ -2507,7 +2581,7 @@ function renderActiveTaskDetails() {
     actions.append(returnButton, confirmButton);
     item.append(heading);
     appendTaskContext(item, task, true);
-    item.append(stats, actions);
+    item.append(stats, createTaskModelRows(task), actions);
     elements.activeTaskList.append(item);
   });
   elements.activeTaskList.scrollTop = previousScroll;
@@ -2519,12 +2593,12 @@ function renderActiveTaskDetails() {
 }
 
 function renderTaskPerformance(task = latestPerformanceTask) {
-  if (task && (!latestPerformanceTask || task.endedAt >= latestPerformanceTask.endedAt)) latestPerformanceTask = task;
+  if (task && (!latestPerformanceTask || !Number.isFinite(latestPerformanceTask.startedAt) || task.startedAt >= latestPerformanceTask.startedAt)) latestPerformanceTask = task;
   const latest = latestPerformanceTask;
   const telemetry = latest?.telemetry || {};
   const valid = value => Number.isFinite(value) && value >= 0;
   const rate = value => valid(value) ? new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en-US", { maximumFractionDigits: 1 }).format(value) : "—";
-  const identity = latest ? `${latest.projectName || t("taskKindTask")} · ${formatDate(latest.endedAt)}` : t("latestTaskEmpty");
+  const identity = latest ? `${latest.projectName || t("taskKindTask")}; ${latest.endedAt ? formatDate(latest.endedAt) : t("activeTaskRunningStatus")}` : t("latestTaskEmpty");
   elements.latestTaskIdentity.textContent = latest?.projectName || t("latestTaskEmpty");
   elements.latestTaskIdentity.title = identity;
   elements.latestTaskFirstToken.textContent = valid(telemetry.firstTokenMs)
@@ -2536,6 +2610,7 @@ function renderTaskPerformance(task = latestPerformanceTask) {
   elements.latestTaskPeak.textContent = rate(telemetry.peakTokensPerSecond);
   elements.latestTaskMin.textContent = rate(telemetry.minTokensPerSecond);
   elements.latestTaskAverage.textContent = rate(telemetry.averageTokensPerSecond);
+  elements.latestTaskCacheHit.textContent = valid(telemetry.cacheHitRate) && telemetry.cacheHitRate <= 100 ? `${rate(telemetry.cacheHitRate)}%` : "—";
   const scope = t("taskTelemetryScope", { task: identity });
   elements.taskPerformance.title = scope;
   elements.taskPerformance.setAttribute("aria-label", `${t("latestTaskTitle")}: ${identity}. ${scope}`);
@@ -3020,6 +3095,14 @@ async function expandFromFloatingOrb() {
 }
 
 async function initialize() {
+  renderMonitorUpdate(await window.codexMonitor.readMonitorUpdate?.());
+  window.codexMonitor.onMonitorUpdate?.(state => renderMonitorUpdate(state));
+  elements.monitorUpdateCheck.addEventListener("click", async () => renderMonitorUpdate(await window.codexMonitor.checkMonitorUpdate()));
+  elements.monitorUpdateInstall.addEventListener("click", async () => {
+    elements.monitorUpdateInstall.disabled = true;
+    try { await window.codexMonitor.installMonitorUpdate(); }
+    finally { elements.monitorUpdateInstall.disabled = false; }
+  });
   const settings = await window.codexMonitor.readSettings();
   language = settings.language;
   alwaysOnTop = settings.alwaysOnTop;
@@ -3144,6 +3227,18 @@ async function initialize() {
   elements.tokenCostHelp.addEventListener("click", event => {
     event.stopPropagation();
     closeStatScope(() => openTokenCost());
+  });
+  elements.fullCostScan.addEventListener("click", async () => {
+    if (elements.fullCostScan.disabled) return;
+    elements.fullCostScan.disabled = true;
+    try {
+      const cost = await window.codexMonitor.rescanCost();
+      if (latestSnapshot) latestSnapshot = { ...latestSnapshot, tokenCost: cost };
+      renderTokenCost(cost);
+    } catch {
+      elements.costScanProgress.textContent = t("costScanFailed");
+      elements.fullCostScan.disabled = false;
+    }
   });
   elements.tokenCostClose.addEventListener("click", closeTokenCost);
   elements.tokenCostDone.addEventListener("click", closeTokenCost);
@@ -3294,6 +3389,10 @@ async function initialize() {
     if (latestSnapshot?.activeTasks?.observedAt > result.observedAt) return;
     if (latestSnapshot) latestSnapshot = { ...latestSnapshot, activeTasks: result };
     renderActiveTasks(result);
+  });
+  window.codexMonitor.onCost?.(cost => {
+    if (latestSnapshot) latestSnapshot = { ...latestSnapshot, tokenCost: cost };
+    renderTokenCost(cost);
   });
   document.addEventListener("visibilitychange", startPresentationClock);
   window.addEventListener("online", () => refresh({ silent: true }));

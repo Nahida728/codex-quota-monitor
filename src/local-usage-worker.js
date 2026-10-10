@@ -9,9 +9,10 @@ let queue = Promise.resolve();
 parentPort.on("message", request => {
   queue = queue.then(async () => {
     try {
-      const reader = request.kind === "tasks" ? tasks : request.kind === "cost" ? cost : null;
+      const reader = request.kind === "tasks" ? tasks : ["cost", "rescan", "resume"].includes(request.kind) ? cost : null;
       if (!reader) throw new Error("INVALID_READER");
-      const result = await reader.read(request.now, request.previous);
+      if (request.kind === "rescan") cost.requestFullScan();
+      const result = await reader.read(request.now, request.previous, { force: request.kind === "resume" || request.kind === "rescan" });
       parentPort.postMessage({ id: request.id, result });
     } catch { parentPort.postMessage({ id: request.id, failed: true }); }
   });

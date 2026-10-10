@@ -13,7 +13,7 @@ const preload = fs.readFileSync(path.join(rendererRoot, "..", "preload.js"), "ut
 test("combines three independent quota bars in one panel", () => {
   assert.match(
     css,
-    /\.quota-section\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/
+    /\.quota-section\s*\{[\s\S]*?grid-template-rows:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/
   );
   assert.match(html, /id="fiveHourPanel"/);
   assert.match(html, /id="weeklyPanel"/);
@@ -62,7 +62,7 @@ test("places the expanded token overview before the active-task card", () => {
   assert.match(renderer, /cost\.estimatedCostUsd\s*\/\s*workDays/);
   assert.match(html, /id="estimatedCostValue"/);
   assert.match(html, /id="tokenCostHelp"/);
-  assert.match(css, /\.token-overview\s*\{[\s\S]*?height:\s*100px/);
+  assert.match(css, /\.token-overview\s*\{[\s\S]*?height:\s*96px/);
   assert.match(css, /\.active-task-card\s*\{[\s\S]*?height:\s*154px/);
   assert.doesNotMatch(css, /\.is-offline-state \.active-task-card/);
 });
@@ -280,7 +280,7 @@ test("keeps reset details in a scrollable secondary view", () => {
     /renderResetCredits\(data\.resets,\s*data\.events\.newReset,\s*data\.events\.manualReset\)/
   );
   assert.match(renderer, /resetCreditButton\.addEventListener\("click",\s*openResetCredits\)/);
-  assert.match(css, /\.reset-detail-list\s*\{[\s\S]*?max-height:\s*186px/);
+  assert.match(css, /\.reset-detail-list\s*\{[\s\S]*?max-height:\s*188px/);
   assert.match(
     css,
     /\.received-reset-history,[\s\S]*?\.consumed-reset-history\s*\{[\s\S]*?overflow:\s*auto/

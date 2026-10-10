@@ -231,7 +231,7 @@ const snapshot = {
     available: true,
     latestTask: params.get("telemetry") === "0" ? null : {
       id: "preview-latest-turn", projectName: "codex-quota-monitor", endedAt: nowSeconds - 60,
-      telemetry: { firstTokenMs: 1250, totalTokens: 1358400, outputTokens: 18400,
+      telemetry: { firstTokenMs: 1250, cacheHitRate: 87.6, totalTokens: 1358400, outputTokens: 18400,
         peakTokensPerSecond: 92.8, minTokensPerSecond: 11.6, averageTokensPerSecond: 38.2, partial: false }
     },
     tasks: previewActiveTasks,

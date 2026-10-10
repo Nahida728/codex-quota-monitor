@@ -287,6 +287,8 @@ function summarizeTaskWindow(lines, now = Date.now(), metadata = {}) {
         projectName,
         startedAt,
         elapsedSeconds: Math.max(0, nowSeconds - startedAt),
+        telemetry: summarizeTaskTelemetry(safeLines.slice(lifecycle.index),
+          { ...lifecycle.record, startedAt, eventAt: now / 1000, durationMs: null }, cost, Boolean(metadata.partial)),
         ...cost,
         partial: Boolean(metadata.partial),
         ...context,
@@ -1200,6 +1202,7 @@ function normalizeActiveTask(value, now) {
     projectName: normalizeProjectName(value?.projectName),
     startedAt,
     elapsedSeconds: Math.max(0, Math.floor(now / 1_000) - startedAt),
+    telemetry: normalizeTaskTelemetry(value?.telemetry),
     estimatedCostUsd: Number.isFinite(value?.estimatedCostUsd)
       ? Math.max(0, value.estimatedCostUsd)
       : null,
@@ -1241,8 +1244,8 @@ function normalizeActiveTaskResult(raw, now = Date.now()) {
     available: true,
     tasks,
     terminalTasks,
-    latestTask: terminalTasks.filter(task => task.outcome === "completed")
-      .sort((left, right) => right.endedAt - left.endedAt)[0] || null,
+    latestTask: [...tasks, ...terminalTasks.filter(task => task.outcome === "completed")]
+      .sort((left, right) => right.startedAt - left.startedAt)[0] || null,
     history: historySnapshot
       ? { ...normalizeTaskHistory(historySnapshot, now), deferred: Boolean(raw.history?.deferred) }
       : normalizeTaskHistory(null, now),

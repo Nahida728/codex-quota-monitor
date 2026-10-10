@@ -2,6 +2,20 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("codexMonitor", {
   readQuota: () => ipcRenderer.invoke("quota:read"),
+  rescanCost: () => ipcRenderer.invoke("cost:rescan"),
+  onCost: callback => {
+    const listener = (_event, cost) => callback(cost);
+    ipcRenderer.on("cost:snapshot", listener);
+    return () => ipcRenderer.removeListener("cost:snapshot", listener);
+  },
+  readMonitorUpdate: () => ipcRenderer.invoke("monitor-update:read"),
+  checkMonitorUpdate: () => ipcRenderer.invoke("monitor-update:check"),
+  installMonitorUpdate: () => ipcRenderer.invoke("monitor-update:install"),
+  onMonitorUpdate: callback => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on("monitor-update:state", listener);
+    return () => ipcRenderer.removeListener("monitor-update:state", listener);
+  },
   readActiveTaskStatus: () => ipcRenderer.invoke("tasks:active-status"),
   focusCodex: () => ipcRenderer.invoke("codex:focus"),
   openResetSource: url => ipcRenderer.invoke("reset:open-source", url),

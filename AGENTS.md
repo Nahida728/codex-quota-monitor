@@ -511,8 +511,9 @@ available reset credit. If the available count decreases across the same snapsho
   languages; movement/orb/window-size invariants remain mandatory.
 - GPT-6.1 Sol pricing uses the official Standard card dated 2026-10-10:
   USD/million input 2, cached input 0.10, cache write 2.5, output 10; beyond
-  272K input use 2x input classes and 1.5x output. Invalidate incompatible cost
-  snapshots so old unpriced aggregates do not conceal this model's cost.
+  272K input use 2x input classes and 1.5x output. Pricing-only changes must preserve compatible schema-6 and schema-7
+  numeric ledgers. Missing historical prices show pending recalculation until a
+  user-requested full scan; never discard recorded Tokens to add a price.
 
 Keep these states distinct:
 
@@ -610,9 +611,9 @@ client's visible “Update” button before installation. Do not regress to that
   unattributed coverage, not an `unknown` model. Exclude it from model totals and
   estimated cost, retain only normalized aggregate coverage counts, and never
   guess its model from a later context.
-- A cost-ledger schema change must rebuild model aggregates from readable rollout
-  files. Incompatible primary or archive aggregates may remain on disk for
-  recovery, but must not become a permanent floor or re-enter the current UI.
+- A genuinely incompatible counter schema may require a rebuild. Pricing-only
+  changes are compatible and must retain recorded model Tokens. Schema 6 and 7
+  share the same counter semantics and must reconcile without an automatic rebuild.
 - Replay de-duplication spans the whole rollout file. A repeated complete
   cumulative-plus-last Token signature remains a duplicate across turn-context
   records; equal per-call usage with different cumulative counters remains a
@@ -631,8 +632,8 @@ client's visible “Update” button before installation. Do not regress to that
   unpriced model slugs remain visible but do not contribute to the USD total;
   unattributed events are coverage rather than a model card, and the UI must make
   partial pricing explicit.
-- Cache expensive production cost recovery for 30 seconds and task-history recovery
-  for 60 seconds, including partial batches; reuse the last normalized
+- Cache ordinary production cost recovery for 30 seconds and task-history recovery
+  for 60 seconds; manual cost rebuilds use bounded background passes instead; reuse the last normalized
   persisted snapshot across restarts and temporary scan failures. Do not rescan
   multi-gigabyte rollout history on every change notification.
 - Cost aggregation must include readable rollout files from both
@@ -649,7 +650,7 @@ client's visible “Update” button before installation. Do not regress to that
 - Scope replay-counter signatures to one rollout. Equal cumulative/last counters
   in two distinct rollouts are distinct usage evidence and must not be globally
   de-duplicated.
-- Reconcile API-equivalent snapshots only within the current cost-ledger schema.
+- Reconcile API-equivalent snapshots within compatible cost-ledger schemas.
   Merge compatible hashed rollout entries across immutable archives, but never
   restore an incompatible aggregate or use it as a migration floor; rebuild it
   from readable rollout files so corrected de-duplication can lower bad totals.
@@ -963,3 +964,48 @@ Verify:
   1. a focused test where automation is possible;
   2. a manual checklist item where native interaction is involved;
   3. a concise entry in this `AGENTS.md`.
+
+
+## Persistent model ledger and self-updates (1.3.0)
+
+- Do not re-read already indexed legacy sessions automatically, even when their
+  metadata changes. Preserve the numeric record and offer an explicit full scan.
+  New resumable records read appended bytes only. Archive moves and missing files
+  retain their recorded totals. File-count and byte limits are per-pass budgets.
+- Stream large JSONL lines using a whitelist projector; store only model/type/
+  timestamp metadata, numeric counters, UTF-8 pending bytes and hashed replay
+  signatures. Unknown object keys and conversation strings must be discarded
+  before a persisted chunk boundary. Never retain line fragments or tool bodies.
+- A manual full scan covers both session roots and keeps committed records visible
+  until each replacement reaches EOF. Its new generation may legitimately lower
+  corrected totals; older archives must not resurrect the previous generation.
+  Resume persisted work after restart. Coalesce worker requests and use bounded
+  64 MiB passes with adaptive rest time; never parse history on the main thread.
+- The larger three-quota panel and latest-task board share one left/right row.
+  Set min-height: 0 on its grid children; wrapped telemetry must stay within
+  the fixed row. Verify panel bounds and text bounds in both languages so the
+  reset row cannot cover the Reserve progress bar when metrics are added.
+  Latest-turn Tokens and interval telemetry update while running. Cache hit rate
+  is cached input divided by input over observed calls, weighted across models;
+  output is excluded and missing/zero input stays unavailable.
+- Task details label goals and subagents, show the database's goal-wide numeric
+  Tokens/time separately from current-turn elapsed time and model-level cost.
+  Never expose the objective text or imply current-turn cost is lifetime goal cost.
+- All UI copy is bilingual. Avoid decorative middle-dot strings. Wrap long names
+  and durations or provide an explicit bounded scroll area. Check text bounds in
+  every secondary view. Six reset rows require 188 px (6*28 + 5*4), not 186 px.
+- Monitor self-updates use only Nahida728/codex-quota-monitor on GitHub. Stable
+  installs exclude prereleases; beta installs can receive beta or stable upgrades.
+  Never downgrade, accept draft releases, arbitrary URLs or asset-provided paths.
+- NSIS uses electron-updater's verified update flow. Portable uses the exact x64
+  asset and GitHub's SHA-256 digest, streamed size limits, a second pre-install
+  hash check, and one hidden PowerShell handover copied outside ASAR. Paths come
+  from the local bootstrap environment and user-data staging directory only.
+- Replacing Electron binaries requires restarting the monitor. It must never stop
+  Codex or its agents. Save state and position, wait for observed tasks to be idle
+  before automatic installation, and allow an explicit restart/update action.
+  Keep the previous portable executable for rollback and restore it on failed
+  replacement/launch. Network failures must preserve an already verified update.
+- Release asset names are ASCII and include the SemVer version. Publish latest.yml (beta.yml for beta channels)
+  and the setup blockmap alongside the setup, portable, and SHA-256 manifest.
+  Keep build.files as the src/package allowlist and inspect actual ASAR contents.

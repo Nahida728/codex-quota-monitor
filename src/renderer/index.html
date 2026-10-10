@@ -20,7 +20,7 @@
       <header class="titlebar" id="titlebar">
         <div class="brand">
           <div>
-            <div class="eyebrow">CODEX PULSE · V1.3.0-BETA</div>
+            <div class="eyebrow">CODEX PULSE  V1.3.0</div>
             <h1 data-i18n="title">Codex监测台</h1>
           </div>
         </div>
@@ -64,6 +64,12 @@
             <button class="settings-switch" id="topDockToggle" type="button" role="switch" aria-checked="false" aria-label="吸附屏幕顶部"><span></span></button>
           </div>
         </div>
+        <div class="monitor-update-settings">
+          <strong data-i18n="monitorUpdateTitle">监测台更新</strong>
+          <span id="monitorUpdateStatus" role="status" aria-live="polite"></span>
+          <small data-i18n="monitorUpdateHint">自动检查并下载，任务空闲时重启监测台。Codex 任务不受影响。</small>
+          <div><button id="monitorUpdateCheck" class="glass-button" type="button" data-i18n="monitorUpdateCheck">检查更新</button><button id="monitorUpdateInstall" class="glass-button primary" type="button" hidden data-i18n="monitorUpdateInstall">重启并更新</button></div>
+        </div>
         <div class="settings-divider"></div>
         <div class="settings-section-heading">
           <span class="eyebrow">GLASS CANVAS</span>
@@ -104,6 +110,7 @@
         </div>
       </section>
 
+      <div class="overview-grid">
       <section class="quota-section" id="quotaSection" aria-label="额度">
         <article class="quota-panel" id="fiveHourPanel">
           <div class="quota-heading">
@@ -158,16 +165,18 @@
       </section>
 
       <section class="task-performance no-drag" id="taskPerformance" role="button" tabindex="0">
-        <div class="task-performance-heading"><strong data-i18n="latestTaskTitle">最近任务</strong><span id="latestTaskIdentity">—</span><small data-i18n="taskRateShort">区间输出 · tok/s</small></div>
+        <div class="task-performance-heading"><strong data-i18n="latestTaskTitle">最近任务</strong><span id="latestTaskIdentity">—</span><small data-i18n="taskRateShort">区间输出，tok/s</small></div>
         <div class="task-performance-grid">
           <div><span data-i18n="taskFirstToken">首字响应</span><strong id="latestTaskFirstToken">—</strong></div>
           <div><span data-i18n="taskTotalTokens">总 Tokens</span><strong id="latestTaskTokens">—</strong></div>
           <div><span data-i18n="taskPeakRate">峰值 tok/s</span><strong id="latestTaskPeak">—</strong></div>
           <div><span data-i18n="taskMinRate">最低 tok/s</span><strong id="latestTaskMin">—</strong></div>
           <div><span data-i18n="taskAverageRate">平均 tok/s</span><strong id="latestTaskAverage">—</strong></div>
+          <div><span data-i18n="taskCacheHitRate">缓存命中率</span><strong id="latestTaskCacheHit">—</strong></div>
         </div>
       </section>
 
+      </div>
       <section class="signals" id="statusSection" aria-label="状态提醒">
         <article class="status-card reset-hub no-drag">
           <span class="section-label" data-i18n="resetHubTitle">重置管理</span>
@@ -279,8 +288,8 @@
 
       <footer>
         <span id="lastChecked" data-i18n="waiting">等待首次检测</span>
-        <span class="footer-separator">·</span>
-        <span id="autoRefreshLabel" data-i18n="autoRefresh">事件同步 · 低频兜底</span>
+
+        <span id="autoRefreshLabel" data-i18n="autoRefresh">实时同步</span>
       </footer>
 
       <div class="drag-edge drag-edge-top" data-drag-edge="top" aria-hidden="true"></div>
@@ -519,6 +528,10 @@
             <small id="tokenCostCoverage">--</small>
           </div>
           <p class="cost-explanation" data-i18n="costEstimateHint">按本机模型明细和 OpenAI 标准 API 价格估算，不代表 Codex 订阅的实际收费。本机重复事件会按官方每日 Token 总账校准；总输入已经包含缓存输入，两项不要相加。</p>
+          <div class="cost-scan-controls no-drag">
+            <button class="glass-button" id="fullCostScan" type="button" data-i18n="fullCostScan">全量扫描全部会话</button>
+            <span id="costScanProgress" role="status" aria-live="polite"></span>
+          </div>
           <div class="model-cost-list" id="modelCostList"></div>
           <button class="glass-button primary cost-done" id="tokenCostDone" type="button" data-i18n="close">关闭</button>
         </div>

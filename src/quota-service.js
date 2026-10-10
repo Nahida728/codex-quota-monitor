@@ -330,6 +330,48 @@ class QuotaService {
     return this.inFlight;
   }
 
+  async rescanCost() {
+    if (this.fullScanInFlight) return this.fullScanInFlight;
+    this.fullScanInFlight = (async () => {
+      if (this.inFlight) await this.inFlight;
+      const now = Date.now();
+      let raw;
+      if (this.localUsage) raw = await this.localUsage.read("rescan", now, this.state.data.tokenCostSnapshot);
+      else {
+        this.costUsageReader.requestFullScan();
+        raw = await this.costUsageReader.read(now, this.state.data.tokenCostSnapshot, { force: true });
+      }
+      const result = normalizeCodexCostUsageResult(raw, this.state.data, now, this.state.data.tokenUsageSnapshot);
+      if (result.persistence.tokenCostSnapshot) this.state.set("tokenCostSnapshot", result.persistence.tokenCostSnapshot, { forceBackup: true });
+      this.scheduleCostScan();
+      return withoutPersistence(result);
+    })().finally(() => { this.fullScanInFlight = null; });
+    return this.fullScanInFlight;
+  }
+
+  scheduleCostScan(delay = 2000) {
+    if (this.disposed || this.costScanTimer || !this.state.data.tokenCostSnapshot?.rescanPending?.length) return;
+    this.costScanTimer = setTimeout(async () => {
+      this.costScanTimer = null;
+      const started = Date.now();
+      try {
+        this.costScanInFlight = (async () => {
+          const raw = this.localUsage ? await this.localUsage.read("resume", started, this.state.data.tokenCostSnapshot)
+            : await this.costUsageReader.read(started, this.state.data.tokenCostSnapshot, { force: true });
+          const result = normalizeCodexCostUsageResult(raw, this.state.data, Date.now(), this.state.data.tokenUsageSnapshot);
+          if (result.persistence.tokenCostSnapshot) this.state.set("tokenCostSnapshot", result.persistence.tokenCostSnapshot);
+          this.onCostSnapshot?.(withoutPersistence(result));
+        })();
+        await this.costScanInFlight;
+      } catch {} finally {
+        this.costScanInFlight = null;
+        // Bounded 64 MiB passes, off the main thread, with at most 20% duty.
+        this.scheduleCostScan(Math.max(2000, Math.min(30000, (Date.now() - started) * 4)));
+      }
+    }, delay);
+    this.costScanTimer.unref?.();
+  }
+
   async readActiveTasks(now = Date.now()) {
     if (this.activeTaskInFlight) return this.activeTaskInFlight;
     const previousHistorySnapshot = this.state.data.taskHistorySnapshot || {
@@ -570,6 +612,8 @@ class QuotaService {
   }
 
   dispose() {
+    this.disposed = true;
+    if (this.costScanTimer) clearTimeout(this.costScanTimer);
     if (this.latestTaskRecords) {
       try { this.state.set("taskPerformanceRecords", this.latestTaskRecords); } catch {}
     }
