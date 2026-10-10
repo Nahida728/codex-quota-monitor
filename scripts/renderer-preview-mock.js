@@ -68,6 +68,10 @@ const previewReceivedResetHistory = [{
 }];
 const previewActiveTasks = Array.from({ length: activeTaskCount }, (_, index) => ({
   id: `preview-turn-${index + 1}`,
+  taskKind: params.get("context") === "1" ? index === 1 ? "subagent" : "goal" : "task",
+  goalStatus: params.get("context") === "1" ? "active" : null,
+  goalTokenBudget: 100000,
+  goalTokensUsed: 12340,
   projectName: ["codex-quota-monitor", "nahida-website", "release-tools"][index] || `project-${index + 1}`,
   startedAt: nowSeconds - (734 + index * 463),
   elapsedSeconds: 734 + index * 463,
@@ -106,6 +110,13 @@ const previewCompletedTasks = showCompletedTask ? [{
 }] : [];
 
 const snapshot = {
+  resetCheckpoints: {
+    available: true, sourceUrl: "https://codex-reset.com/", sourceCheckedAt: Date.now(), fetchedAt: Date.now(),
+    stale: params.get("stale") === "1", probability24: params.get("stale") === "1" ? null : 15,
+    probability48: params.get("stale") === "1" ? null : 28, sampleCount: 32, medianSeconds: 6 * 86400,
+    probabilityMode: "source-experimental", forecast: { sampleCount: 8 }, latestAt: nowSeconds - 86400,
+    events: Array.from({ length: 12 }, (_, index) => ({ at: nowSeconds - (index + 1) * 5 * 86400, sourceUrl: `https://x.com/thsottiaux/status/21076760728716004${70 + index}` }))
+  },
   online: !offline,
   checkedAt: Date.now(),
   lastSuccessfulAt: offline ? Date.now() - 60_000 : Date.now(),
@@ -218,6 +229,11 @@ const snapshot = {
   },
   activeTasks: {
     available: true,
+    latestTask: params.get("telemetry") === "0" ? null : {
+      id: "preview-latest-turn", projectName: "codex-quota-monitor", endedAt: nowSeconds - 60,
+      telemetry: { firstTokenMs: 1250, cacheHitRate: 87.6, totalTokens: 1358400, outputTokens: 18400,
+        peakTokensPerSecond: 92.8, minTokensPerSecond: 11.6, averageTokensPerSecond: 38.2, partial: false }
+    },
     tasks: previewActiveTasks,
     count: previewActiveTasks.length,
     truncated: false,
@@ -241,8 +257,9 @@ const snapshot = {
   receivedResetHistory: previewReceivedResetHistory,
   data: offline ? null : {
     planType: "plus",
+    reserve: params.get("reserve") === "1" ? { remainingPercent: 63, usedPercent: 37, resetsAt: nowSeconds + 6 * 86400 } : null,
     windows: {
-      fiveHour: null,
+      fiveHour: params.get("fiveHour") === "1" ? { remainingPercent: 78, usedPercent: 22, resetsAt: nowSeconds + 3600 } : null,
       weekly: {
         remainingPercent: 91,
         usedPercent: 9,
@@ -280,6 +297,7 @@ window.codexMonitor = {
     observedAt: Date.now()
   }),
   focusCodex: async () => true,
+  openResetSource: async () => true,
   readSettings: async () => ({
     language: params.get("lang") === "en" ? "en" : "zh",
     alwaysOnTop: true,
@@ -303,5 +321,12 @@ window.codexMonitor = {
   updateTransitionSnapshot: () => {},
   onRefresh: () => {},
   onAlwaysOnTop: () => {},
-  onWindowModeChanged: () => {}
+  onWindowModeChanged: () => {},
+  onTopDockChanged: () => {},
+  notifyTopDockReady: () => {},
+  setTopDockEnabled: async enabled => enabled,
+  revealTopDock: async () => ({}),
+  retractTopDock: async () => ({}),
+  confirmTopDockPaint: () => {},
+  beginOrbGesture: () => {}
 };

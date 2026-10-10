@@ -10,7 +10,8 @@ function clamp(value, min, max) {
 }
 
 function normalizeWindow(window) {
-  if (!window) return null;
+  if (!window || !Number.isFinite(window.usedPercent) || window.usedPercent < 0 ||
+      window.usedPercent > 100) return null;
   const usedPercent = clamp(window.usedPercent, 0, 100);
   return {
     usedPercent,
@@ -28,7 +29,7 @@ function distanceToDuration(window, target) {
 function identifyWindows(rateLimit) {
   const candidates = [rateLimit?.primary, rateLimit?.secondary]
     .filter(Boolean)
-    .map(normalizeWindow);
+    .map(normalizeWindow).filter(Boolean);
 
   let fiveHour = candidates.find(window => distanceToDuration(window, FIVE_HOURS_MINUTES) <= WINDOW_TOLERANCE_MINUTES) || null;
   let weekly = candidates.find(window => distanceToDuration(window, ONE_WEEK_MINUTES) <= WINDOW_TOLERANCE_MINUTES) || null;
@@ -92,7 +93,8 @@ function getRateLimit(raw) {
 function getReserveRateLimit(raw) {
   const buckets = raw?.rateLimitsByLimitId;
   if (!buckets || typeof buckets !== "object") return null;
-  return buckets["gpt-reserve"] || buckets.gpt_reserve || null;
+  return buckets["gpt-reserve"] || buckets.gpt_reserve ||
+    Object.values(buckets).find(bucket => bucket?.limitId === "gpt-reserve") || null;
 }
 
 function didUnexpectedReset(previous, current, nowSeconds, creditCountDecreased) {
@@ -364,7 +366,7 @@ function identifyConsumedCredits(previousState, resets, consumedCount, previousR
   return missing.length === consumedCount ? missing.map(normalizeHistoryCredit) : [];
 }
 
-function deriveEvents(previousState, normalized, nowSeconds) {
+function deriveEvents(previousState, normalized, nowSeconds, options = {}) {
   const knownIds = new Set(previousState?.knownCreditIds || []);
   const currentIds = normalized.resets.items.map(creditIdentity);
   const isFirstSnapshot = !previousState?.hasBaseline;
@@ -468,7 +470,7 @@ function deriveEvents(previousState, normalized, nowSeconds) {
           : null
       }
     : null;
-  const officialResetCandidate = deferredOfficialReset || currentOfficialReset;
+  const officialResetCandidate = options.officialResetSource === "community" ? null : deferredOfficialReset || currentOfficialReset;
   const officialFullReset = Boolean(officialResetCandidate);
 
   const lastNewResetAt = newlyGranted.length ? nowSeconds : previousState?.lastNewResetAt || null;
@@ -498,7 +500,7 @@ function deriveEvents(previousState, normalized, nowSeconds) {
       evidenceVersion: MANUAL_RESET_EVIDENCE_VERSION
     });
   }
-  const officialResetHistory = normalizeOfficialResetHistory(previousState);
+  const officialResetHistory = options.officialResetSource === "community" ? [] : normalizeOfficialResetHistory(previousState);
   const lastOfficialReset = officialResetHistory.at(-1);
   const isDuplicateOfficialReset = lastOfficialReset &&
     officialResetCandidate &&
@@ -553,7 +555,7 @@ function deriveEvents(previousState, normalized, nowSeconds) {
   };
 }
 
-function normalizeQuotaResponse(raw, previousState = {}, nowSeconds = Math.floor(Date.now() / 1000)) {
+function normalizeQuotaResponse(raw, previousState = {}, nowSeconds = Math.floor(Date.now() / 1000), options = {}) {
   const rateLimit = getRateLimit(raw);
   if (!rateLimit) throw new Error("Codex rate-limit data is unavailable.");
 
@@ -568,7 +570,7 @@ function normalizeQuotaResponse(raw, previousState = {}, nowSeconds = Math.floor
       previousState
     )
   };
-  const events = deriveEvents(previousState, normalized, nowSeconds);
+  const events = deriveEvents(previousState, normalized, nowSeconds, options);
   return {
     ...normalized,
     events: {

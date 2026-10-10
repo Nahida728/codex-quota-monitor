@@ -1,7 +1,9 @@
-const { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, nativeTheme, screen, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, nativeTheme, screen, dialog, net, shell } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const { QuotaService } = require("./quota-service");
+const { RealtimeSync } = require("./realtime-sync");
+const { MonitorUpdater } = require("./monitor-updater");
 const { JsonStore } = require("./store");
 const { focusCodexWindow } = require("./codex-window-focus");
 const { didWindowMove, startSystemWindowMove } = require("./native-window-drag");
@@ -9,6 +11,8 @@ const { didWindowMove, startSystemWindowMove } = require("./native-window-drag")
 let window;
 let tray;
 let quotaService;
+let realtimeSync;
+let monitorUpdater;
 let store;
 let isQuitting = false;
 let isAppHidden = false;
@@ -740,8 +744,23 @@ function getBackgroundDataUrl() {
 }
 
 function registerIpc() {
-  ipcMain.handle("quota:read", () => quotaService.read());
+  ipcMain.handle("monitor-update:read", () => monitorUpdater?.snapshot());
+  ipcMain.handle("monitor-update:check", () => monitorUpdater?.check());
+  ipcMain.handle("monitor-update:install", () => monitorUpdater?.install());
+  ipcMain.handle("quota:read", () => realtimeSync.refresh());
+  ipcMain.handle("cost:rescan", async () => {
+    const result = await quotaService.rescanCost();
+    realtimeSync.requestRemote();
+    return result;
+  });
   ipcMain.handle("codex:focus", () => focusCodexFromMonitor());
+  ipcMain.handle("reset:open-source", (_event, url) => {
+    if (url === "https://codexresettracker.com/" || url === "https://codex-reset.com/" ||
+        /^https:\/\/x\.com\/thsottiaux\/status\/\d{10,25}$/.test(url || "")) {
+      return shell.openExternal(url);
+    }
+    return false;
+  });
   ipcMain.handle("tasks:active-status", async () => {
     const result = await quotaService.readActiveTasks();
     return {
@@ -883,10 +902,37 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   store = new JsonStore(path.join(app.getPath("userData"), "settings.json"));
   isTopDockEnabled = store.get("topDockEnabled", false);
   quotaService = new QuotaService({
-    appStatePath: path.join(app.getPath("userData"), "quota-state.json")
+    appStatePath: path.join(app.getPath("userData"), "quota-state.json"),
+    fetchImpl: (url, options) => net.fetch(url, options)
   });
+  realtimeSync = new RealtimeSync({
+    service: quotaService,
+    onSnapshot: snapshot => window?.webContents.send("quota:snapshot", snapshot),
+    onTasks: result => window?.webContents.send("tasks:snapshot", result)
+  });
+  realtimeSync.start();
+  quotaService.onCostSnapshot = cost => {
+    if (realtimeSync.latest) realtimeSync.latest = { ...realtimeSync.latest, tokenCost: cost };
+    window?.webContents.send("cost:snapshot", cost);
+  };
+  quotaService.scheduleCostScan();
   registerIpc();
   createWindow();
+  monitorUpdater = new MonitorUpdater({
+    app, store, fetchImpl: (url, options) => net.fetch(url, options),
+    notify: state => window?.webContents.send("monitor-update:state", state),
+    idle: () => {
+      const remoteTasks = realtimeSync.latest?.activeTasks;
+      const tasks = (realtimeSync.latestTasks?.observedAt || 0) > (remoteTasks?.observedAt || 0) ? realtimeSync.latestTasks : remoteTasks;
+      return tasks?.available && !tasks.truncated && tasks.count === 0 &&
+        Date.now() - tasks.observedAt < 60000 && !isChangingWindowMode && !isTopDockInternalMove;
+    },
+    prepareQuit: async () => {
+      await Promise.allSettled([quotaService.inFlight, quotaService.activeTaskInFlight, quotaService.fullScanInFlight, quotaService.costScanInFlight]);
+      saveWindowPosition(window, "windowBounds");
+    }
+  });
+  monitorUpdater.start();
   tray = new Tray(createTrayIcon());
   tray.setToolTip(getLocalizedAppName());
   tray.setContextMenu(buildTrayMenu());
@@ -909,6 +955,8 @@ app.on("before-quit", () => {
   cancelTopDockPaintWaiter();
   saveWindowPosition(window, "windowBounds");
   quotaService?.dispose();
+  realtimeSync?.dispose();
+  monitorUpdater?.dispose();
 });
 
 app.on("window-all-closed", event => event.preventDefault());

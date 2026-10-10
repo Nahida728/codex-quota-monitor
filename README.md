@@ -1,426 +1,144 @@
-# Codex监测台
+# Codex Quota Monitor / Codex 监测台
 
-一款面向 Windows 的 Codex 桌面额度监视器。应用以 460 × 690 的液态玻璃悬浮卡片呈现 Codex 额度、恢复时间、重置次数和连接状态，支持中英文、自定义背景、系统托盘与位置锁定。
+[![Latest release](https://img.shields.io/github/v/release/Nahida728/codex-quota-monitor)](https://github.com/Nahida728/codex-quota-monitor/releases/latest)
+[![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4)](https://github.com/Nahida728/codex-quota-monitor/releases/latest)
+[![MIT License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-> [!IMPORTANT]
-> 这是非官方社区项目，与 OpenAI 没有隶属、合作或背书关系。Codex、OpenAI 及相关图标是其各自权利人的商标或资产。
+**额度还剩多少，任务花了多少，一眼看清。**
 
-> [!WARNING]
-> **v1.2.6** 新增 GPT-6 Sol/Luna 的 API 等价价格与 GPT Reserve 周额度检测；主界面以三张环形额度卡显示，未返回 Reserve 桶时明确显示不可用。`gpt-reserve`/`gptreverse` 的金额按 GPT-5.6 Luna 等价估算，并非官方发布的 Reserve API 价格。官方重置检测增加周额度提前恢复、5 小时额度恰好正常到期的场景；重置次数减少时不会误记官方重置。请不要手动删除 `%APPDATA%\codex-quota-monitor\quota-state.json.archive`。
+一款轻量的 Windows 桌面监测工具，把 Codex 额度、Token 用量、任务进度和 API 等价消费放在同一张悬浮卡片上。支持中文和英文、系统托盘、自定义背景，以及可以随手移动的悬浮球。
 
-## 目录
+[下载正式版](https://github.com/Nahida728/codex-quota-monitor/releases/latest) | [更新日志](CHANGELOG.md) | [反馈问题](https://github.com/Nahida728/codex-quota-monitor/issues) | [English](#english)
 
-- [主要功能](#主要功能)
-- [界面与交互](#界面与交互)
-- [运行要求](#运行要求)
-- [下载版本的区别](#下载版本的区别)
-- [使用方法](#使用方法)
-- [额度与事件判定](#额度与事件判定)
-- [连接状态](#连接状态)
-- [自定义背景](#自定义背景)
-- [隐私与本地数据](#隐私与本地数据)
-- [开发与构建](#开发与构建)
-- [测试](#测试)
-- [项目结构](#项目结构)
-- [故障排查](#故障排查)
-- [已知限制](#已知限制)
-- [许可证与图标](#许可证与图标)
+> 非官方社区项目，与 OpenAI 没有隶属、合作或背书关系。Codex、OpenAI 及相关图标归各自权利人所有。
+
+<img src="assets/screenshot-zh.png" alt="Codex 监测台中文界面" width="380">
 
 ## 主要功能
 
-- 显示 5 小时额度、剩余百分比和预计恢复时间。
-- 显示 1 周额度、剩余百分比和预计恢复时间。
-- 在账号提供独立 GPT Reserve 限额桶时，显示其周额度与恢复时间。
-- 当官方暂时不返回 5 小时窗口时，显示“官方暂未启用”，不会把 1 周窗口误判为短周期额度。
-- 逐条显示全部可用重置次数、每次重置类型与各自到期时间。
-- 5 小时、1 周与 GPT Reserve 采用三张并排环形卡；重置次数超过 6 条时在列表内部滚动，不会撑大窗口。
-- 额度下方以一排三张玻璃卡片显示：新重置次数、最近一次官方重置、Codex 客户端更新。
-- 检测安装后新收到的重置次数。
-- 永久保存检测到的重置次数使用记录，包括使用数量、检测时间和可识别的重置类型。
-- 检测官方远程重置：支持双额度同时提前恢复，以及 5 小时限额关闭时周额度提前恢复。
-- 永久保存官方重置历史，在主界面显示最近一次检测时间，并可打开完整记录列表。
-- 结合可用重置次数变化区分用户手动重置，避免误记为官方远程重置。
-- 检测 Codex app-server 与 OpenAI 服务是否保持连接。
-- 同时识别 Codex 客户端已经显示的待安装更新，以及本机已安装版本变化；额度服务离线时仍可显示更新状态。
-- 显示账户累计 Token、日均 Token、日均 API 等价消费、累计开发天数和日/周/月 Token 柱状图，悬停可查看每个统计周期的准确用量。
-- API 等价金额同时统计可读取的活动会话与归档会话；同一会话跨目录存在时只计算一次，归档不会再让累计估算回退。
-- 支持 GPT-6 Astra、Sol、Luna 以及当前、历史 Codex 原生 GPT 模型的标准 API 等价价格；价格表按官方资料标注日期维护。
-- 支持 Codex++ 接入的 DeepSeek、GLM、通义千问、MiniMax 与 Kimi 文本模型；可识别常见供应商前缀、路由后缀和日期后缀，并按第三方网关“输入与缓存输入分列”的计数口径还原总输入 Token。
-- 识别到付费订阅后，可点击连接状态查看套餐、累计协助开发天数、订阅到期时间和续费倒计时。
-- 显示当前 Codex 任务的耗时和 API 等价消费；任务完成或中断后可确认，或一键返回 Codex。
-- 区分正常完成、手动中断和异常中断；异常中断会提醒用户，并立即停止任务计时。
-- 从本机可读取的普通与归档会话恢复任务总数、总耗时、平均耗时、API 等价消费和结果分类，永久保存最长耗时与最高单任务消费。
-- 对不能覆盖全部活动的统计项，在二级界面提供可点击的统计口径说明。
-- 新断线会弹出淡红色玻璃诊断窗，集中列出客户端、登录、API Key、网络、VPN、防火墙和服务端等排查项，不再挤压主界面。
-- 连接呼吸灯可点击：绿色显示连接正常，红色重新打开断线排查。
-- 每 5 秒自动刷新，也可手动刷新。
-- 支持中文和英文界面。
-- 支持位置锁定、原生窗口拖动、始终置顶和系统托盘。
-- 支持点击选择或拖放上传背景图片。
-- 支持固定比例裁剪背景和调整背景透明度。
-
-## 界面与交互
-
-### 拖动与锁定
-
-窗口尺寸固定为 460 × 690。标题栏和四条 22px 宽的窗口边缘使用 Electron 原生拖动区域，不运行自定义逐帧移动代码。
-
-- 未锁定：可以拖动标题栏或四条窗口边缘移动卡片。
-- 已锁定：所有拖动区域同时停用。
-- 图钉按钮只控制窗口位置锁定，不控制始终置顶。
-- 窗口没有额外透明边距或系统外阴影。
-
-### 系统托盘
-
-应用关闭按钮默认将窗口隐藏到托盘，而不是退出进程。
-
-- 单击托盘图标：显示或隐藏卡片。
-- 托盘菜单：立即刷新、始终置顶、开机启动、退出。
-- 深色和浅色 Windows 主题会使用对应颜色的托盘图标。
-- 如需彻底退出，请使用托盘菜单中的“退出”。
-
-### 语言
-
-点击连接状态栏右侧的 `EN` 或 `中` 按钮切换语言。语言设置会保存在本机，下次启动继续使用。
-
-## 运行要求
-
-### 使用已打包版本
-
-- Windows 10 或 Windows 11，x64。
-- 已安装并登录 Codex。
-- Codex 能够连接 OpenAI 服务。
-- 中国大陆用户可能需要开启可用的 VPN。
-
-使用安装版或便携版时，不要求另外安装 Node.js。
-
-### 从源码运行
-
-- Node.js 20 或更高版本。
-- npm。
-- 已安装并登录 Codex。
-
-## 下载版本的区别
-
-| 版本 | 是否安装 | 适合场景 | 数据保存 |
-| --- | --- | --- | --- |
-| 便携版 | 不需要，双击 EXE 运行 | 临时使用、放在任意目录运行 | 设置仍保存在 Windows 用户数据目录 |
-| 安装版 | 需要运行安装程序 | 长期使用、创建快捷方式、从系统设置卸载 | 设置保存在 Windows 用户数据目录 |
-
-两个版本功能相同，不建议同时运行。
-
-“便携版”表示程序本体无需安装，并不表示完全无痕。语言、窗口位置、事件基线和自定义背景仍需要保存在当前 Windows 用户账户下。
-
-## 使用方法
-
-1. 启动并登录 Codex。
-2. 确认 Codex 可以正常访问 OpenAI。
-3. 运行 Codex监测台。
-4. 等待首次检测完成。
-5. 根据需要切换语言、锁定位置或设置背景。
-
-首次运行只建立检测基线。已有的重置次数不会被误报为“刚刚收到的新重置次数”。
-
-## 额度与事件判定
-
-### 数据来源
-
-应用启动本机 Codex 的 `app-server --stdio`，通过：
-
-```text
-account/rateLimits/read
-```
-
-读取服务端返回的额度信息。
-
-额度窗口根据服务端的 `windowDurationMins` 识别：
-
-- 5 小时窗口：约 300 分钟。
-- 1 周窗口：约 10080 分钟。
-- 识别时允许有限的时间偏差，避免依赖 `primary` 或 `secondary` 字段顺序。
-
-### 5 小时限额暂时关闭
-
-如果官方只返回 1 周窗口：
-
-- 5 小时面板显示“官方暂未启用”。
-- 1 周窗口仍正常显示。
-- 不会仅仅因为缺少 5 小时数据就判定官方重置。
-- 如果周额度从已使用状态在原定恢复时间前回到 100%，且没有消耗用户重置次数，则按“5 小时关闭 · 周额度提前恢复”记录为官方远程重置。
-
-### 新增重置次数
-
-应用会逐条显示服务端返回的所有可用重置记录，并保存已经见过的记录 ID：
-
-- 首次检测只建立基线。
-- 后续出现新的 ID 时，标记为收到新的重置次数。
-- 事件提示最长保留 7 天。
-- 1 至 6 条会完整排列在列表中；超过 6 条时列表内部滚动，窗口尺寸和其他状态区位置保持不变。
-- 如果某次服务端响应只包含总数而暂时缺少明细，应用会沿用上一次数量一致的完整明细，避免类型和到期时间瞬间丢失。
-
-### Codex 客户端更新
-
-应用读取 Windows 已安装的 `OpenAI.Codex` / `OpenAI.ChatGPT` Store 包版本，并解析 Codex 客户端自身写入的 `[windows-store-updater]` 状态行，检查结果缓存 15 分钟：
-
-- 首次检测只保存当前版本作为基线，不会误报为刚刚更新。
-- 当 Codex 自身完成 Windows Store 更新检查并写入 `hasUpdate=true`、`completed=true` 时，显示“发现可用更新”和目标版本；这与客户端侧边栏的“更新”按钮使用相同的本机更新结果。
-- 待安装提醒会持续保留，直到检测到目标版本已经安装，或 Codex 后续明确返回无更新。
-- 后续检测到已安装版本号升高时，显示“检测到新版已安装”，提醒保留 7 天。
-- 待安装版本、版本基线与升级时间保存在 `quota-state.json`，重启检测器后不会立即丢失。
-- 更新检测只读取 Codex 日志中的 updater 状态行，不读取对话正文、提示词或账号凭据。
-
-### 官方远程重置
-
-所有官方重置判定都要求：
-
-1. Codex 当前在线，并成功取得连续的新旧快照。
-2. 额度此前有实际用量，当前恢复到 100%。
-3. 当前时间距离旧快照中的原定恢复时间至少还有约 90 秒。
-4. 可用重置次数没有减少。
-
-在此基础上支持两种模式：
-
-| 模式 | 判定条件 |
+| 关注内容 | 监测台提供的信息 |
 | --- | --- |
-| 双额度提前恢复 | 5 小时和 1 周窗口在前后快照中均存在，并同时提前恢复到 100% |
-| 5 小时关闭 · 周额度提前恢复 | 当前官方没有返回 5 小时窗口，1 周窗口提前恢复到 100% |
+| 三种额度 | 5 小时、每周、独立 GPT Reserve 的剩余比例与恢复时间 |
+| 重置 | 可用重置次数、每次到期时间、收到和使用记录、社区公开重置公告 |
+| 重置概率 | 检查站提供的 24 / 48 小时估计，附来源、更新时间和统计范围 |
+| 用量与消费 | 官方累计 Token、工作天数、日 / 周 / 月趋势、本地模型明细与 API 等价消费 |
+| 最近任务 | 首字响应、实时总 Tokens、峰值 / 最低 / 平均输出速率、缓存命中率 |
+| 并行任务 | 大目标、子智能体、多模型参与、耗时与本轮消费，支持筛选和排序 |
+| 更新 | Codex 客户端更新状态；监测台自身从 GitHub 检查、下载和安装更新 |
 
-如果额度恢复的同时可用重置次数减少，应用会把它识别为用户手动使用重置次数，并明确显示“未计入官方记录”。正常到期恢复、首次运行或证据不完整时不会写入官方历史。
+## 下载与开始使用
 
-每条已检测事件都会写入永久历史，包含检测时间和判定模式。主界面显示最近一次记录；点击“官方额度重置”一行可查看按时间倒序排列的完整列表。旧版保存的单个 `officialResetAt` 时间戳会自动迁移到历史列表，不会因升级丢失。
+1. 从 [Releases](https://github.com/Nahida728/codex-quota-monitor/releases/latest) 下载 Windows x64 版本。
+2. **安装版**使用 `setup-x64.exe`，提供安装、快捷方式及卸载；**便携版**使用 `portable-x64.exe`，直接运行。
+3. 在这台电脑上安装官方 Codex Windows 客户端，并使用 ChatGPT 账户登录。监测台通过本地 app-server 读取额度，不需要填写 API Key。
+4. 设置中可以切换语言、上传背景、调整透明度和启用顶部吸附。卡片可以拖动、锁定、置顶、收进托盘或折叠为悬浮球。
 
-历史中的时间是检测器首次观察到变化的时间，通常与实际发生时间相差不超过一次 60 秒自动刷新间隔。该功能是基于连续快照的本地推断，不是 OpenAI 官方提供的“重置事件”通知；应用未运行、离线或缺少变化前快照时，无法追溯补记已经发生的事件。
+Windows x64；需要能够连接 OpenAI 服务的网络。API Key 登录通常不提供订阅额度。官方未返回 Reserve 独立桶时，界面会显示“未返回”。
 
-## 连接状态
+## 1.3.0 带来了什么
 
-“Codex 在线”表示以下流程成功：
+- 三额度和最近任务左右排列；重置管理、概率和客户端状态各有独立入口。
+- 最近任务在执行过程中同步用量和缓存命中率，支持多个模型参与。
+- 大目标和子智能体有明确标记。目标累计 Tokens、累计耗时与本轮模型消费分别展示。
+- 正常完成、手动中断和异常结束分开处理。目标阶段或子智能体的受控停止不会作为异常提醒；已完成任务可以一键确认。
+- 修复升级后模型用量减少的问题。归档会话继续计入，已有记录保留；API 消费详情提供“全量扫描全部会话”，用于主动重新核对历史数据。
+- 支持 GPT-6.1 Sol 的标准 API 等价计价；Reserve 从独立官方额度读取。
+- 新增自动更新，改进交互反馈、长文本换行和中英文文案。
 
-1. 找到本机 Codex 可执行文件。
-2. 启动 Codex app-server。
-3. 完成 app-server 初始化。
-4. 在 15 秒超时前成功读取额度。
+[查看今天的完整更新记录](CHANGELOG.md#130--2026-10-10)
 
-以下情况会显示离线：
+## 怎样理解这些数字
 
-- 未找到 Codex。
-- Codex 未启动、正在更新或重启。
-- Codex 尚未登录、登录已过期，或 API Key 登录无法提供订阅额度。
-- Codex app-server 异常退出。
-- 请求超时。
-- Codex 与 OpenAI 之间的网络连接不可用，或被 DNS、代理、路由、防火墙、安全软件和公司网络策略阻止。
-- OpenAI 服务临时故障或维护。
+**累计 Token**来自官方账户使用统计。**模型和任务明细**来自这台电脑的 Codex 日志，覆盖普通及归档会话；不涵盖其他设备或未落盘的调用。模型明细可能按官方每日用量校正，因此不能直接当作官方逐模型账单。
 
-每次启动后首次检测到断线时，应用会自动显示一次淡红色玻璃弹窗。点击“我已知晓”后，本次运行期间不会因定时刷新或网络抖动再次自动弹出。也可以随时点击连接状态的呼吸灯查看：绿色显示连接正常，红色重新打开完整排查列表。
+**API 等价消费**按公开标准 API 价格估算，不是订阅账单，也不表示实际扣款。缓存输入已经包含在输入 Token 中，不应再次相加。历史记录缺少完整定价信息时，保留 Token 并标注金额待重算。
 
-如果你在中国大陆并显示断线，请依次检查：
+**缓存命中率**为已观测调用的缓存输入 / 输入 Tokens，多个模型按输入量加权，不包含输出。**峰值和最低速率**是日志记录之间的输出区间速率；平均速率包含整个回合的等待和工具时间。官方未记录首字响应时显示“—”。
 
-1. VPN 是否开启并可访问 OpenAI。
-2. Codex 是否已登录。
-3. Codex 本身能否正常发送请求。
-4. 防火墙或安全软件是否拦截 Codex。
+**重置公告和概率**来自 [Codex Reset](https://codex-reset.com/) 和 [Codex Reset Tracker](https://codexresettracker.com/)。公告能在恢复联网后补看，但不证明本账户已经重置；概率是社区估计，不能保证未来重置。过期或样本不足的数据不显示概率。本机推断的非自然重置不再进入公告历史。
 
-## 自定义背景
+## 自动更新与本地数据
 
-### 上传方式
+监测台启动后会自动检查本仓库，之后定期检查并下载新版本。下载就绪后，在已观测任务空闲时重启监测台，也可以在设置中点击“重启并更新”。安装版使用 Electron 更新器；便携版核对 GitHub 文件摘要后替换程序，并保留旧文件以便回退。
 
-- 点击背景设置中的上传区域选择文件。
-- 将图片直接拖放到上传区域。
+更新会重启监测台，**不会停止 Codex 或它的任务**。首个带自动更新功能的版本需要手动安装；正式版接收后续正式版本，测试版也可以接收后续测试版本。
 
-支持 PNG、JPG/JPEG、WebP 和 GIF，单个源文件不能超过 20 MB。
+设置、背景和统计记录保存在本机应用数据目录中。监测台不上传对话；界面不接触账户凭据、API Key 或原始对话内容。额度通信由本地 Codex app-server 处理；网络请求也用于公开检查站和 GitHub 更新。请保留 `quota-state.json.archive`，它用于恢复历史记录。
 
-### 尺寸要求
-
-源图片必须同时满足：
-
-```text
-宽度 > 460 px
-高度 > 690 px
-```
-
-等于 460 × 690 仍会被拒绝。这样可以保证用户有可调整的裁剪空间，而不是直接拉伸低分辨率图片。
-
-### 裁剪
-
-- 裁剪框比例固定为 460:690。
-- 拖动裁剪框可调整位置。
-- 拖动右下角控制点可缩放裁剪框。
-- 裁剪范围始终限制在源图片内部。
-- 最终背景保存为 460 × 690 PNG。
-- 可调节背景透明度，或恢复默认背景。
-
-## 隐私与本地数据
-
-应用不会要求用户手动输入 OpenAI API Key，也不会读取或记录登录令牌。
-
-安全边界：
-
-- 凭据只由本机 Codex app-server 管理。
-- 渲染进程启用 `contextIsolation` 和沙箱。
-- 渲染进程未启用 Node.js。
-- 主进程只通过受限的 preload API 向界面暴露必要操作。
-- Codex app-server 的 stderr、令牌和原始协议负载不会写入应用日志。
-
-应用会在 Electron 的 Windows `userData` 目录保存：
-
-- `settings.json`：语言、窗口位置、置顶、锁定和背景透明度等设置。
-- `quota-state.json`：用于新增重置、官方提前重置和 Codex 客户端版本判定的本地基线，以及永久保存的官方重置历史。
-- `quota-state.json.archive/`：定期生成的不可变状态存档。主文件损坏或被异常重置时，会使用有效存档恢复并合并永久历史。
-- `custom-background.png`：用户裁剪后的背景图片。
-
-删除这些文件会重置对应设置与检测基线。
-
-## 开发与构建
-
-克隆仓库：
+## 开发
 
 ```powershell
-git clone https://github.com/Nahida728/codex-quota-monitor.git
-cd codex-quota-monitor
-```
-
-安装依赖：
-
-```powershell
-npm install
-```
-
-开发运行：
-
-```powershell
+npm ci
 npm start
-```
-
-打开开发者工具：
-
-```powershell
-npm run dev
-```
-
-重新生成托盘图标：
-
-```powershell
-npm run icons
-```
-
-构建 Windows 安装版和便携版：
-
-```powershell
-npm run build
-```
-
-默认输出：
-
-```text
-release/
-├─ Codex监测台-1.2.3-portable-x64.exe
-├─ Codex监测台-1.2.3-setup-x64.exe
-└─ win-unpacked/
-```
-
-`node_modules/` 和 `release/` 已在 `.gitignore` 中排除，不应提交到源码仓库。建议将构建产物上传到 GitHub Releases。
-
-## 测试
-
-运行全部测试：
-
-```powershell
 npm test
+npm run build -- --publish never
 ```
 
-当前测试覆盖：
+主要逻辑位于 `src/`。修改前请阅读 [AGENTS.md](AGENTS.md)。便携版和安装版打包内容使用明确白名单，开发文件不进入应用。
 
-- 横向图片在裁剪舞台中的包含布局。
-- 固定 460:690 裁剪比例。
-- 裁剪框移动、缩放和边界限制。
-- 显示坐标到源图片像素的映射。
-- 通过窗口时长识别 5 小时和 1 周额度。
-- 5 小时窗口缺失的官方特殊状态。
-- 左右额度双卡和大量重置次数滚动布局。
-- 六条重置记录及各自到期时间的完整保留。
-- 服务端偶发只返回总数时的明细缓存恢复。
-- 首次快照不误报已有重置次数。
-- 新增重置次数检测。
-- 正常恢复与提前恢复的区分。
-- 双额度提前恢复的官方重置判定。
-- 5 小时限额关闭时的周额度提前恢复判定。
-- 用户手动消耗重置次数时不误判为官方重置。
-- 官方重置永久历史、旧版记录迁移与相邻刷新去重。
+遇到问题时，请附版本、语言和复现步骤；日志中请移除账户或个人信息。欢迎通过 Issue 或 Pull Request 提出改进。觉得有用的话，可以给项目一个 Star，方便以后找到它。
 
-## 项目结构
+---
 
-```text
-codex-quota-monitor/
-├─ assets/                    # Codex 图标及托盘图标
-├─ scripts/
-│  └─ build-icons.js          # 生成深浅色托盘尺寸
-├─ src/
-│  ├─ main.js                 # Electron 主进程、窗口、托盘和 IPC
-│  ├─ preload.js              # 受限的渲染进程桥接 API
-│  ├─ quota-service.js        # Codex app-server 客户端
-│  ├─ quota-normalizer.js     # 额度标准化和事件判定
-│  ├─ store.js                # 本地 JSON 状态存储
-│  └─ renderer/
-│     ├─ index.html           # 界面结构
-│     ├─ styles.css           # 液态玻璃样式和布局
-│     ├─ renderer.js          # UI 状态、语言、背景和刷新逻辑
-│     └─ crop-geometry.js     # 背景裁剪几何算法
-├─ test/                      # Node.js 自动测试
-├─ package.json               # 脚本和 electron-builder 配置
-└─ README.md
-```
+## English
 
-## 故障排查
+**See your remaining quota and task usage at a glance.**
 
-### 显示“连接断开”
+Codex Quota Monitor is a compact Windows desktop companion for Codex. A floating card brings quota, token usage, task progress and API-equivalent costs together. It supports Chinese and English, the system tray, custom backgrounds and a movable floating orb.
 
-- 先确认 Codex 自己是否能正常使用。
-- 退出并重新登录 Codex。
-- 检查 VPN、代理、防火墙和网络。
-- 等待 60 秒自动刷新，或点击刷新按钮。
-- 如果已经关闭提示，可点击红色连接呼吸灯重新打开完整排查列表。
+[Download the stable release](https://github.com/Nahida728/codex-quota-monitor/releases/latest) | [Changelog](CHANGELOG.md#130--2026-10-10) | [Report an issue](https://github.com/Nahida728/codex-quota-monitor/issues)
 
-### 显示“未找到本机 Codex”
+> An independent community project. It is not affiliated with, partnered with or endorsed by OpenAI. Codex, OpenAI and their icons belong to their respective owners.
 
-应用当前会查找 Codex 在用户目录下使用的 app-server 可执行文件。请确认 Codex 已正确安装并至少运行过一次。
+<img src="assets/screenshot-en.png" alt="Codex Quota Monitor in English" width="380">
 
-### 5 小时额度显示“官方暂未启用”
+### Features
 
-这通常表示服务端当前没有返回 5 小时窗口，不代表应用离线。1 周额度仍可继续使用和显示。
+| Area | What you can see |
+| --- | --- |
+| Quota | Remaining 5-hour, weekly and independent GPT Reserve quota, with recovery times |
+| Resets | Available credits, individual expiry dates, received/consumed history and public announcements |
+| Reset estimates | Community 24 / 48-hour probabilities with source, freshness and sample information |
+| Usage and cost | Official lifetime tokens, recorded work days, daily/weekly/monthly trends and local model costs |
+| Latest task | First-token latency, live total tokens, peak/minimum/average output rates and cache hit rate |
+| Concurrent tasks | Goals, subagents, multiple models, elapsed time and current-turn costs, with filtering and sorting |
+| Updates | Codex client update status and automatic GitHub updates for the monitor itself |
 
-### 拖不动窗口
+### Getting started
 
-- 检查图钉按钮是否处于锁定状态。
-- 尝试拖动标题栏空白区域。
-- 尝试拖动窗口四条边缘。
-- 窗口按钮、语言按钮和连接状态栏不是拖动区域。
+1. Download the Windows x64 build from [Releases](https://github.com/Nahida728/codex-quota-monitor/releases/latest).
+2. Choose `setup-x64.exe` for installation, shortcuts and uninstall support, or run `portable-x64.exe` directly.
+3. Install the official Codex Windows client and sign in with your ChatGPT account. The monitor reads quota through the local app-server; no API Key entry is required.
+4. Use Settings to change language, upload a background and enable top-edge docking. Move, lock or pin the card, hide it in the tray, or collapse it to an orb.
 
-### 关闭后程序仍在运行
+Requires Windows x64 and network access to OpenAI. API-key mode usually does not supply subscription quota. GPT Reserve stays unavailable when its independent bucket is absent.
 
-关闭按钮默认隐藏到托盘。请在托盘菜单选择“退出”。
+### What's new in 1.3.0
 
-### 背景图片无法上传
+The quota panel now sits beside the live task dashboard. Reset management, reset estimates and client updates have separate entry points. Goals and subagents show their context and participating models; goal-wide tokens/time are kept separate from current-turn costs. Completed tasks can be confirmed together, and managed goal/subagent stops are distinguished from abnormal interruptions.
 
-- 检查格式是否为 PNG、JPG/JPEG、WebP 或 GIF。
-- 检查文件是否超过 20 MB。
-- 检查宽度是否严格大于 460 px。
-- 检查高度是否严格大于 690 px。
+This release fixes model usage disappearing after an upgrade, retains recorded usage from archived sessions, adds an explicit full-history scan, supports GPT-6.1 Sol pricing, improves Reserve reads and introduces automatic monitor updates. Text, wrapping and interaction feedback have also been revised. See the [full changelog](CHANGELOG.md).
 
-### 便携版是否需要安装
+### Reading the metrics
 
-不需要。直接双击便携版 EXE 即可运行。只有需要桌面快捷方式和系统卸载入口时才建议使用安装版。
+Lifetime tokens come from the official account usage endpoint. Model/task details come from local normal and archived Codex sessions and do not include other devices or unlogged calls. Model totals may be calibrated against official daily usage; they are not an official per-model bill.
 
-## 已知限制
+API-equivalent cost uses standard published API rates. It is an estimate, not a subscription charge. Input already includes cached input. Historical tokens remain visible when missing pricing information requires recalculation.
 
-- 当前构建目标是 Windows x64。
-- 额度读取依赖 Codex app-server；如果 Codex 修改本地接口、方法名或安装路径，应用可能需要更新。
-- 官方提前重置是本地快照推断，不是服务端事件订阅。
-- 自动刷新间隔固定为 60 秒，短时间内发生并恢复的状态可能无法被观察到。
-- 应用未运行、离线或没有保存变化前快照时，不能追溯补记过去的官方重置。
-- 便携版仍会在 Windows 用户数据目录写入设置和检测基线。
-- 项目不提供或绕过任何 Codex 额度，只负责显示和推断已有账户状态。
+Cache hit rate is cached input divided by input over observed calls, weighted across models and excluding output. Peak/minimum rates average output between log records; the average includes whole-turn waits and tool time. Missing first-token latency is shown as “—”.
 
-## 许可证与图标
+Public reset announcements and estimates come from [Codex Reset](https://codex-reset.com/) and [Codex Reset Tracker](https://codexresettracker.com/). They describe community observations and do not confirm a reset for your account. Stale or insufficient samples have no displayed probability. Locally inferred non-natural resets are no longer used as announcement history.
 
-源代码采用 [MIT License](./LICENSE)。
+### Updates and privacy
 
-`assets/` 中的 Codex / OpenAI 图标来自本机 Codex 安装资源，不属于本项目的 MIT 授权范围。公开分发、修改或用于其他产品前，请自行确认相关品牌和资产使用要求。
+The monitor checks this repository automatically and downloads available updates. When observed tasks are idle, it restarts to install; Settings also provides a manual restart/update action. Electron binaries require a monitor restart. Codex and its tasks keep running. Install this release manually to enable future automatic updates; stable builds follow stable releases, while beta builds may also receive prereleases.
+
+Settings, backgrounds and usage records stay in local application data. The monitor does not upload conversations or expose credentials to its UI. It uses the local Codex app-server for quota, public checkpoints for announcements and GitHub for updates. Keep `quota-state.json.archive` for history recovery.
+
+### Contributing
+
+Use the development commands above and read [AGENTS.md](AGENTS.md) before making changes. Issues and pull requests are welcome. Include your version and reproduction steps, and remove personal information from logs. A Star helps you find the project again and lets us know it is useful.
+
+## License
+
+[MIT](LICENSE). Third-party trademarks and icons retain their owners' rights.

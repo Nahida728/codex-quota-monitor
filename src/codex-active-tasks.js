@@ -4,6 +4,8 @@ const crypto = require("node:crypto");
 const os = require("node:os");
 const path = require("node:path");
 const readline = require("node:readline");
+const { readGoalContexts, normalizeTaskContext } = require("./codex-task-context");
+const { normalizeTaskTelemetry, summarizeTaskTelemetry } = require("./task-telemetry");
 
 const {
   PRICING_DATE,
@@ -12,7 +14,7 @@ const {
 
 const ACTIVE_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1_000;
 const ACTIVE_INACTIVITY_TIMEOUT_MS = 15 * 60 * 1_000;
-const PROJECT_HEAD_BYTES = 64 * 1024;
+const PROJECT_HEAD_BYTES = 512 * 1024;
 const INITIAL_TAIL_BYTES = 256 * 1024;
 const MAX_ACTIVE_TURN_BYTES = 64 * 1024 * 1024;
 const MAX_CANDIDATE_FILES = 96;
@@ -28,7 +30,8 @@ const MAX_PERSISTED_HISTORY_ROLLOUTS = 1_000;
 const TASK_OUTCOMES = new Set([
   "completed",
   "manual-interrupted",
-  "abnormal-interrupted"
+  "abnormal-interrupted",
+  "managed-stopped"
 ]);
 
 function normalizeTimestampSeconds(value, fallback) {
@@ -64,17 +67,21 @@ function normalizeTaskOutcome(value) {
 
 function parseRelevantRecord(line) {
   if (typeof line !== "string" || !line) return null;
-  const isLifecycle = line.includes('"type":"task_started"') ||
-    line.includes('"type":"task_complete"') ||
-    line.includes('"type":"turn_aborted"');
-  const isSession = line.includes('"type":"session_meta"');
-  if (!isLifecycle && !isSession) return null;
+  const isRelevant = /"type"\s*:\s*"(?:task_started|task_complete|task_completed|turn_aborted|session_meta|response_item)"/.test(line);
+  if (!isRelevant) return null;
+  if (/"type"\s*:\s*"response_item"/.test(line) &&
+      !/"phase"\s*:\s*"final_answer"/.test(line)) return null;
   try {
-    const record = JSON.parse(line);
+    const record = JSON.parse(line.replace(/^\uFEFF/, ""));
     const payloadType = record?.payload?.type;
+    if (record.type === "response_item" && record.payload?.role === "assistant" &&
+        record.payload?.phase === "final_answer") {
+      return { kind: "task_complete", eventAt: normalizeTimestampSeconds(null, record.timestamp),
+        completedAtExplicit: true, durationSeconds: null, turnId: null, finalAnswer: true };
+    }
     if (
       record?.type === "event_msg" &&
-      ["task_started", "task_complete", "turn_aborted"].includes(payloadType)
+      ["task_started", "task_complete", "task_completed", "turn_aborted"].includes(payloadType)
     ) {
       const durationMs = Number(record.payload.duration_ms);
       const reason = typeof record.payload.reason === "string" &&
@@ -82,8 +89,8 @@ function parseRelevantRecord(line) {
         ? record.payload.reason.trim().toLowerCase()
         : null;
       return {
-        kind: payloadType,
-        startedAt: normalizeTimestampSeconds(record.payload.started_at),
+        kind: payloadType === "task_completed" ? "task_complete" : payloadType,
+        startedAt: normalizeTimestampSeconds(record.payload.started_at, payloadType === "task_started" ? record.timestamp : null),
         eventAt: normalizeTimestampSeconds(
           record.payload.completed_at,
           record.timestamp
@@ -91,15 +98,25 @@ function parseRelevantRecord(line) {
         durationSeconds: Number.isFinite(durationMs) && durationMs >= 0
           ? Math.floor(durationMs / 1_000)
           : null,
+        durationMs: Number.isFinite(record.payload.duration_ms) && record.payload.duration_ms >= 0
+          ? record.payload.duration_ms : null,
+        firstTokenMs: Number.isFinite(record.payload.time_to_first_token_ms) && record.payload.time_to_first_token_ms >= 0
+          ? record.payload.time_to_first_token_ms : null,
         completedAtExplicit: Number.isFinite(record.payload.completed_at),
         reason,
-        turnId: normalizeTurnId(record.payload.turn_id)
+        turnId: normalizeTurnId(record.payload.turn_id),
+        rootTurnId: normalizeTurnId(record.payload.root_turn_id)
       };
     }
     if (record?.type === "session_meta") {
+      const spawn = record.payload?.source?.subagent?.thread_spawn || record.payload?.source?.subagent?.spawn || record.payload?.source?.subagent ||
+        record.payload?.source?.spawn;
       return {
         kind: "session_meta",
-        projectName: normalizeProjectName(record?.payload?.cwd)
+        projectName: normalizeProjectName(record?.payload?.cwd),
+        threadId: normalizeTurnId(record.payload?.id),
+        taskKind: spawn && typeof spawn === "object" ? "subagent" : "task",
+        parentThreadId: normalizeTurnId(record.payload?.parent_thread_id || spawn?.parent_thread_id)
       };
     }
   } catch {
@@ -179,7 +196,7 @@ function projectNameFromLines(lines, fallback) {
 
 function timestampFromLine(line) {
   if (typeof line !== "string") return null;
-  const match = line.match(/"timestamp":"([^"]{10,40})"/);
+  const match = line.match(/"timestamp"\s*:\s*"([^"]{10,40})"/);
   return match ? normalizeTimestampSeconds(null, match[1]) : null;
 }
 
@@ -190,6 +207,35 @@ function latestTimestampFromLines(lines, fallback = null) {
     if (timestamp && (!latest || timestamp > latest)) latest = timestamp;
   }
   return latest;
+}
+
+function compactTaskLines(lines) {
+  const compact = [];
+  for (const line of lines) {
+    if (!/"type"\s*:\s*"(?:turn_context|token_count|task_started|task_complete|task_completed|turn_aborted|response_item)"/.test(line)) continue;
+    try {
+      const record = JSON.parse(line);
+      if (record.type === "turn_context") {
+        compact.push(JSON.stringify({ type: record.type, timestamp: record.timestamp, payload: { model: record.payload?.model } }));
+      } else if (record.type === "event_msg" && record.payload?.type === "token_count") {
+        const usage = value => value && Object.fromEntries(["input_tokens", "cached_input_tokens", "cache_write_input_tokens",
+          "output_tokens", "reasoning_output_tokens", "total_tokens"].map(key => [key, value[key]]));
+        compact.push(JSON.stringify({ type: record.type, timestamp: record.timestamp, payload: { type: "token_count",
+          info: { total_token_usage: usage(record.payload.info?.total_token_usage), last_token_usage: usage(record.payload.info?.last_token_usage) } } }));
+      } else {
+        const relevant = parseRelevantRecord(line);
+        if (!relevant) continue;
+        compact.push(JSON.stringify(relevant.finalAnswer
+          ? { type: "response_item", timestamp: record.timestamp, payload: { role: "assistant", phase: "final_answer" } }
+          : { type: "event_msg", timestamp: record.timestamp, payload: { type: relevant.kind, turn_id: relevant.turnId,
+              root_turn_id: relevant.rootTurnId, started_at: relevant.startedAt, completed_at: record.payload?.completed_at,
+              duration_ms: relevant.durationMs ?? undefined, time_to_first_token_ms: relevant.firstTokenMs ?? undefined, reason: relevant.reason } }));
+      }
+    } catch {}
+  }
+  const latest = latestTimestampFromLines(lines);
+  if (latest) compact.push(JSON.stringify({ timestamp: new Date(latest * 1000).toISOString() }));
+  return compact;
 }
 
 function normalizeCostModels(models) {
@@ -227,6 +273,8 @@ function summarizeTaskWindow(lines, now = Date.now(), metadata = {}) {
 
   const nowSeconds = Math.floor(now / 1_000);
   const projectName = projectNameFromLines(safeLines, metadata.projectName);
+  const session = safeLines.map(parseRelevantRecord).find(record => record?.kind === "session_meta") || {};
+  const context = normalizeTaskContext({ ...session, ...metadata });
   if (lifecycle.record.kind === "task_started") {
     const startedAt = lifecycle.record.startedAt;
     if (!Number.isFinite(startedAt) || startedAt <= 0 || startedAt > nowSeconds + 300) {
@@ -239,8 +287,11 @@ function summarizeTaskWindow(lines, now = Date.now(), metadata = {}) {
         projectName,
         startedAt,
         elapsedSeconds: Math.max(0, nowSeconds - startedAt),
+        telemetry: summarizeTaskTelemetry(safeLines.slice(lifecycle.index),
+          { ...lifecycle.record, startedAt, eventAt: now / 1000, durationMs: null }, cost, Boolean(metadata.partial)),
         ...cost,
         partial: Boolean(metadata.partial),
+        ...context,
         pricingDate: PRICING_DATE
       },
       terminalTask: null,
@@ -272,7 +323,9 @@ function summarizeTaskWindow(lines, now = Date.now(), metadata = {}) {
     : (
         lifecycle.record.reason === "interrupted"
           ? "manual-interrupted"
-          : "abnormal-interrupted"
+          : (context.goalStatus || context.taskKind === "subagent") &&
+              ["goal_complete", "goal_paused", "budget_limit", "usage_limit", "agent_closed", "parent_complete"].includes(lifecycle.record.reason)
+            ? "managed-stopped" : "abnormal-interrupted"
       );
   return {
     task: null,
@@ -288,7 +341,12 @@ function summarizeTaskWindow(lines, now = Date.now(), metadata = {}) {
       ) * 1_000,
       elapsedSeconds: duration.elapsedSeconds,
       durationKnown: duration.durationKnown,
+      telemetry: summarizeTaskTelemetry(
+        safeLines.slice(start?.index ?? 0, lifecycle.index + 1),
+        { ...lifecycle.record, startedAt }, cost, Boolean(metadata.partial || !start)
+      ),
       outcome,
+      ...context,
       ...cost,
       partial: Boolean(metadata.partial),
       pricingDate: PRICING_DATE
@@ -312,7 +370,8 @@ async function readProjectNameFromHead(handle, fileSize, byteBudget) {
   for (const line of lines) {
     const record = parseRelevantRecord(line);
     if (record?.kind === "session_meta" && record.projectName) {
-      return { projectName: record.projectName, bytesRead };
+      return { projectName: record.projectName, threadId: record.threadId,
+        taskKind: record.taskKind, parentThreadId: record.parentThreadId, bytesRead };
     }
   }
   return { projectName: null, bytesRead };
@@ -382,7 +441,7 @@ async function listRolloutFiles(roots, now, lookbackMs = null) {
   return [...unique.values()];
 }
 
-async function readTaskWindow(file, byteBudget) {
+async function readTaskWindow(file, byteBudget, observedTurnId = null) {
   const handle = await fs.open(file.path, "r");
   let windowBytes = Math.min(file.size, INITIAL_TAIL_BYTES, byteBudget);
   let bytesReadTotal = 0;
@@ -401,7 +460,8 @@ async function readTaskWindow(file, byteBudget) {
           lifecycle.index,
           lifecycle.record.turnId
         ));
-      if (lifecycle && (hasRequiredStart || start === 0)) {
+      const hasObservedTurn = !observedTurnId || lines.some(line => parseRelevantRecord(line)?.turnId === observedTurnId);
+      if (lifecycle && ((hasRequiredStart && hasObservedTurn) || start === 0)) {
         const head = await readProjectNameFromHead(
           handle,
           file.size,
@@ -412,18 +472,25 @@ async function readTaskWindow(file, byteBudget) {
           lines,
           bytesRead: bytesReadTotal,
           partial: !hasRequiredStart,
-          projectName: head.projectName
+          projectName: head.projectName,
+          threadId: head.threadId, taskKind: head.taskKind, parentThreadId: head.parentThreadId,
+          trailingLine: (() => {
+            const last = rawLines.at(-1) || "";
+            try { JSON.parse(last); return ""; } catch { return last; }
+          })()
         };
       }
       if (start === 0 || windowBytes >= MAX_ACTIVE_TURN_BYTES || windowBytes >= byteBudget) {
         return { lines: [], bytesRead: bytesReadTotal, partial: start > 0 };
       }
-      windowBytes = Math.min(
+      const nextWindowBytes = Math.min(
         file.size,
         windowBytes * 2,
         MAX_ACTIVE_TURN_BYTES,
-        byteBudget
+        Math.max(0, byteBudget - bytesReadTotal)
       );
+      if (nextWindowBytes <= windowBytes) return { lines, bytesRead: bytesReadTotal, partial: true };
+      windowBytes = nextWindowBytes;
     }
   } finally {
     await handle.close();
@@ -441,6 +508,7 @@ function createTaskHistory(observedAt, truncated = false) {
     completedTaskCount: 0,
     manualInterruptedTaskCount: 0,
     abnormalInterruptedTaskCount: 0,
+    managedStoppedTaskCount: 0,
     longestElapsedSeconds: 0,
     highestEstimatedCostUsd: 0,
     observedAt,
@@ -467,13 +535,15 @@ function addTaskToHistory(history, task) {
   }
   if (task.outcome === "completed") history.completedTaskCount += 1;
   else if (task.outcome === "manual-interrupted") history.manualInterruptedTaskCount += 1;
+  else if (task.outcome === "managed-stopped") history.managedStoppedTaskCount += 1;
   else history.abnormalInterruptedTaskCount += 1;
 }
 
 function finalizeHistory(history) {
   const outcomeTotal = Math.max(0, Math.floor(history.completedTaskCount)) +
     Math.max(0, Math.floor(history.manualInterruptedTaskCount)) +
-    Math.max(0, Math.floor(history.abnormalInterruptedTaskCount));
+    Math.max(0, Math.floor(history.abnormalInterruptedTaskCount)) +
+    Math.max(0, Math.floor(history.managedStoppedTaskCount));
   history.totalTaskCount = Math.max(0, Math.floor(history.totalTaskCount));
   history.timedTaskCount = Math.max(0, Math.floor(history.timedTaskCount));
   history.totalTaskCount = Math.max(
@@ -495,8 +565,9 @@ function finalizeHistory(history) {
   return history;
 }
 
-async function scanTaskHistoryFile(file, history, now) {
+async function scanTaskHistoryFile(file, history, now, goalContexts = new Map()) {
   let projectName = null;
+  let context = {};
   let active = null;
   let lastObservedAt = null;
   const stream = fsSync.createReadStream(file.path, { encoding: "utf8" });
@@ -530,7 +601,8 @@ async function scanTaskHistoryFile(file, history, now) {
           : (
               terminal?.reason === "interrupted"
                 ? "manual-interrupted"
-                : "abnormal-interrupted"
+                : (context.goalStatus || context.taskKind === "subagent") && ["goal_complete", "goal_paused", "budget_limit", "usage_limit", "agent_closed", "parent_complete"].includes(terminal?.reason)
+                  ? "managed-stopped" : "abnormal-interrupted"
             )
       )
     });
@@ -545,6 +617,7 @@ async function scanTaskHistoryFile(file, history, now) {
     const record = parseRelevantRecord(line);
     if (record?.kind === "session_meta") {
       if (record.projectName) projectName = record.projectName;
+      context = { ...record, ...(goalContexts.get(record.threadId) || goalContexts.get(record.parentThreadId) || {}) };
       continue;
     }
     if (record?.kind === "task_started") {
@@ -552,7 +625,7 @@ async function scanTaskHistoryFile(file, history, now) {
         finishActive({
           eventAt: record.eventAt || record.startedAt,
           durationSeconds: null
-        }, "abnormal-interrupted", true);
+        }, context.goalStatus ? "managed-stopped" : "abnormal-interrupted", true);
       }
       if (Number.isFinite(record.startedAt) && record.startedAt > 0) {
         active = {
@@ -592,7 +665,7 @@ async function scanTaskHistoryFile(file, history, now) {
     finishActive({
       eventAt: lastObservedAt,
       durationSeconds: null
-    }, "abnormal-interrupted", true);
+    }, context.goalStatus ? "managed-stopped" : "abnormal-interrupted", true);
   }
 }
 
@@ -630,6 +703,7 @@ function normalizeTerminalTask(value) {
   const endedAt = normalizeTimestampSeconds(value?.endedAt) ||
     Math.max(startedAt, Math.floor(Number(value?.completedAt) / 1_000) || startedAt);
   return {
+    ...normalizeTaskContext(value),
     id: normalizeTurnId(value?.id),
     projectName: normalizeProjectName(value?.projectName),
     startedAt,
@@ -640,6 +714,7 @@ function normalizeTerminalTask(value) {
       : Math.max(0, endedAt - startedAt),
     durationKnown: value?.durationKnown !== false,
     outcome: normalizeTaskOutcome(value?.outcome),
+    telemetry: normalizeTaskTelemetry(value?.telemetry),
     estimatedCostUsd: Number.isFinite(value?.estimatedCostUsd)
       ? Math.max(0, value.estimatedCostUsd)
       : null,
@@ -671,10 +746,12 @@ function normalizeTaskHistory(value, now = Date.now()) {
     completedTaskCount: count("completedTaskCount"),
     manualInterruptedTaskCount: count("manualInterruptedTaskCount"),
     abnormalInterruptedTaskCount: count("abnormalInterruptedTaskCount"),
+    managedStoppedTaskCount: count("managedStoppedTaskCount"),
     longestElapsedSeconds: count("longestElapsedSeconds"),
     highestEstimatedCostUsd: money("highestEstimatedCostUsd"),
     observedAt: Number.isFinite(value.observedAt) ? value.observedAt : now,
-    truncated: Boolean(value.truncated)
+    truncated: Boolean(value.truncated),
+    deferred: Boolean(value.deferred)
   };
 }
 
@@ -685,7 +762,8 @@ const TASK_HISTORY_SUM_FIELDS = [
   "totalEstimatedCostUsd",
   "completedTaskCount",
   "manualInterruptedTaskCount",
-  "abnormalInterruptedTaskCount"
+  "abnormalInterruptedTaskCount",
+      "managedStoppedTaskCount"
 ];
 
 const TASK_HISTORY_MAX_FIELDS = [
@@ -773,9 +851,9 @@ function normalizeTaskHistorySnapshot(value, legacyFallback = null, now = Date.n
   };
 }
 
-async function scanTaskHistoryEntry(file, now) {
+async function scanTaskHistoryEntry(file, now, goalContexts) {
   const history = createTaskHistory(now, false);
-  await scanTaskHistoryFile(file, history, now);
+  await scanTaskHistoryFile(file, history, now, goalContexts);
   return {
     id: persistedHistoryRolloutId(file),
     fingerprint: historyRolloutFingerprint(file),
@@ -841,7 +919,8 @@ class CodexActiveTaskReader {
     historyCacheMs = HISTORY_CACHE_MS,
     maxHistoryFiles = MAX_HISTORY_FILES,
     maxHistoryFileBytes = MAX_HISTORY_FILE_BYTES,
-    maxHistoryTotalBytes = MAX_HISTORY_TOTAL_BYTES
+    maxHistoryTotalBytes = MAX_HISTORY_TOTAL_BYTES,
+    goalContextReader = readGoalContexts
   } = {}) {
     const codexRoot = path.join(os.homedir(), ".codex");
     const primaryRoot = sessionsRoot || path.join(codexRoot, "sessions");
@@ -863,17 +942,88 @@ class CodexActiveTaskReader {
     this.cachedHistory = null;
     this.cachedHistoryAt = 0;
     this.cachedLifecycleFingerprint = null;
+    this.goalContextReader = goalContextReader;
+    this.observedRolloutTurns = new Map();
+    this.taskWindowCache = new Map();
+    this.taskWindowCacheBytes = 0;
+    this.windowComputations = new WeakMap();
+  }
+
+  summarizeCachedWindow(window, now, metadata) {
+    const contextKey = JSON.stringify(metadata);
+    let cached = this.windowComputations.get(window.lines);
+    if (!cached || cached.contextKey !== contextKey) {
+      const summary = summarizeTaskWindow(window.lines, now, metadata);
+      const priorTerminals = [];
+      let segmentStart = 0;
+      const terminalIndices = [];
+      window.lines.forEach((line, index) => {
+        const record = parseRelevantRecord(line);
+        if (record?.kind === "task_started") segmentStart = index;
+        if (record && ["task_complete", "turn_aborted"].includes(record.kind)) terminalIndices.push({ index, segmentStart });
+      });
+      for (const entry of terminalIndices.slice(-MAX_CANDIDATE_FILES)) {
+        const prior = summarizeTaskWindow(window.lines.slice(entry.segmentStart, entry.index + 1), now, metadata).terminalTask;
+        if (prior) priorTerminals.push(prior);
+      }
+      cached = { contextKey, summary, priorTerminals };
+      this.windowComputations.set(window.lines, cached);
+    }
+    return {
+      summary: cached.summary.task ? { ...cached.summary, task: {
+        ...cached.summary.task, elapsedSeconds: Math.max(0, Math.floor(now / 1000) - cached.summary.task.startedAt)
+      } } : cached.summary,
+      priorTerminals: cached.priorTerminals
+    };
+  }
+
+  async readCachedTaskWindow(file, byteBudget, observedTurnId) {
+    const key = file.path;
+    const cached = this.taskWindowCache.get(key);
+    let window;
+    if (cached && cached.size === file.size && cached.mtimeMs === file.mtimeMs) {
+      return { ...cached.window, bytesRead: 0 };
+    }
+    if (cached && file.size > cached.size && file.size - cached.size <= Math.min(byteBudget, 2 * 1024 * 1024) && !cached.window.partial) {
+      const handle = await fs.open(file.path, "r");
+      try {
+        const buffer = Buffer.alloc(file.size - cached.size);
+        const { bytesRead } = await handle.read(buffer, 0, buffer.length, cached.size);
+        const raw = (cached.window.trailingLine || "") + buffer.subarray(0, bytesRead).toString("utf8");
+        const lines = raw.split(/\r?\n/);
+        let trailingLine = lines.pop() || "";
+        try { JSON.parse(trailingLine); lines.push(trailingLine); trailingLine = ""; } catch {}
+        if (trailingLine.length <= 256 * 1024) {
+          window = { ...cached.window, lines: [...cached.window.lines, ...compactTaskLines(lines)], bytesRead,
+            trailingLine, latestTimestamp: latestTimestampFromLines(lines, cached.window.latestTimestamp) };
+        }
+      } finally { await handle.close(); }
+    }
+    if (!window) {
+      const raw = await readTaskWindow(file, byteBudget, observedTurnId);
+      window = { ...raw, latestTimestamp: latestTimestampFromLines(raw.lines), lines: compactTaskLines(raw.lines) };
+    }
+    const bytes = window.lines.reduce((sum, line) => sum + Buffer.byteLength(line), 0) + (window.trailingLine?.length || 0);
+    if (cached) { this.taskWindowCacheBytes -= cached.bytes; this.taskWindowCache.delete(key); }
+    if (bytes < 1024 * 1024) {
+      this.taskWindowCache.set(key, { size: file.size, mtimeMs: file.mtimeMs, bytes, window });
+      this.taskWindowCacheBytes += bytes;
+      while (this.taskWindowCacheBytes > 8 * 1024 * 1024) {
+        const oldest = this.taskWindowCache.keys().next().value;
+        this.taskWindowCacheBytes -= this.taskWindowCache.get(oldest).bytes;
+        this.taskWindowCache.delete(oldest);
+      }
+    }
+    return window;
   }
 
   async readHistory(now, lifecycleFingerprint, previousSnapshot = null) {
     if (
       this.cachedHistory &&
-      this.cachedLifecycleFingerprint === lifecycleFingerprint &&
       now - this.cachedHistoryAt >= 0 &&
-      now - this.cachedHistoryAt < this.historyCacheMs &&
-      this.cachedHistory.indexComplete
+      now - this.cachedHistoryAt < Math.min(this.historyCacheMs, 60000)
     ) {
-      return this.cachedHistory;
+      return { ...this.cachedHistory, deferred: this.cachedLifecycleFingerprint !== lifecycleFingerprint };
     }
     const inventory = await listRolloutFiles(this.sessionRoots, now);
     const previous = normalizeTaskHistorySnapshot(previousSnapshot, null, now);
@@ -891,7 +1041,7 @@ class CodexActiveTaskReader {
     let scanFailed = false;
     for (const file of bounded.files) {
       try {
-        const candidate = await scanTaskHistoryEntry(file, now);
+        const candidate = await scanTaskHistoryEntry(file, now, this.goalContexts);
         entries.set(candidate.id, mergeTaskHistoryEntry(
           entries.get(candidate.id),
           candidate,
@@ -935,12 +1085,14 @@ class CodexActiveTaskReader {
       truncated: !indexComplete || !taskHistoryCovers(indexed, legacyFloor, now),
       observedAt: now
     };
-    this.cachedHistoryAt = indexComplete ? now : 0;
+    this.cachedHistoryAt = now;
     this.cachedLifecycleFingerprint = lifecycleFingerprint;
     return this.cachedHistory;
   }
 
   async read(now = Date.now(), previousHistorySnapshot = null) {
+    const goalContexts = this.goalContextReader();
+    this.goalContexts = goalContexts;
     const inventory = await listRolloutFiles(
       this.sessionRoots,
       now,
@@ -961,19 +1113,25 @@ class CodexActiveTaskReader {
         break;
       }
       const remainingBudget = MAX_TOTAL_SCAN_BYTES - scannedBytes;
-      const window = await readTaskWindow(file, remainingBudget);
+      const fileIdentity = rolloutFileIdentity(file);
+      const window = await this.readCachedTaskWindow(file, remainingBudget, this.observedRolloutTurns.get(fileIdentity));
       scannedBytes += window.bytesRead;
-      const summary = summarizeTaskWindow(window.lines, now, {
-        partial: window.partial,
-        projectName: window.projectName
+      if (window.partial) truncated = true;
+      const { summary, priorTerminals } = this.summarizeCachedWindow(window, now, {
+        partial: window.partial, projectName: window.projectName,
+        taskKind: window.taskKind, parentThreadId: window.parentThreadId,
+        ...(goalContexts.get(window.threadId) || goalContexts.get(window.parentThreadId) || {})
       });
+      terminalTasks.push(...priorTerminals);
+      if (summary.task?.id) this.observedRolloutTurns.set(fileIdentity, summary.task.id);
+      else this.observedRolloutTurns.delete(fileIdentity);
       lifecycleParts.push(
         `${rolloutFileIdentity(file)}:${file.archived ? "a" : "s"}:${
           summary.lifecycleKey || "none"
         }`
       );
       if (summary.task) {
-        if (file.archived) {
+        if (file.archived || (summary.task.goalStatus && summary.task.goalStatus !== "active")) {
           const endedAt = Math.max(
             summary.task.startedAt,
             latestTimestampFromLines(window.lines, summary.task.startedAt)
@@ -984,9 +1142,9 @@ class CodexActiveTaskReader {
             completedAt: endedAt * 1_000,
             elapsedSeconds: Math.max(0, endedAt - summary.task.startedAt),
             durationKnown: true,
-            outcome: "abnormal-interrupted"
+            outcome: summary.task.goalStatus ? "managed-stopped" : "abnormal-interrupted"
           });
-        } else if (now - file.mtimeMs > ACTIVE_INACTIVITY_TIMEOUT_MS) {
+        } else if (now - Math.max(file.mtimeMs, (latestTimestampFromLines(window.lines, summary.task.startedAt) || 0) * 1000) > ACTIVE_INACTIVITY_TIMEOUT_MS && !summary.task.goalStatus) {
           const endedAt = Math.max(
             summary.task.startedAt,
             latestTimestampFromLines(window.lines, summary.task.startedAt)
@@ -1010,7 +1168,11 @@ class CodexActiveTaskReader {
     }
 
     tasks.sort((left, right) => left.startedAt - right.startedAt);
-    terminalTasks.sort((left, right) => right.completedAt - left.completedAt);
+    const visibleFiles = new Set(recentFiles.map(rolloutFileIdentity));
+    for (const key of this.observedRolloutTurns.keys()) if (!visibleFiles.has(key)) this.observedRolloutTurns.delete(key);
+    const uniqueTerminals = new Map();
+    for (const task of terminalTasks) uniqueTerminals.set(task.id || `${task.projectName}:${task.startedAt}`, task);
+    const sortedTerminals = [...uniqueTerminals.values()].sort((left, right) => right.completedAt - left.completedAt);
     const lifecycleFingerprint = lifecycleParts.sort().join("|");
     let history;
     try {
@@ -1021,7 +1183,7 @@ class CodexActiveTaskReader {
     return {
       available: true,
       tasks,
-      terminalTasks: terminalTasks.slice(0, MAX_CANDIDATE_FILES),
+      terminalTasks: sortedTerminals.slice(0, MAX_CANDIDATE_FILES),
       history,
       count: tasks.length,
       truncated,
@@ -1035,10 +1197,12 @@ function normalizeActiveTask(value, now) {
   const startedAt = normalizeTimestampSeconds(value?.startedAt);
   if (!startedAt) return null;
   return {
+    ...normalizeTaskContext(value),
     id: normalizeTurnId(value?.id),
     projectName: normalizeProjectName(value?.projectName),
     startedAt,
     elapsedSeconds: Math.max(0, Math.floor(now / 1_000) - startedAt),
+    telemetry: normalizeTaskTelemetry(value?.telemetry),
     estimatedCostUsd: Number.isFinite(value?.estimatedCostUsd)
       ? Math.max(0, value.estimatedCostUsd)
       : null,
@@ -1055,6 +1219,7 @@ function normalizeActiveTaskResult(raw, now = Date.now()) {
       available: false,
       tasks: [],
       terminalTasks: [],
+      latestTask: null,
       history: normalizeTaskHistory(null, now),
       historySnapshot: null,
       count: 0,
@@ -1079,8 +1244,10 @@ function normalizeActiveTaskResult(raw, now = Date.now()) {
     available: true,
     tasks,
     terminalTasks,
+    latestTask: [...tasks, ...terminalTasks.filter(task => task.outcome === "completed")]
+      .sort((left, right) => right.startedAt - left.startedAt)[0] || null,
     history: historySnapshot
-      ? normalizeTaskHistory(historySnapshot, now)
+      ? { ...normalizeTaskHistory(historySnapshot, now), deferred: Boolean(raw.history?.deferred) }
       : normalizeTaskHistory(null, now),
     historySnapshot,
     count: tasks.length,

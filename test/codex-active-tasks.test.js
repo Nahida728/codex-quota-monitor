@@ -64,6 +64,21 @@ function turnContext(model) {
   return JSON.stringify({ type: "turn_context", payload: { model } });
 }
 
+test("running goals and subagents expose live multi-model telemetry and goal totals independently", () => {
+  const lines = [sessionMeta("C:\\Workspace\\Project"), taskStarted("goal-turn", 100), turnContext("gpt-5.6-sol"), tokenCount(100, 40, 10),
+    turnContext("gpt-6.1-sol"), tokenCount(200, 80, 20)];
+  const task = summarizeTaskWindow(lines, 130000, {taskKind:"subagent",goalStatus:"active",goalTokensUsed:2000,goalTimeUsedSeconds:500}).task;
+  const result = normalizeActiveTaskResult({available:true,tasks:[task],terminalTasks:[]},130000);
+  assert.equal(result.latestTask.id,"goal-turn");
+  assert.equal(result.latestTask.telemetry.totalTokens,330);
+  assert.equal(result.latestTask.models.length,2);
+  assert.equal(result.latestTask.goalTokensUsed,2000);
+  assert.equal(result.latestTask.goalTimeUsedSeconds,500);
+  assert.equal(result.latestTask.taskKind,"subagent");
+  const next = summarizeTaskWindow([...lines,tokenCount(300,100,30)],140000,{goalStatus:"active"}).task;
+  assert.ok(next.telemetry.totalTokens > task.telemetry.totalTokens);
+});
+
 function tokenCount(input, cached, output) {
   return JSON.stringify({
     type: "event_msg",
@@ -86,6 +101,36 @@ function tokenCount(input, cached, output) {
     }
   });
 }
+
+test("compact tails reuse unchanged files, read appended bytes, and safely join partial records", async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codex-tail-cache-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const filePath = path.join(directory, "rollout.jsonl");
+  fs.writeFileSync(filePath, [sessionMeta("C:\\private\\project"), taskStarted("turn-cache", 1000),
+    turnContext("gpt-6.1-sol"), tokenCount(100, 20, 10),
+    JSON.stringify({ timestamp: "1970-01-01T00:16:50Z", type: "response_item", payload: {
+      type: "function_call_output", output: "private tool content" } })].join("\n") + "\n");
+  const reader = new CodexActiveTaskReader({ sessionsRoot: directory });
+  const metadata = () => { const stat = fs.statSync(filePath); return { path: filePath, size: stat.size, mtimeMs: stat.mtimeMs }; };
+  const first = await reader.readCachedTaskWindow(metadata(), 1024 * 1024, null);
+  assert.ok(first.bytesRead > 0);
+  assert.ok(!JSON.stringify(first.lines).includes("private tool content"));
+  assert.equal((await reader.readCachedTaskWindow(metadata(), 1024 * 1024, null)).bytesRead, 0);
+  const nextRecord = JSON.parse(tokenCount(200, 40, 30));
+  nextRecord.payload.info.last_token_usage = { input_tokens: 100, cached_input_tokens: 20, output_tokens: 20, total_tokens: 120 };
+  const next = JSON.stringify(nextRecord);
+  const half = Math.floor(next.length / 2);
+  fs.appendFileSync(filePath, next.slice(0, half));
+  const partial = await reader.readCachedTaskWindow(metadata(), 1024 * 1024, null);
+  assert.equal(partial.bytesRead, Buffer.byteLength(next.slice(0, half)));
+  fs.appendFileSync(filePath, next.slice(half) + "\n" + taskComplete("turn-cache", 1000, 1030) + "\n");
+  const completed = await reader.readCachedTaskWindow(metadata(), 1024 * 1024, null);
+  const summary = summarizeTaskWindow(completed.lines, 1040000, { projectName: completed.projectName });
+  assert.equal(summary.terminalTask.outcome, "completed");
+  assert.equal(summary.terminalTask.elapsedSeconds, 30);
+  assert.equal(summary.terminalTask.models[0].outputTokens, 30);
+  assert.equal(summary.terminalTask.projectName, "project");
+});
 
 test("identifies an explicit in-progress task and prices only that task", () => {
   const lines = [
@@ -119,6 +164,48 @@ test("does not report a task after its matching completion event", () => {
     taskComplete("finished-turn", 100, 120)
   ];
   assert.equal(summarizeActiveTaskLines(lines, 200_000), null);
+});
+
+test("modern final-answer phase and spaced lifecycle JSON complete normally without leaking text", () => {
+  const final = JSON.stringify({ timestamp: "1970-01-01T00:02:00Z", type: "response_item",
+    payload: { role: "assistant", phase: "final_answer", content: [{ text: "private answer" }] } });
+  const summary = summarizeTaskWindow([taskStarted("modern", 100), final], 200000);
+  assert.equal(summary.task, null);
+  assert.equal(summary.terminalTask.id, "modern");
+  assert.equal(summary.terminalTask.outcome, "completed");
+  assert.equal(summary.terminalTask.elapsedSeconds, 20);
+  assert.doesNotMatch(JSON.stringify(summary), /private answer/);
+  // Preserve ISO timestamps when adding JSON whitespace.
+  const spacedRecord = JSON.stringify(JSON.parse(taskComplete("modern", 100, 120)), null, 0).replace(/":/g, '": ');
+  assert.equal(summarizeTaskWindow([taskStarted("modern", 100), spacedRecord], 200000).terminalTask.outcome, "completed");
+});
+
+test("recognizes subagent metadata and labels managed goal termination without an abnormal outcome", () => {
+  const meta = JSON.stringify({ type: "session_meta", payload: { cwd: "C:\\work\\project",
+    source: { subagent: { thread_spawn: { parent_thread_id: "parent-thread", depth: 1 } } },
+    base_instructions: { text: "private instructions" } } });
+  const active = summarizeTaskWindow([meta, taskStarted("child", 100)], 120000);
+  assert.equal(active.task.taskKind, "subagent");
+  assert.equal(active.task.parentThreadId, "parent-thread");
+  const stopped = summarizeTaskWindow([meta, taskStarted("child", 100), turnAborted("child", 100, 115, "goal_complete")], 200000, { goalStatus: "complete" });
+  assert.equal(stopped.terminalTask.outcome, "managed-stopped");
+  assert.equal(stopped.terminalTask.elapsedSeconds, 15);
+  assert.doesNotMatch(JSON.stringify(stopped), /private instructions|C:\\work/);
+});
+
+test("retains earlier completion evidence when multiple turns advance between polls", async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codex-terminal-race-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const rollout = path.join(directory, "rollout-race.jsonl");
+  const lines = [sessionMeta("C:\\work\\race"), taskStarted("observed", 100),
+    taskComplete("observed", 100, 110), taskStarted("next", 111),
+    taskComplete("next", 111, 115), taskStarted("current", 116)];
+  fs.writeFileSync(rollout, lines.join("\n"));
+  const reader = new CodexActiveTaskReader({ sessionsRoot: directory });
+  const result = await reader.read(120000);
+  assert.equal(result.tasks[0].id, "current");
+  assert.equal(result.terminalTasks.find(task => task.id === "observed").outcome, "completed");
+  assert.equal(result.terminalTasks.find(task => task.id === "next").outcome, "completed");
 });
 
 test("classifies an explicit interrupted turn as manual and freezes its duration", () => {
@@ -244,6 +331,20 @@ test("normalizes active-task snapshots without exposing full workspace paths", (
 
   assert.equal(normalized.tasks[0].projectName, "full-path");
   assert.doesNotMatch(JSON.stringify(normalized), /private/);
+});
+
+test("fresh log event timestamps keep an active turn alive when Windows mtime is stale", async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-stale-mtime-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const now = Date.now();
+  const file = path.join(root, "rollout-running.jsonl");
+  fs.writeFileSync(file, [taskStarted("running-long", Math.floor(now / 1000) - 3600),
+    JSON.stringify({ timestamp: new Date(now - 2000).toISOString(), type: "event_msg", payload: { type: "token_count" } })].join("\n"));
+  fs.utimesSync(file, new Date(now - 3600000), new Date(now - 3600000));
+  const reader = new CodexActiveTaskReader({ sessionsRoot: root, goalContextReader: () => new Map() });
+  const result = await reader.read(now);
+  assert.equal(result.tasks[0].id, "running-long");
+  assert.equal(result.terminalTasks.length, 0);
 });
 
 test("recovers completed and interrupted aggregate statistics from live and archived sessions", async t => {

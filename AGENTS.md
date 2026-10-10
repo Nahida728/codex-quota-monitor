@@ -13,6 +13,12 @@ mode, or regression is discovered.
   must never be included in portable, installer, unpacked, or ASAR output.
 - Keep `build.files` as an explicit allowlist containing only `src/**/*` and
   `package.json`. Do not replace it with a broad glob.
+- Never add a negative-only `build.win.files` list: Windows platform patterns
+  override the application allowlist and can accidentally package development
+  files. Filter nested dependency README/AGENTS files in the bounded beforePack
+  collector hook before ASAR integrity is calculated; retain dependency licenses.
+- Normalize both Windows and POSIX separators when inspecting ASAR entry lists.
+  Use native paths for ASAR extraction and compare packaged source bytes.
 - `README.md`, `AGENTS.md`, tests, preview scripts, source-control metadata, logs,
   and temporary files must remain outside packaged apps.
 - `test/packaging.test.js` protects this rule. After a release build, also inspect
@@ -24,7 +30,7 @@ The monitor must:
 
 - Show the 5-hour quota, remaining percentage, and scheduled recovery.
 - Show the weekly quota, remaining percentage, and scheduled recovery.
-- Show the GPT Reserve weekly quota as a third ring when the independent
+- Show the GPT Reserve weekly quota as a third compact bar when the independent
   `gpt-reserve` app-server bucket is present; never infer it from Codex usage.
 - Handle the official special state in which the 5-hour window is not returned.
 - Show every available reset credit, with localized type and its own expiry.
@@ -35,7 +41,8 @@ The monitor must:
 - Permanently retain detected user-consumed reset-credit history and expose its
   count, observation time, and safely identifiable credit details in the reset
   detail view.
-- Permanently retain official-reset history and show the latest event on the card.
+- Retain validated website reset announcements and show the latest on the card;
+  never display or restore retired local inferred non-natural reset records.
 - Detect both a Codex client update ready to install and a newly installed version.
 - Permanently retain observed installed-version changes and expose them as a
   clickable client update timeline.
@@ -74,7 +81,7 @@ The monitor must:
 - Support click-to-upload and drag-to-upload backgrounds, manual fixed-ratio
   cropping, and background opacity.
 - Support native window movement, position lock, always-on-top, tray hide/show,
-  manual refresh, and one complete data refresh every five seconds.
+  manual refresh, event-driven synchronization and bounded low-frequency fallback checks.
 - Support optional single-window top-edge docking: after an unlocked card is
   moved within a generous acquisition zone of a display's top edge, snap and
   retract the same fixed surface above that display, leave one small
@@ -327,16 +334,26 @@ Do not call a dragging change complete from static inspection. Manually verify:
 
 ## Layout and readability invariants
 
-- The three quota panels are equal-width rings in one row: 5-hour, weekly,
-  and GPT Reserve. An unavailable Reserve bucket stays explicitly unavailable.
-- The three status cards are one row immediately below the quota row, ordered:
-  available reset credits, official reset, Codex client update.
+- The three quotas share one compact glass surface with three columns and horizontal bars: 5-hour,
+  weekly and GPT Reserve. An unavailable Reserve bucket stays explicitly unavailable.
+- The three status cards immediately below it are reset management (available
+  credits and official resets), independent 24/48-hour reset odds, and client update.
 - The available-reset card is the entry point to a secondary detail view that
   shows current credit details, permanent newly received history, and permanent
   user-consumed history.
 - The Token overview sits below the three status cards and opens the full chart
   dialog. The active-task card occupies the final content area below it and opens
   a scrollable concurrent-task detail view.
+- Between quotas and status cards, show a compact latest-completed-turn board
+  with first-token latency, total tokens, peak/minimum/average output rates.
+  First-token latency must come from `time_to_first_token_ms`, never an invented
+  subtraction. Total tokens include input (already containing cached input) plus
+  output. Peak/minimum are rates between timestamped token-counter records;
+  whole-turn average includes tool/wait time. Label these as recorded intervals,
+  not decoder throughput. De-duplicate replayed counters; counter rollback,
+  uncovered output, missing timestamps or partial scans invalidate extrema.
+  Missing fields remain unavailable; partial token totals are lower bounds.
+  Disclose the bounded local population and exclusions in the task dialog.
 - The active-task card uses its full height: one compact title row, then a
   left/right split. The left side is a 2 × 4 data table for running, pending,
   longest duration, highest cost, average duration, average cost, total tasks,
@@ -427,8 +444,7 @@ available reset credit. If the available count decreases across the same snapsho
   identity absent before classifying it as a manual reset;
 - discard the candidate when the next successful snapshot rebounds above the
   candidate count, because transient incomplete/zero responses are not usage;
-- preserve any official-reset evidence from a rebounded candidate so a temporary
-  credit-count response cannot hide a genuine official reset;
+- preserve credit-consumption evidence across transient list omissions;
 - show that it was excluded;
 - never append it to official-reset history;
 - do not let simultaneous quota recovery override the consumed-credit evidence.
@@ -446,58 +462,58 @@ available reset credit. If the available count decreases across the same snapsho
 - preserve and reconcile that history across primary state and archive
   generations, and force an immutable archive when a new usage event is added.
 
-### Official remote resets
+### Official remote reset display
 
-An official reset is a local inference, not an OpenAI event API. Required evidence:
+- User-requested contract for v1.3.0-beta: official reset display and history use
+  only validated public website announcements. Do not append inferred account
+  resets or expose legacy local inference history.
+- Persist officialResetSource=community so archive reconciliation cannot restore
+  retired local records. Keep immutable archive files and credit grant/consumption
+  history intact. Local early-recovery comparisons are still needed solely to
+  validate credit consumption; they must never produce official-reset records.
+- Public announcements do not prove that this account reset. Keep links, source
+  freshness, samples and experimental probability limitations visible.
 
-- Codex is online for the new snapshot.
-- Consecutive comparable snapshots exist.
-- The relevant quota previously had actual usage.
-- It returns to 100% before the old scheduled recovery time, with at least the
-  established safety margin (currently about 90 seconds).
-- Available reset credits do not decrease.
+### Community checkpoints and Reserve fallback (v1.3.0-beta)
 
-Supported modes:
-
-- `all-limits`: both 5-hour and weekly windows exist before and after, and both
-  restore early to 100%.
-- `weekly-only-five-hour-disabled`: the official 5-hour window is absent and the
-  weekly quota alone restores early to 100%.
-- `weekly-early-five-hour-natural` and `weekly-early-five-hour-unused`: the
-  weekly window restores early to 100% while the five-hour window is present
-  and either naturally due or had no prior usage. The weekly before/after
-  evidence remains mandatory.
-
-Never infer an official reset from:
-
-- first run;
-- an offline or failed read;
-- missing previous evidence;
-- an ordinary scheduled recovery;
-- a 5-hour window merely disappearing;
-- a quota increase that does not reach 100%;
-- a simultaneous decrease in reset credits.
-
-A count-only reset-credit decrease still blocks official-reset classification;
-missing item details do not prove that no credit was consumed. Conversely, a
-weekly reset can be missed if the five-hour window happens to reach its normal
-expiry in the same polling interval. Use the early weekly before/after proof in
-that case, while retaining the no-decrease credit guard.
-
-Official-reset records are permanent:
-
-- append to history in `quota-state.json`;
-- retain detection time and mode;
-- display the most recent event on the main card;
-- display all records newest-first in the history dialog;
-- migrate the old single `officialResetAt` value;
-- de-duplicate adjacent refreshes of the same event;
-- never expire history after one minute or seven days.
-
-The displayed time is when the monitor first observed the reset. If the app was
-closed, offline, or lacked the preceding snapshot, it cannot reconstruct history.
-
-## Codex client update detection
+- Read only pinned HTTPS public endpoints from codex-reset.com and the inert
+  JSON data from codexresettracker.com, with timeouts and byte limits. Never
+  evaluate remote scripts. Accept confirmed global resets only; exclude grants,
+  previews and speculative feed labels. Validate official-source links.
+- Community announcements are a separate permanent history, never reconstructed
+  account-local resets. They remain available after offline periods and archive
+  recovery. Show source freshness, retrieval time and population separately.
+- Prefer the fresh checkpoint's experimental 24/48-hour forecast; disclose its
+  sample size and experimental limitation. Historical median estimates are a
+  labeled fallback. Hide probabilities after 24 hours without a source check or
+  with fewer than three intervals. First fetch is not a new account reset.
+- Reserve may be omitted by the CLI even with supportsLunaReserve. The main
+  process may read the installed client's official usage route with existing
+  ChatGPT authentication. Keep credentials exclusively inside the bounded reader;
+  never return or persist identity fields, credentials or raw responses. Support
+  SSE usage.snapshot and the ordinary usage route; throttle unsupported SSE.
+- Only an independent exact gpt-reserve bucket supplies Reserve. A missing bucket
+  stays unavailable; never substitute the main quota or synthesize a percentage.
+- Recognize modern final_answer lifecycle evidence and whitespace in JSON lines.
+  On Windows, NTFS mtime can remain stale while an open log is appended. Use
+  the newest validated in-log timestamp together with mtime for inactivity;
+  never mark a long running task abnormal from stale filesystem metadata alone.
+  Collect preceding terminal turns even when a later turn starts between polls.
+  A missing task needs two complete reads before an inferred terminal notice;
+  truncated reads and rebounding tasks must never trigger that inference.
+- Read only bounded goal status/budget counters from the read-only goals database,
+  omitting objectives. Recognize session_meta subagent.thread_spawn and parent IDs.
+  Managed goal steps have their own outcome counter and do not alert as abnormal.
+  Retain actual manually interrupted and abnormal outcomes with terminal evidence.
+- The task dialog supports context/status filtering, persistent sorting and one
+  action confirming all completed rows. Confirming does not alter numeric records
+  or dismiss running/interrupted rows. Verify controls and close buttons in both
+  languages; movement/orb/window-size invariants remain mandatory.
+- GPT-6.1 Sol pricing uses the official Standard card dated 2026-10-10:
+  USD/million input 2, cached input 0.10, cache write 2.5, output 10; beyond
+  272K input use 2x input classes and 1.5x output. Pricing-only changes must preserve compatible schema-6 and schema-7
+  numeric ledgers. Missing historical prices show pending recalculation until a
+  user-requested full scan; never discard recorded Tokens to add a price.
 
 Keep these states distinct:
 
@@ -595,9 +611,9 @@ client's visible “Update” button before installation. Do not regress to that
   unattributed coverage, not an `unknown` model. Exclude it from model totals and
   estimated cost, retain only normalized aggregate coverage counts, and never
   guess its model from a later context.
-- A cost-ledger schema change must rebuild model aggregates from readable rollout
-  files. Incompatible primary or archive aggregates may remain on disk for
-  recovery, but must not become a permanent floor or re-enter the current UI.
+- A genuinely incompatible counter schema may require a rebuild. Pricing-only
+  changes are compatible and must retain recorded model Tokens. Schema 6 and 7
+  share the same counter semantics and must reconcile without an automatic rebuild.
 - Replay de-duplication spans the whole rollout file. A repeated complete
   cumulative-plus-last Token signature remains a duplicate across turn-context
   records; equal per-call usage with different cumulative counters remains a
@@ -616,9 +632,10 @@ client's visible “Update” button before installation. Do not regress to that
   unpriced model slugs remain visible but do not contribute to the USD total;
   unattributed events are coverage rather than a model card, and the UI must make
   partial pricing explicit.
-- Cache the expensive rollout scan for 15 minutes and reuse the last normalized
+- Cache ordinary production cost recovery for 30 seconds and task-history recovery
+  for 60 seconds; manual cost rebuilds use bounded background passes instead; reuse the last normalized
   persisted snapshot across restarts and temporary scan failures. Do not rescan
-  multi-gigabyte rollout history every five-second quota refresh.
+  multi-gigabyte rollout history on every change notification.
 - Cost aggregation must include readable rollout files from both
   `.codex/sessions` and `.codex/archived_sessions`. Moving a session into the
   Codex archive must not lower the cumulative API-equivalent estimate.
@@ -633,7 +650,7 @@ client's visible “Update” button before installation. Do not regress to that
 - Scope replay-counter signatures to one rollout. Equal cumulative/last counters
   in two distinct rollouts are distinct usage evidence and must not be globally
   de-duplicated.
-- Reconcile API-equivalent snapshots only within the current cost-ledger schema.
+- Reconcile API-equivalent snapshots within compatible cost-ledger schemas.
   Merge compatible hashed rollout entries across immutable archives, but never
   restore an incompatible aggregate or use it as a migration floor; rebuild it
   from readable rollout files so corrected de-duplication can lower bad totals.
@@ -684,7 +701,7 @@ client's visible “Update” button before installation. Do not regress to that
   Both completed and interrupted handoffs remain in the pending area until the
   user confirms them or returns to Codex.
 - Support multiple simultaneous active rollouts and keep their timers updating
-  once per second between five-second data refreshes.
+  through a visible-only renderer paint clock, without fixed one-second data polling.
 - Tail reads must remain bounded by file count, age, bytes per turn, total bytes,
   and task count. Expand a tail only until the last lifecycle event is found.
 - From active rollouts expose only the validated turn ID, project directory
@@ -715,9 +732,21 @@ client's visible “Update” button before installation. Do not regress to that
 - If the monitor is always-on-top, returning to Codex may temporarily yield that
   native level. Restore the saved always-on-top preference only when the monitor
   is focused or shown again.
-- Run the complete monitor refresh every five seconds whether tasks are active or
-  idle. Do not substitute a lightweight task-only probe for quota or connection
-  refreshes; the connection indicator must reflect the same five-second cadence.
+- Use filesystem changes and app-server notifications for synchronization. Batch
+  local events for 180 ms, serialize readers, adaptively yield after slow reads,
+  and coalesce remote reads with a 3-second minimum gap. Official non-push fields
+  use 30/60-second fallback checks; do not claim per-token streaming support.
+- Parse local usage in one background worker with a 128 MiB old-space limit,
+  64 MiB history scan batches, an 8 MiB compact tail cache, and bounded queues.
+  Reuse unchanged files and read appended bytes; never retain conversation text
+  in compact complete-record caches. Freeze partial telemetry rather than inventing
+  speeds. Retry failed workers with backoff and terminate them on exit.
+- Coalesce live record persistence to 30 seconds, flush on exit, and immediately
+  archive terminal outcomes. Historical recovery remains explicitly partial until
+  indexed. Do not rescan multi-gigabyte history on every file event.
+- Windows SQLite read-only queries emit change events for goals_1.sqlite-shm.
+  Never use shared-memory notifications to schedule another read: that creates
+  an endless self-refresh loop. Watch only the database and WAL for Goal changes.
 - The main-card and per-task elapsed time visually pulses only while at least one
   task is active. Respect the operating system's reduced-motion preference.
 
@@ -803,7 +832,7 @@ Historical language/readability failures:
   bounded set of newest archives. Ignore corrupt generations, reconcile all
   permanent monotonic histories, and repair the primary automatically.
 - A missing, unreadable, truncated, syntactically invalid, or valid-but-reset
-  primary file must not erase richer official-reset, received-reset, or
+  primary file must not erase richer website-announcement, received-reset, or
   client-update history held by an archive. These histories and seen identities
   may only grow.
 - Recovery must not block legitimate changes to volatile state, including an
@@ -811,7 +840,7 @@ Historical language/readability failures:
   dropping stale reset-credit details.
 - Retention counts only validated archives. Corrupt files must never cause valid
   recovery generations to be pruned.
-- Offline startup must still expose recovered official-reset, received-reset,
+- Offline startup must still expose website announcements, received-reset,
   and client-update histories to the renderer.
 - Cropped background is stored in the Electron user-data directory.
 - Write sensitive local state with restrictive file permissions where supported.
@@ -853,9 +882,9 @@ the fix. At minimum, automated tests must continue covering:
 - exact task lifecycle classification, one-shot completion handoff, both
   completion actions, concurrent active tasks, project-path sanitization,
   task-level cost isolation, and monotonic performance-record recovery;
-- five-second complete refresh policy in both active and idle states;
+- event coalescing, backpressure, worker recovery, and active/idle fallback checks;
 - crop containment, movement, resize, ratio, and source-to-output mapping;
-- three side-by-side quota rings, the clickable reset entry in the three-card status
+- three unified quota bars, the clickable reset entry in the three-card status
   row, reset-detail/history dialog, the connection-status dialog, and the reserved
   bottom area;
 - one-shot automatic offline-dialog display per app session, no eligibility reset
@@ -904,6 +933,8 @@ Verify:
 2. Never use destructive reset/checkout operations to clean the tree.
 3. Update `package.json` and `package-lock.json` versions together when a new
    public version is required.
+   Padded display versions use valid SemVer internally: 1.3.51 in package/lock
+   metadata, with displayVersion/buildVersion and filenames set to 1.3.051.
 4. Run `node --check` for changed JavaScript where useful.
 5. Run `npm test`.
 6. Complete the visual/manual matrix proportionate to the change.
@@ -933,3 +964,48 @@ Verify:
   1. a focused test where automation is possible;
   2. a manual checklist item where native interaction is involved;
   3. a concise entry in this `AGENTS.md`.
+
+
+## Persistent model ledger and self-updates (1.3.0)
+
+- Do not re-read already indexed legacy sessions automatically, even when their
+  metadata changes. Preserve the numeric record and offer an explicit full scan.
+  New resumable records read appended bytes only. Archive moves and missing files
+  retain their recorded totals. File-count and byte limits are per-pass budgets.
+- Stream large JSONL lines using a whitelist projector; store only model/type/
+  timestamp metadata, numeric counters, UTF-8 pending bytes and hashed replay
+  signatures. Unknown object keys and conversation strings must be discarded
+  before a persisted chunk boundary. Never retain line fragments or tool bodies.
+- A manual full scan covers both session roots and keeps committed records visible
+  until each replacement reaches EOF. Its new generation may legitimately lower
+  corrected totals; older archives must not resurrect the previous generation.
+  Resume persisted work after restart. Coalesce worker requests and use bounded
+  64 MiB passes with adaptive rest time; never parse history on the main thread.
+- The larger three-quota panel and latest-task board share one left/right row.
+  Set min-height: 0 on its grid children; wrapped telemetry must stay within
+  the fixed row. Verify panel bounds and text bounds in both languages so the
+  reset row cannot cover the Reserve progress bar when metrics are added.
+  Latest-turn Tokens and interval telemetry update while running. Cache hit rate
+  is cached input divided by input over observed calls, weighted across models;
+  output is excluded and missing/zero input stays unavailable.
+- Task details label goals and subagents, show the database's goal-wide numeric
+  Tokens/time separately from current-turn elapsed time and model-level cost.
+  Never expose the objective text or imply current-turn cost is lifetime goal cost.
+- All UI copy is bilingual. Avoid decorative middle-dot strings. Wrap long names
+  and durations or provide an explicit bounded scroll area. Check text bounds in
+  every secondary view. Six reset rows require 188 px (6*28 + 5*4), not 186 px.
+- Monitor self-updates use only Nahida728/codex-quota-monitor on GitHub. Stable
+  installs exclude prereleases; beta installs can receive beta or stable upgrades.
+  Never downgrade, accept draft releases, arbitrary URLs or asset-provided paths.
+- NSIS uses electron-updater's verified update flow. Portable uses the exact x64
+  asset and GitHub's SHA-256 digest, streamed size limits, a second pre-install
+  hash check, and one hidden PowerShell handover copied outside ASAR. Paths come
+  from the local bootstrap environment and user-data staging directory only.
+- Replacing Electron binaries requires restarting the monitor. It must never stop
+  Codex or its agents. Save state and position, wait for observed tasks to be idle
+  before automatic installation, and allow an explicit restart/update action.
+  Keep the previous portable executable for rollback and restore it on failed
+  replacement/launch. Network failures must preserve an already verified update.
+- Release asset names are ASCII and include the SemVer version. Publish latest.yml (beta.yml for beta channels)
+  and the setup blockmap alongside the setup, portable, and SHA-256 manifest.
+  Keep build.files as the src/package allowlist and inspect actual ASAR contents.

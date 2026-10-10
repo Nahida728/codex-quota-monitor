@@ -20,6 +20,15 @@ function createWorkspace(t) {
   };
 }
 
+test("community-only migration blocks local reset history from older archives", () => {
+  const result = reconcileQuotaStates({ officialResetSource: "community", officialResetHistory: [] }, [
+    { officialResetAt: 1000, officialResetHistory: [{ detectedAt: 1000, detectionMode: "all-limits" }] }
+  ]);
+  assert.equal(result.officialResetSource, "community");
+  assert.deepEqual(result.officialResetHistory, []);
+  assert.equal(result.officialResetAt, null);
+});
+
 function durableState() {
   return {
     hasBaseline: true,
@@ -116,6 +125,7 @@ test("reconciles task duration and cost records independently by their maxima", 
     completedTaskCount: 8,
     manualInterruptedTaskCount: 1,
     abnormalInterruptedTaskCount: 1,
+    managedStoppedTaskCount: 0,
     historyObservedAt: 13_000,
     historyTruncated: true
   });

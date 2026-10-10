@@ -10,15 +10,15 @@ const renderer = fs.readFileSync(path.join(rendererRoot, "renderer.js"), "utf8")
 const main = fs.readFileSync(path.join(rendererRoot, "..", "main.js"), "utf8");
 const preload = fs.readFileSync(path.join(rendererRoot, "..", "preload.js"), "utf8");
 
-test("lays out three quota rings in equal side-by-side columns", () => {
+test("combines three independent quota bars in one panel", () => {
   assert.match(
     css,
-    /\.quota-section\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/
+    /\.quota-section\s*\{[\s\S]*?grid-template-rows:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/
   );
   assert.match(html, /id="fiveHourPanel"/);
   assert.match(html, /id="weeklyPanel"/);
   assert.match(html, /id="reservePanel"/);
-  assert.match(css, /conic-gradient\(var\(--ring-color/);
+  assert.match(css, /width: var\(--quota-progress/);
 });
 
 test("renders every reset credit into a dedicated list row", () => {
@@ -62,7 +62,7 @@ test("places the expanded token overview before the active-task card", () => {
   assert.match(renderer, /cost\.estimatedCostUsd\s*\/\s*workDays/);
   assert.match(html, /id="estimatedCostValue"/);
   assert.match(html, /id="tokenCostHelp"/);
-  assert.match(css, /\.token-overview\s*\{[\s\S]*?height:\s*162px/);
+  assert.match(css, /\.token-overview\s*\{[\s\S]*?height:\s*96px/);
   assert.match(css, /\.active-task-card\s*\{[\s\S]*?height:\s*154px/);
   assert.doesNotMatch(css, /\.is-offline-state \.active-task-card/);
 });
@@ -106,7 +106,7 @@ test("shows live and pending tasks with recovered aggregate performance records"
   assert.match(renderer, /activeTaskRecords\.totalTaskCount/);
   assert.match(renderer, /activeTaskRecords\.totalElapsedSeconds/);
   assert.match(renderer, /formatActiveTaskCost\(task\)/);
-  assert.match(renderer, /setInterval\(renderActiveTaskClock,\s*1_000\)/);
+  assert.match(renderer, /requestAnimationFrame\(tick\)/);
   assert.match(renderer, /activeTaskCard\.addEventListener\("click",\s*openActiveTasks\)/);
   assert.match(preload, /focusCodex:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("codex:focus"\)/);
   assert.match(main, /ipcMain\.handle\("codex:focus"/);
@@ -189,7 +189,7 @@ test("recognized subscription plan opens assisted-days, expiry, and renewal coun
   assert.match(html, /id="subscriptionExpiry"/);
   assert.match(html, /id="subscriptionCountdown"/);
   assert.match(renderer, /connectionLabel\.addEventListener\("click",\s*openSubscription\)/);
-  assert.match(renderer, /setInterval\(renderSubscriptionCountdown,\s*1_000\)/);
+  assert.match(renderer, /if \(!elements.subscriptionModal.hidden\) renderSubscriptionCountdown\(\)/);
   assert.match(renderer, /subscription\.assistedWorkDays/);
   assert.match(renderer, /subscription\.renewalAt/);
   assert.match(css, /\.subscription-dialog\s*\{[\s\S]*?min-height:\s*465px/);
@@ -242,11 +242,9 @@ test("client update card opens a permanent installed-version timeline", () => {
   assert.match(css, /\.client-update-history-list\s*\{[\s\S]*?overflow-y:\s*auto/);
 });
 
-test("offline rendering restores permanent official-reset history", () => {
-  assert.match(
-    renderer,
-    /renderOfficialResetHistory\(\{\s*history:\s*snapshot\.officialResetHistory\s*\}\)/
-  );
+test("official-reset display only renders website announcement sources", () => {
+  assert.doesNotMatch(renderer, /renderOfficialResetHistory|snapshot\.officialResetHistory/);
+  assert.match(renderer, /appendCheckpointRows\(elements\.officialResetHistoryList,\s*checkpoint\)/);
 });
 
 test("caps the visible reset list at six rows and scrolls larger counts", () => {
@@ -282,7 +280,7 @@ test("keeps reset details in a scrollable secondary view", () => {
     /renderResetCredits\(data\.resets,\s*data\.events\.newReset,\s*data\.events\.manualReset\)/
   );
   assert.match(renderer, /resetCreditButton\.addEventListener\("click",\s*openResetCredits\)/);
-  assert.match(css, /\.reset-detail-list\s*\{[\s\S]*?max-height:\s*186px/);
+  assert.match(css, /\.reset-detail-list\s*\{[\s\S]*?max-height:\s*188px/);
   assert.match(
     css,
     /\.received-reset-history,[\s\S]*?\.consumed-reset-history\s*\{[\s\S]*?overflow:\s*auto/
@@ -332,14 +330,13 @@ test("secondary dialogs use interruptible reduced-motion-safe entrance and exit 
   assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)/);
 });
 
-test("uses five-second full refreshes in active and idle states", () => {
-  assert.match(html, /<script src="\.\.\/refresh-policy\.js"><\/script>/);
-  assert.match(renderer, /getRefreshDelay\(latestSnapshot\?\.activeTasks\)/);
+test("receives event-driven snapshots without one-second data or display intervals", () => {
+  assert.match(preload, /onSnapshot: callback/);
+  assert.match(preload, /onTasks: callback/);
+  assert.match(main, /new RealtimeSync/);
   assert.doesNotMatch(renderer, /probeForActiveTask|readActiveTaskStatus\(\)/);
-  assert.match(renderer, /autoRefresh:\s*"每 5 秒自动刷新"/);
-  assert.match(renderer, /autoRefresh:\s*"Auto-refresh every 5s"/);
-  assert.match(renderer, /interval - Math\.max\(0,\s*Date\.now\(\) - startedAt\)/);
-  assert.doesNotMatch(renderer, /setInterval\(refresh,\s*AUTO_REFRESH_MS\)/);
+  assert.doesNotMatch(renderer, /setInterval|scheduleNextRefresh/);
+  assert.match(renderer, /!document\.hidden && !windowCollapsed && !topDockRetracted/);
 });
 
 test("moves language and background controls into settings and docks one fixed window", () => {

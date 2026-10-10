@@ -9,7 +9,7 @@ const {
 } = require("./store");
 const {
   normalizeQuotaResponse,
-  normalizeOfficialResetHistory,
+  identifyWindows,
   normalizeReceivedResetHistory,
   normalizeConsumedResetHistory
 } = require("./quota-normalizer");
@@ -32,6 +32,9 @@ const {
 } = require("./codex-update-service");
 
 const REQUEST_TIMEOUT_MS = 15_000;
+const { ResetCheckpointReader } = require("./reset-checkpoints");
+const { CodexReserveReader } = require("./codex-reserve");
+const { LocalUsageClient } = require("./local-usage-client");
 
 function activeTaskIdentity(task) {
   if (typeof task?.id === "string" && task.id) return `id:${task.id}`;
@@ -58,7 +61,8 @@ function updateTaskPerformanceRecords(
       "totalElapsedSeconds",
       "completedTaskCount",
       "manualInterruptedTaskCount",
-      "abnormalInterruptedTaskCount"
+      "abnormalInterruptedTaskCount",
+      "managedStoppedTaskCount"
     ];
     for (const key of integerFields) {
       const value = Math.max(0, Math.floor(Number(history[key]) || 0));
@@ -112,7 +116,7 @@ function updateTaskPerformanceRecords(
     }
   }
 
-  if (!history?.available && newlyTerminalTasks.length) {
+  if ((!history?.available || history.deferred) && newlyTerminalTasks.length) {
     for (const task of newlyTerminalTasks) {
       const elapsed = Math.max(0, Math.floor(Number(task?.elapsedSeconds) || 0));
       const cost = Number(task?.estimatedCostUsd);
@@ -127,6 +131,8 @@ function updateTaskPerformanceRecords(
       if (task?.outcome === "completed") records.completedTaskCount += 1;
       else if (task?.outcome === "manual-interrupted") {
         records.manualInterruptedTaskCount += 1;
+      } else if (task?.outcome === "managed-stopped") {
+        records.managedStoppedTaskCount += 1;
       } else {
         records.abnormalInterruptedTaskCount += 1;
       }
@@ -220,6 +226,9 @@ class AppServerClient {
       if (!line) continue;
       try {
         const message = JSON.parse(line);
+        if (message.id === undefined && ["account/rateLimits/updated", "account/updated"].includes(message.method)) {
+          this.onChange?.();
+        }
         if (message.id !== undefined && this.pending.has(message.id)) {
           const pending = this.pending.get(message.id);
           this.pending.delete(message.id);
@@ -261,7 +270,7 @@ class AppServerClient {
 
   async readRateLimits() {
     await this.start();
-    return this.request("account/rateLimits/read", {});
+    return this.request("account/rateLimits/read", { supportsLunaReserve: true });
   }
 
   async readTokenUsage() {
@@ -282,18 +291,35 @@ class QuotaService {
     versionDetector,
     costUsageReader,
     activeTaskReader,
-    subscriptionReader
+    subscriptionReader,
+    checkpointReader,
+    reserveReader,
+    fetchImpl
   } = {}) {
     this.client = client || new AppServerClient();
     this.versionDetector = versionDetector || new CodexDesktopVersionDetector();
     this.costUsageReader = costUsageReader || new CodexCostUsageReader();
     this.activeTaskReader = activeTaskReader || new CodexActiveTaskReader();
+    if (!client && !costUsageReader && !activeTaskReader) {
+      this.localUsage = new LocalUsageClient();
+      this.costUsageReader = { read: (now, previous) => this.localUsage.read("cost", now, previous) };
+      this.activeTaskReader = { read: (now, previous) => this.localUsage.read("tasks", now, previous) };
+    }
     this.subscriptionReader = subscriptionReader || new CodexSubscriptionReader();
+    this.checkpointReader = checkpointReader || (!client ? new ResetCheckpointReader({ fetchImpl }) : null);
+    this.reserveReader = reserveReader || (!client ? new CodexReserveReader({ fetchImpl }) : null);
     this.state = createQuotaStateStore(appStatePath);
+    // Retire the old local inference permanently; immutable archives are kept,
+    // but their inferred official resets cannot return through reconciliation.
+    this.state.data.officialResetSource = "community";
+    this.state.data.officialResetHistory = [];
+    this.state.data.officialResetAt = null;
     this.inFlight = null;
     this.activeTaskInFlight = null;
     this.activeTaskBaselineEstablished = false;
     this.previousActiveTasks = new Map();
+    this.missingTaskCandidates = new Map();
+    this.lastTaskRecordWriteAt = 0;
   }
 
   async read() {
@@ -302,6 +328,48 @@ class QuotaService {
       this.inFlight = null;
     });
     return this.inFlight;
+  }
+
+  async rescanCost() {
+    if (this.fullScanInFlight) return this.fullScanInFlight;
+    this.fullScanInFlight = (async () => {
+      if (this.inFlight) await this.inFlight;
+      const now = Date.now();
+      let raw;
+      if (this.localUsage) raw = await this.localUsage.read("rescan", now, this.state.data.tokenCostSnapshot);
+      else {
+        this.costUsageReader.requestFullScan();
+        raw = await this.costUsageReader.read(now, this.state.data.tokenCostSnapshot, { force: true });
+      }
+      const result = normalizeCodexCostUsageResult(raw, this.state.data, now, this.state.data.tokenUsageSnapshot);
+      if (result.persistence.tokenCostSnapshot) this.state.set("tokenCostSnapshot", result.persistence.tokenCostSnapshot, { forceBackup: true });
+      this.scheduleCostScan();
+      return withoutPersistence(result);
+    })().finally(() => { this.fullScanInFlight = null; });
+    return this.fullScanInFlight;
+  }
+
+  scheduleCostScan(delay = 2000) {
+    if (this.disposed || this.costScanTimer || !this.state.data.tokenCostSnapshot?.rescanPending?.length) return;
+    this.costScanTimer = setTimeout(async () => {
+      this.costScanTimer = null;
+      const started = Date.now();
+      try {
+        this.costScanInFlight = (async () => {
+          const raw = this.localUsage ? await this.localUsage.read("resume", started, this.state.data.tokenCostSnapshot)
+            : await this.costUsageReader.read(started, this.state.data.tokenCostSnapshot, { force: true });
+          const result = normalizeCodexCostUsageResult(raw, this.state.data, Date.now(), this.state.data.tokenUsageSnapshot);
+          if (result.persistence.tokenCostSnapshot) this.state.set("tokenCostSnapshot", result.persistence.tokenCostSnapshot);
+          this.onCostSnapshot?.(withoutPersistence(result));
+        })();
+        await this.costScanInFlight;
+      } catch {} finally {
+        this.costScanInFlight = null;
+        // Bounded 64 MiB passes, off the main thread, with at most 20% duty.
+        this.scheduleCostScan(Math.max(2000, Math.min(30000, (Date.now() - started) * 4)));
+      }
+    }, delay);
+    this.costScanTimer.unref?.();
   }
 
   async readActiveTasks(now = Date.now()) {
@@ -325,9 +393,16 @@ class QuotaService {
             for (const [identity, previous] of this.previousActiveTasks) {
               if (currentTasks.has(identity)) continue;
               const terminal = terminalTasks.get(identity);
+              // A brief scan/move race is not terminal evidence. Require a second
+              // complete read, while freezing the first disappearance's clock.
+              if (!terminal && !this.missingTaskCandidates.has(identity)) {
+                this.missingTaskCandidates.set(identity, previous);
+                continue;
+              }
+              const frozen = this.missingTaskCandidates.get(identity) || previous;
               const elapsedSeconds = terminal && terminal.durationKnown !== false
                 ? terminal.elapsedSeconds
-                : Math.max(0, Math.floor(Number(previous.elapsedSeconds) || 0));
+                : Math.max(0, Math.floor(Number(frozen.elapsedSeconds) || 0));
               const endedAt = terminal?.endedAt ||
                 previous.startedAt + elapsedSeconds;
               pendingTasks.push(terminal
@@ -342,18 +417,20 @@ class QuotaService {
                     completedAt: endedAt * 1_000,
                     elapsedSeconds,
                     durationKnown: true,
-                    outcome: "abnormal-interrupted"
+                    outcome: previous.goalStatus ? "managed-stopped" : "abnormal-interrupted"
                   });
+              this.missingTaskCandidates.delete(identity);
             }
           }
+          for (const identity of currentTasks.keys()) this.missingTaskCandidates.delete(identity);
           this.previousActiveTasks = result.truncated
             ? new Map([...this.previousActiveTasks, ...currentTasks])
-            : currentTasks;
+            : new Map([...this.missingTaskCandidates, ...currentTasks]);
           this.activeTaskBaselineEstablished = true;
         }
 
         const recordUpdate = updateTaskPerformanceRecords(
-          this.state.data.taskPerformanceRecords,
+          this.latestTaskRecords || this.state.data.taskPerformanceRecords,
           [...result.tasks, ...pendingTasks],
           now,
           result.history,
@@ -363,10 +440,11 @@ class QuotaService {
           JSON.stringify(this.state.data.taskHistorySnapshot || null) !==
           JSON.stringify(result.historySnapshot)
         );
+        this.latestTaskRecords = recordUpdate.records;
         if (historySnapshotChanged) {
           this.state.data.taskHistorySnapshot = result.historySnapshot;
         }
-        if (recordUpdate.changed) {
+        if (recordUpdate.changed && (pendingTasks.length || historySnapshotChanged || now - this.lastTaskRecordWriteAt >= 30000)) {
           try {
             this.state.set(
               "taskPerformanceRecords",
@@ -376,6 +454,7 @@ class QuotaService {
                   recordUpdate.historyChanged
               }
             );
+            this.lastTaskRecordWriteAt = now;
           } catch {}
         } else if (historySnapshotChanged) {
           try {
@@ -394,7 +473,7 @@ class QuotaService {
         ...normalizeActiveTaskResult(null, now),
         pendingTasks: [],
         completedTasks: [],
-        records: normalizeTaskPerformanceRecords([this.state.data])
+        records: this.latestTaskRecords || normalizeTaskPerformanceRecords([this.state.data])
       }))
       .finally(() => {
         this.activeTaskInFlight = null;
@@ -404,6 +483,20 @@ class QuotaService {
 
   async performRead() {
     const checkedAt = Date.now();
+    const checkpointPromise = this.checkpointReader?.read(checkedAt, this.state.data.resetCheckpointSnapshot)
+      .catch(() => null) || Promise.resolve(null);
+    const quotaPromise = Promise.resolve().then(() => this.client.readRateLimits());
+    const reservePromise = quotaPromise.then(raw => {
+      const buckets = raw?.rateLimitsByLimitId;
+      const reserve = buckets?.["gpt-reserve"] || buckets?.gpt_reserve ||
+        (buckets && Object.values(buckets).find(bucket => bucket?.limitId === "gpt-reserve"));
+      const hasReserve = Boolean(identifyWindows(reserve).weekly);
+      return !hasReserve && this.reserveReader ? this.reserveReader.read() : null;
+    }).catch(() => null);
+    const saveCheckpoints = checkpoint => {
+      if (checkpoint?.available) this.state.set("resetCheckpointSnapshot", checkpoint);
+      return checkpoint;
+    };
     const versionPromise = this.versionDetector.read(checkedAt).catch(() => null);
     const tokenUsagePromise = typeof this.client.readTokenUsage === "function"
       ? Promise.resolve().then(() => this.client.readTokenUsage()).catch(() => null)
@@ -426,14 +519,16 @@ class QuotaService {
         installedVersion,
         subscriptionRaw
       ] = await Promise.all([
-        this.client.readRateLimits(),
+        quotaPromise,
         tokenUsagePromise,
         tokenCostPromise,
         activeTasksPromise,
         versionPromise,
         subscriptionPromise
       ]);
-      const normalized = normalizeQuotaResponse(raw, this.state.data);
+      const normalized = normalizeQuotaResponse(raw, this.state.data, Math.floor(checkedAt / 1000), { officialResetSource: "community" });
+      if (!normalized.reserve) normalized.reserve = await reservePromise;
+      const resetCheckpoints = saveCheckpoints(await checkpointPromise);
       const persisted = normalized.persistence;
       delete normalized.persistence;
       const tokenUsage = normalizeTokenUsageResponse(tokenUsageRaw, this.state.data, checkedAt);
@@ -459,6 +554,7 @@ class QuotaService {
       this.state.set("lastSuccessfulAt", checkedAt);
       return {
         online: true,
+        resetCheckpoints,
         checkedAt,
         lastSuccessfulAt: checkedAt,
         data: normalized,
@@ -498,12 +594,13 @@ class QuotaService {
       else if (/timeout/i.test(message)) errorCode = "TIMEOUT";
       return {
         online: false,
+        resetCheckpoints: saveCheckpoints(await checkpointPromise),
         checkedAt,
         lastSuccessfulAt: this.state.get("lastSuccessfulAt", null),
         data: null,
         receivedResetHistory: normalizeReceivedResetHistory(this.state.data),
         consumedResetHistory: normalizeConsumedResetHistory(this.state.data),
-        officialResetHistory: normalizeOfficialResetHistory(this.state.data),
+        officialResetHistory: [],
         tokenUsage: withoutPersistence(tokenUsage),
         tokenCost: withoutPersistence(tokenCost),
         activeTasks,
@@ -515,7 +612,13 @@ class QuotaService {
   }
 
   dispose() {
+    this.disposed = true;
+    if (this.costScanTimer) clearTimeout(this.costScanTimer);
+    if (this.latestTaskRecords) {
+      try { this.state.set("taskPerformanceRecords", this.latestTaskRecords); } catch {}
+    }
     this.client.dispose();
+    this.localUsage?.dispose();
   }
 }
 
