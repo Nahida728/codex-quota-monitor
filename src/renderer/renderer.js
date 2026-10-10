@@ -1,9 +1,52 @@
-const {
-  getRefreshDelay
-} = window.RefreshPolicy;
-
 const i18n = {
   zh: {
+    latestTaskTitle: "最近任务",
+    latestTaskEmpty: "等待完成任务",
+    taskFirstToken: "首字响应",
+    taskTotalTokens: "总 Tokens",
+    taskPeakRate: "峰值 tok/s",
+    taskMinRate: "最低 tok/s",
+    taskAverageRate: "平均 tok/s",
+    taskRateShort: "区间输出 · tok/s",
+    taskTelemetryScope: "最近观测完成回合：{task}。范围为本机最近 7 天、最多 96 份普通/归档会话，不含其他设备或未写入日志的调用。首字响应读取官方日志耗时；总 Tokens 为回合输入（含缓存）加输出。峰值/最低为相邻日志间的输出速率，平均为输出 Tokens / 整个回合耗时，含工具等待，不是逐 Token 解码速度。缺失字段显示 —；不完整扫描只显示 Tokens 下限。",
+    quotaPausedShort: "官方暂停",
+    reserveBucketShort: "独立额度未返回",
+    resetAvailableShort: "可用次数",
+    resetHubTitle: "重置管理",
+    resetProbabilityTitle: "重置概率",
+    checkpointUnavailable: "检查站数据不足",
+    checkpointStale: "检查站数据过期",
+    checkpointTrend: "社区统计 · 非承诺",
+    checkpointTitle: "公开重置公告",
+    checkpointLocal: "本机账户观测",
+    checkpointLatest: "公告 · {time}",
+    checkpointMethod: "社区历史中最近 {days} 天的 {count} 段全局重置间隔；中位数 {median} 天，按指数分布半衰期估算未来 24/48 小时概率。排除重置卡发放、预告及未确认记录。这是全局公告趋势，不代表你的账户必定重置，也不随等待时间增加。",
+    checkpointFreshness: "来源：{source} · 源检查 {time} · 本机读取 {fetched}",
+    checkpointWarning: "源检查超过 24 小时或不可用，隐藏概率；可能有新重置未收录。",
+    checkpointAccountHint: "公告可在恢复联网后补看；只有本机额度证据才能确认账户实际重置。",
+    checkpointSourceLink: "查看来源 ↗",
+    checkpointSourceMethod: "Codex Reset 检查站的实验性历史概率模型，最近 {count} 个完整重置间隔，未证明优于所有基准。排除重置卡发放、预告与未确认记录；全局趋势不保证本账户重置。详情中的公告汇总来自两个检查站。",
+    checkpointOdds: "24 小时 {p24} · 48 小时 {p48}",
+    reserveUnavailable: "未返回",
+    reserveUnavailableDetail: "独立 Reserve 额度暂未返回",
+    confirmAllTasks: "确认已完成",
+    taskFilterLabel: "筛选任务",
+    taskSortLabel: "任务排序",
+    taskFilterAll: "全部任务",
+    taskSortTime: "按时间",
+    taskSortCost: "按金额",
+    taskSortDuration: "按时长",
+    taskKindGoal: "/goal",
+    taskKindSubagent: "子代理",
+    taskKindTask: "任务",
+    taskManagedStopped: "目标阶段停止",
+    taskGoalActive: "目标进行中",
+    taskGoalPaused: "目标暂停",
+    taskGoalBlocked: "目标受阻",
+    taskGoalLimited: "目标达到限制",
+    taskGoalComplete: "目标已完成",
+    taskIdentity: "回合 {id} · {time}",
+    taskGoalBudget: "目标 Token {used} / {budget}",
     appTitle: "Codex监测台",
     title: "Codex监测台",
     switchLanguage: "切换到英文",
@@ -85,7 +128,7 @@ const i18n = {
     officialResetCardLatest: "{time}",
     officialResetNever: "暂无官方重置记录",
     officialResetHistoryTitle: "官方重置记录",
-    officialResetHistoryHint: "记录检测器观察到双额度在正常恢复时间前同时恢复 100% 的时间，数据永久保存在本机。",
+    officialResetHistoryHint: "仅展示网站收录的公开重置公告；不再记录本机推断的非自然重置。公告不代表本账户必定已重置。",
     officialResetHistoryEmpty: "尚未记录到符合条件的官方重置",
     officialResetHistoryCount: "共 {count} 次",
     officialResetNewest: "最近一次",
@@ -209,8 +252,8 @@ const i18n = {
     waiting: "等待首次检测",
     checkedNow: "刚刚检测",
     checkedMinutes: "{count} 分钟前检测",
-    autoRefresh: "每 5 秒自动刷新",
-    autoRefreshActive: "每 5 秒自动刷新",
+    autoRefresh: "事件同步 · 低频兜底",
+    autoRefreshActive: "事件实时同步",
     reading: "读取 Codex 数据…",
     pinOn: "解锁位置",
     pinOff: "锁定位置",
@@ -248,6 +291,53 @@ const i18n = {
     cropSaving: "正在保存…"
   },
   en: {
+    latestTaskTitle: "Latest task",
+    latestTaskEmpty: "Waiting for completion",
+    taskFirstToken: "First token",
+    taskTotalTokens: "Total tokens",
+    taskPeakRate: "Peak tok/s",
+    taskMinRate: "Min tok/s",
+    taskAverageRate: "Avg tok/s",
+    taskRateShort: "Output intervals · tok/s",
+    taskTelemetryScope: "Latest observed completed turn: {task}. Covers up to 96 local/archived sessions modified in the last 7 days, excluding other devices and unlogged calls. First-token latency comes from the official log. Total tokens = input (including cache) + output. Peak/min are output rates between log records; average = output tokens / entire turn duration, including tool waits, not per-token decoding speed. Missing fields show —; partial scans show a token lower bound.",
+    quotaPausedShort: "Officially paused",
+    reserveBucketShort: "Independent bucket",
+    resetAvailableShort: "Available",
+    resetHubTitle: "Reset management",
+    resetProbabilityTitle: "Reset odds",
+    checkpointUnavailable: "Insufficient source data",
+    checkpointStale: "Source data is stale",
+    checkpointTrend: "Community trend · estimate",
+    checkpointTitle: "Public reset announcements",
+    checkpointLocal: "Local account observations",
+    checkpointLatest: "Public · {time}",
+    checkpointMethod: "From {count} gaps between confirmed global resets in the last {days} days; median {median} days, modeled as an exponential half-life for 24/48-hour odds. Excludes credit grants, teasers and unconfirmed records. This is a global announcement trend, not a guarantee for your account; waiting longer does not increase it.",
+    checkpointFreshness: "Source: {source} · Source check {time} · Retrieved {fetched}",
+    checkpointWarning: "Source check is older than 24 hours or unavailable. Odds are hidden; newer resets may be missing.",
+    checkpointAccountHint: "Announcements can be recovered after reconnecting. Account resets require local quota evidence.",
+    checkpointSourceLink: "View source ↗",
+    checkpointSourceMethod: "Experimental historical probability model from Codex Reset, using the latest {count} completed reset intervals. It has not beaten every baseline. Excludes credit grants, teasers and unconfirmed resets; global trends do not guarantee an account reset. Announcements below combine two checkpoints.",
+    checkpointOdds: "24 hours {p24} · 48 hours {p48}",
+    reserveUnavailable: "Not returned",
+    reserveUnavailableDetail: "Independent Reserve quota not returned",
+    confirmAllTasks: "Confirm completed",
+    taskFilterLabel: "Filter tasks",
+    taskSortLabel: "Sort tasks",
+    taskFilterAll: "All tasks",
+    taskSortTime: "By time",
+    taskSortCost: "By cost",
+    taskSortDuration: "By duration",
+    taskKindGoal: "/goal",
+    taskKindSubagent: "Subagent",
+    taskKindTask: "Task",
+    taskManagedStopped: "Goal step stopped",
+    taskGoalActive: "Goal active",
+    taskGoalPaused: "Goal paused",
+    taskGoalBlocked: "Goal blocked",
+    taskGoalLimited: "Goal limit reached",
+    taskGoalComplete: "Goal complete",
+    taskIdentity: "Turn {id} · {time}",
+    taskGoalBudget: "Goal tokens {used} / {budget}",
     appTitle: "Codex Quota Monitor",
     title: "Quota Monitor",
     switchLanguage: "Switch to Chinese",
@@ -329,7 +419,7 @@ const i18n = {
     officialResetCardLatest: "{time}",
     officialResetNever: "No official reset recorded",
     officialResetHistoryTitle: "Official reset history",
-    officialResetHistoryHint: "Records when both quota windows were observed returning to 100% before their scheduled reset. Data is stored permanently on this device.",
+    officialResetHistoryHint: "Only website-sourced public announcements are shown. Local inferred resets are retired. An announcement does not prove an account reset.",
     officialResetHistoryEmpty: "No qualifying official reset has been recorded",
     officialResetHistoryCount: "{count} total",
     officialResetNewest: "Latest",
@@ -453,8 +543,8 @@ const i18n = {
     waiting: "Waiting for first check",
     checkedNow: "Checked just now",
     checkedMinutes: "Checked {count}m ago",
-    autoRefresh: "Auto-refresh every 5s",
-    autoRefreshActive: "Auto-refresh every 5s",
+    autoRefresh: "Live events · fallback checks",
+    autoRefreshActive: "Live event sync",
     reading: "Reading Codex data…",
     pinOn: "Unlock position",
     pinOff: "Lock position",
@@ -498,6 +588,12 @@ const elements = Object.fromEntries([
   "connectionIssueList", "connectionStatusDone",
   "languageButton", "refreshButton", "pinButton", "collapseButton", "minimizeButton", "closeButton", "titlebar",
   "quotaSection", "statusSection",
+  "resetProbabilityButton", "resetProbability24", "resetProbability48", "resetProbabilityStatus",
+  "resetProbabilityModal", "resetProbabilityClose", "resetProbabilityDone", "checkpointSummary",
+  "checkpointMethod", "checkpointFreshness", "checkpointHistory", "resetOfficialLink",
+  "taskFilter", "taskSort", "confirmAllTasks",
+  "taskPerformance", "latestTaskIdentity", "latestTaskFirstToken", "latestTaskTokens",
+  "latestTaskPeak", "latestTaskMin", "latestTaskAverage", "taskPerformanceScope",
   "settingsButton", "settingsPopover", "settingsClose", "topDockToggle",
   "chooseBackground", "clearBackground",
   "opacitySlider", "opacityValue", "backgroundError", "customBackground", "backgroundDropZone",
@@ -554,15 +650,16 @@ let topDockRetracted = false;
 let topDockLeaveTimer = null;
 let topDockRevealPending = false;
 let latestSnapshot = null;
-let refreshTimer = null;
-let clockTimer = null;
+let presentationFrame = null;
+let lastPresentationSecond = null;
+let unsubscribeSnapshot = null;
+let unsubscribeTasks = null;
 let isRefreshing = false;
 let backgroundDataUrl = null;
 let backgroundOpacity = 0.34;
 let cropSource = null;
 let cropInteraction = null;
 let cropFrame = null;
-let officialResetHistory = [];
 let receivedResetHistory = [];
 let consumedResetHistory = [];
 let latestClientUpdate = {};
@@ -572,6 +669,7 @@ let tokenChartAnimationFrame = null;
 let tokenChartAnimationActive = false;
 let tokenChartHoverIndex = null;
 let activeTasks = [];
+let latestPerformanceTask = null;
 let pendingTasks = [];
 const dismissedPendingTaskIds = new Set();
 const shownAbnormalTaskIds = new Set();
@@ -591,10 +689,9 @@ let activeTaskRecords = {
   completedTaskCount: 0,
   manualInterruptedTaskCount: 0,
   abnormalInterruptedTaskCount: 0,
+    managedStoppedTaskCount: 0,
   historyTruncated: false
 };
-let activeTaskTimer = null;
-let subscriptionTimer = null;
 let connectionState = "checking";
 let automaticOfflineAlertShown = false;
 
@@ -708,6 +805,7 @@ function t(key, values = {}) {
 
 function applyLanguage() {
   document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
+  document.querySelectorAll("[data-label-key]").forEach(node => node.setAttribute("aria-label", t(node.dataset.labelKey)));
   document.title = t("appTitle");
   document.querySelectorAll("[data-i18n]").forEach(node => {
     node.textContent = t(node.dataset.i18n);
@@ -755,6 +853,7 @@ function applyLanguage() {
   elements.tokenUsageClose.setAttribute("aria-label", t("close"));
   elements.tokenCostClose.setAttribute("aria-label", t("close"));
   elements.activeTaskClose.setAttribute("aria-label", t("close"));
+  elements.resetProbabilityClose.setAttribute("aria-label", t("close"));
   elements.taskInterruptionDone.setAttribute("aria-label", t("acknowledge"));
   elements.statScopeClose.setAttribute("aria-label", t("close"));
   elements.statScopeDone.setAttribute("aria-label", t("acknowledge"));
@@ -992,20 +1091,30 @@ function formatResetTime(timestamp) {
 function setQuota(panel, reset, number, progress, used, quotaWindow, unavailable = false) {
   panel.classList.toggle("is-unavailable", unavailable);
   if (unavailable) {
-    reset.textContent = panel === elements.fiveHourPanel ? t("unavailableDetail") : t("noData");
-    number.innerHTML = `<span class="unavailable-pill">${t("unavailable")}</span>`;
+    reset.textContent = panel === elements.fiveHourPanel ? t("quotaPausedShort") : t("noData");
+    reset.title = panel === elements.fiveHourPanel ? t("unavailableDetail") : t("noData");
+    if (panel === elements.reservePanel) {
+      reset.textContent = t("reserveBucketShort");
+      reset.title = t("reserveUnavailableDetail");
+    }
+    reset.setAttribute("aria-label", reset.title);
+    number.innerHTML = `<span class="unavailable-pill">${t(panel === elements.reservePanel ? "reserveUnavailable" : "unavailable")}</span>`;
     panel.style.setProperty("--quota-progress", "0%");
     used.textContent = "—";
     return;
   }
   if (!quotaWindow) {
     reset.textContent = t("noData");
+    reset.title = "";
+    reset.setAttribute("aria-label", t("noData"));
     number.innerHTML = "<span>--</span><small>%</small>";
     panel.style.setProperty("--quota-progress", "0%");
     used.textContent = "—";
     return;
   }
-  reset.textContent = t("restores", { time: formatResetTime(quotaWindow.resetsAt) });
+  reset.textContent = formatDate(quotaWindow.resetsAt);
+  reset.title = t("restores", { time: formatResetTime(quotaWindow.resetsAt) });
+  reset.setAttribute("aria-label", t("restores", { time: formatDate(quotaWindow.resetsAt, true) }));
   number.innerHTML = `<span>${quotaWindow.remainingPercent}</span><small>%</small>`;
   panel.style.setProperty("--quota-progress", `${quotaWindow.remainingPercent}%`);
   used.textContent = t("used", { value: quotaWindow.usedPercent });
@@ -1221,65 +1330,54 @@ function renderResetCredits(resets = {}, newResetEvent = {}, manualResetEvent = 
   }
 }
 
-function renderOfficialResetHistory(event = {}, manualReset = {}) {
-  officialResetHistory = Array.isArray(event.history)
-    ? event.history
-        .filter(item => Number.isFinite(item?.detectedAt))
-        .sort((a, b) => a.detectedAt - b.detectedAt)
-    : [];
-  const latestAt = Number.isFinite(event.latestAt)
-    ? event.latestAt
-    : officialResetHistory.at(-1)?.detectedAt;
-  const hasHistory = Number.isFinite(latestAt);
-
-  elements.officialResetStatus.textContent = manualReset.detected
-    ? t("manualResetCardExcluded")
-    : (hasHistory
-        ? t("officialResetCardLatest", { time: formatDate(latestAt) })
-        : t("officialResetNever"));
-  elements.officialResetCheck.classList.toggle("is-positive", hasHistory);
-
-  elements.officialResetHistoryList.replaceChildren();
-  if (!officialResetHistory.length) {
-    const empty = document.createElement("div");
-    empty.className = "history-empty";
-    empty.textContent = t("officialResetHistoryEmpty");
-    elements.officialResetHistoryList.append(empty);
-    return;
+function appendCheckpointRows(container, checkpoint) {
+  const heading = document.createElement("h3");
+  heading.className = "active-task-list-section";
+  heading.textContent = t("checkpointTitle");
+  container.append(heading);
+  const source = document.createElement("button");
+  source.type = "button"; source.className = "checkpoint-source";
+  source.textContent = `${checkpoint.sourceUrl === "https://codex-reset.com/" ? "Codex Reset" : "Codex Reset Tracker"} · ${t("checkpointSourceLink")}`;
+  source.addEventListener("click", () => window.codexMonitor.openResetSource?.(checkpoint.sourceUrl));
+  container.append(source);
+  for (const event of (checkpoint.events || []).slice().sort((a, b) => b.at - a.at)) {
+    const row = document.createElement("button");
+    row.type = "button"; row.className = "checkpoint-event";
+    row.textContent = `${formatDate(event.at, true)} · ${t("checkpointSourceLink")}`;
+    row.addEventListener("click", () => window.codexMonitor.openResetSource?.(event.sourceUrl));
+    container.append(row);
   }
+}
 
-  const count = document.createElement("div");
-  count.className = "history-count";
-  count.textContent = t("officialResetHistoryCount", { count: officialResetHistory.length });
-  elements.officialResetHistoryList.append(count);
-
-  officialResetHistory.slice().reverse().forEach((record, index) => {
-    const item = document.createElement("article");
-    item.className = "history-item";
-
-    const marker = document.createElement("span");
-    marker.className = "history-marker";
-    marker.textContent = String(officialResetHistory.length - index).padStart(2, "0");
-
-    const copy = document.createElement("div");
-    const title = document.createElement("strong");
-    const modeLabel = {
-      "all-limits": t("officialResetModeAll"),
-      "weekly-only-five-hour-disabled": t("officialResetModeWeekly"),
-      "weekly-early-five-hour-natural": t("officialResetModeNatural"),
-      "weekly-early-five-hour-unused": t("officialResetModeUnused")
-    }[record.detectionMode] || t("officialResetModeLegacy");
-    title.textContent = index === 0
-      ? `${modeLabel} · ${t("officialResetNewest")}`
-      : modeLabel;
-    const time = document.createElement("span");
-    time.textContent = t("officialResetDetectedAt", {
-      time: formatDate(record.detectedAt, true)
-    });
-    copy.append(title, time);
-    item.append(marker, copy);
-    elements.officialResetHistoryList.append(item);
-  });
+function renderCheckpoints(checkpoint = {}) {
+  checkpoint ||= {};
+  const percent = value => Number.isFinite(value) ? `${value}%` : "—";
+  elements.resetProbability24.textContent = percent(checkpoint.probability24);
+  elements.resetProbability48.textContent = percent(checkpoint.probability48);
+  elements.resetProbabilityStatus.textContent = t(!checkpoint.available ? "checkpointUnavailable" : checkpoint.stale ? "checkpointStale" : "checkpointTrend");
+  elements.checkpointSummary.textContent = t("checkpointOdds", { p24: percent(checkpoint.probability24), p48: percent(checkpoint.probability48) });
+  elements.checkpointMethod.textContent = checkpoint.probabilityMode === "source-experimental" ? t("checkpointSourceMethod", { count: checkpoint.forecast.sampleCount }) : checkpoint.available ? t("checkpointMethod", {
+    days: checkpoint.windowDays || 183, count: checkpoint.sampleCount || 0,
+    median: Number.isFinite(checkpoint.medianSeconds) ? (checkpoint.medianSeconds / 86400).toFixed(1) : "—"
+  }) : t("checkpointUnavailable");
+  elements.checkpointFreshness.textContent = [t("checkpointFreshness", {
+    source: checkpoint.sourceUrl === "https://codex-reset.com/" ? "Codex Reset" : "Codex Reset Tracker",
+    time: checkpoint.sourceCheckedAt ? formatDate(checkpoint.sourceCheckedAt / 1000, true) : "—",
+    fetched: checkpoint.fetchedAt ? formatDate(checkpoint.fetchedAt / 1000, true) : "—"
+  }), checkpoint.stale ? t("checkpointWarning") : null, t("checkpointAccountHint")].filter(Boolean).join("\n");
+  elements.checkpointHistory.replaceChildren();
+  elements.officialResetHistoryList.replaceChildren();
+  elements.officialResetCheck.classList.toggle("is-positive", Boolean(checkpoint.available));
+  elements.officialResetStatus.textContent = checkpoint.latestAt
+    ? t("checkpointLatest", { time: formatDate(checkpoint.latestAt) }) : t("checkpointUnavailable");
+  if (checkpoint.available) {
+    appendCheckpointRows(elements.checkpointHistory, checkpoint);
+    appendCheckpointRows(elements.officialResetHistoryList, checkpoint);
+  } else {
+    const empty = document.createElement("p");
+    empty.className = "history-empty"; empty.textContent = t("checkpointUnavailable");
+    elements.officialResetHistoryList.append(empty);
+  }
 }
 
 function renderClientUpdateHistory(clientUpdate = latestClientUpdate) {
@@ -1956,6 +2054,7 @@ function normalizeActiveTaskRecords(value = {}) {
     completedTaskCount: count("completedTaskCount"),
     manualInterruptedTaskCount: count("manualInterruptedTaskCount"),
     abnormalInterruptedTaskCount: count("abnormalInterruptedTaskCount"),
+    managedStoppedTaskCount: count("managedStoppedTaskCount"),
     historyTruncated: Boolean(value.historyTruncated)
   };
 }
@@ -1964,13 +2063,15 @@ function normalizePendingTaskOutcome(value) {
   return [
     "completed",
     "manual-interrupted",
-    "abnormal-interrupted"
+    "abnormal-interrupted",
+  "managed-stopped"
   ].includes(value)
     ? value
     : "abnormal-interrupted";
 }
 
 function pendingTaskStatusKey(task) {
+  if (task?.outcome === "managed-stopped") return "taskManagedStopped";
   if (task?.outcome === "manual-interrupted") {
     return "activeTaskManualInterruptedStatus";
   }
@@ -2112,7 +2213,7 @@ function getDisplayedHighestTaskCost() {
 function getTaskAggregateStats() {
   const outcomeTotal = activeTaskRecords.completedTaskCount +
     activeTaskRecords.manualInterruptedTaskCount +
-    activeTaskRecords.abnormalInterruptedTaskCount;
+    activeTaskRecords.abnormalInterruptedTaskCount + activeTaskRecords.managedStoppedTaskCount;
   const totalTaskCount = Math.max(
     activeTaskRecords.totalTaskCount,
     outcomeTotal
@@ -2243,9 +2344,57 @@ function renderActiveTaskPreview() {
   });
 }
 
+function taskVisible(task, pending) {
+  const filter = elements.taskFilter.value;
+  return filter === "all" || (filter === "running" && !pending) || (filter === "pending" && pending) ||
+    (filter === "goal" && Boolean(task.goalStatus)) || (filter === "subagent" && task.taskKind === "subagent");
+}
+
+function sortTaskRows() {
+  const compare = elements.taskSort.value === "cost" ? (a, b) => (b.estimatedCostUsd || 0) - (a.estimatedCostUsd || 0)
+    : elements.taskSort.value === "duration" ? (a, b) => (b.elapsedSeconds || 0) - (a.elapsedSeconds || 0)
+    : (a, b) => b.startedAt - a.startedAt;
+  activeTasks.sort(compare);
+  pendingTasks.sort(compare);
+}
+
+function appendTaskContext(item, task, pending = false) {
+  const meta = document.createElement("div");
+  meta.className = "task-context";
+  const kind = document.createElement("span");
+  kind.className = "task-kind";
+  kind.textContent = t(task.taskKind === "subagent" ? "taskKindSubagent" : task.goalStatus ? "taskKindGoal" : "taskKindTask");
+  const identity = document.createElement("small");
+  identity.textContent = t("taskIdentity", { id: task.id?.slice(0, 8) || "—", time: formatDate(pending ? task.endedAt || task.completedAt / 1000 : task.startedAt, true) });
+  meta.append(kind, identity);
+  item.append(meta);
+  if (task.goalStatus) {
+    const goal = document.createElement("small");
+    goal.className = "task-goal-state";
+    const key = { active: "taskGoalActive", paused: "taskGoalPaused", blocked: "taskGoalBlocked", complete: "taskGoalComplete" }[task.goalStatus] || "taskGoalLimited";
+    goal.textContent = [t(key), task.goalTokenBudget ? t("taskGoalBudget", { used: formatTokenCount(task.goalTokensUsed), budget: formatTokenCount(task.goalTokenBudget) }) : null].filter(Boolean).join(" · ");
+    item.append(goal);
+  }
+}
+
+function confirmAllCompletedTasks() {
+  for (const task of pendingTasks.filter(task => task.outcome === "completed")) dismissedPendingTaskIds.add(activeTaskIdentity(task));
+  pendingTasks = pendingTasks.filter(task => task.outcome !== "completed");
+  renderActiveTaskPreview();
+  renderActiveTaskDetails();
+}
+
 function renderActiveTaskDetails() {
+  const previousScroll = elements.activeTaskList.scrollTop;
+  const focusedAction = elements.activeTaskList.contains(document.activeElement) ? {
+    identity: document.activeElement.dataset.pendingTaskId,
+    action: document.activeElement.dataset.pendingTaskAction
+  } : null;
+  sortTaskRows();
+  renderActiveTaskPreview();
   elements.activeTaskList.replaceChildren();
   renderActiveTaskRecords();
+  elements.confirmAllTasks.disabled = !pendingTasks.some(task => task.outcome === "completed");
 
   if ((!activeTasksAvailable && !pendingTasks.length) ||
       (!activeTasks.length && !pendingTasks.length)) {
@@ -2265,6 +2414,7 @@ function renderActiveTaskDetails() {
     elements.activeTaskList.append(runningHeading);
   }
   activeTasks.forEach((task, index) => {
+    if (!taskVisible(task, false)) return;
     const item = document.createElement("article");
     item.className = "active-task-item is-running";
 
@@ -2291,7 +2441,9 @@ function renderActiveTaskDetails() {
     const modelNames = getActiveTaskModelNames(task);
     models.textContent = `${t("activeTaskModelsLabel")} · ${modelNames.length ? modelNames.join(" · ") : "—"}`;
 
-    item.append(heading, stats, models);
+    item.append(heading);
+    appendTaskContext(item, task);
+    item.append(stats, models);
     if (task.hasUnpricedModels || task.partial) {
       const note = document.createElement("small");
       note.className = "active-task-note";
@@ -2311,6 +2463,7 @@ function renderActiveTaskDetails() {
     elements.activeTaskList.append(pendingHeading);
   }
   pendingTasks.forEach((task, index) => {
+    if (!taskVisible(task, true)) return;
     const item = document.createElement("article");
     item.className = [
       "active-task-item",
@@ -2342,20 +2495,55 @@ function renderActiveTaskDetails() {
     returnButton.type = "button";
     returnButton.dataset.pendingTaskAction = "return";
     returnButton.dataset.pendingTaskIndex = String(index);
+    returnButton.dataset.pendingTaskId = activeTaskIdentity(task);
     returnButton.textContent = t("activeTaskReturnCodex");
     const confirmButton = document.createElement("button");
     confirmButton.className = "glass-button primary active-task-confirm";
     confirmButton.type = "button";
     confirmButton.dataset.pendingTaskAction = "confirm";
     confirmButton.dataset.pendingTaskIndex = String(index);
+    confirmButton.dataset.pendingTaskId = activeTaskIdentity(task);
     confirmButton.textContent = t("activeTaskConfirm");
     actions.append(returnButton, confirmButton);
-    item.append(heading, stats, actions);
+    item.append(heading);
+    appendTaskContext(item, task, true);
+    item.append(stats, actions);
     elements.activeTaskList.append(item);
   });
+  elements.activeTaskList.scrollTop = previousScroll;
+  if (focusedAction?.identity) {
+    const control = [...elements.activeTaskList.querySelectorAll("button")].find(button =>
+      button.dataset.pendingTaskId === focusedAction.identity && button.dataset.pendingTaskAction === focusedAction.action);
+    control?.focus({ preventScroll: true });
+  }
+}
+
+function renderTaskPerformance(task = latestPerformanceTask) {
+  if (task && (!latestPerformanceTask || task.endedAt >= latestPerformanceTask.endedAt)) latestPerformanceTask = task;
+  const latest = latestPerformanceTask;
+  const telemetry = latest?.telemetry || {};
+  const valid = value => Number.isFinite(value) && value >= 0;
+  const rate = value => valid(value) ? new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en-US", { maximumFractionDigits: 1 }).format(value) : "—";
+  const identity = latest ? `${latest.projectName || t("taskKindTask")} · ${formatDate(latest.endedAt)}` : t("latestTaskEmpty");
+  elements.latestTaskIdentity.textContent = latest?.projectName || t("latestTaskEmpty");
+  elements.latestTaskIdentity.title = identity;
+  elements.latestTaskFirstToken.textContent = valid(telemetry.firstTokenMs)
+    ? telemetry.firstTokenMs < 1000 ? `${Math.round(telemetry.firstTokenMs)}ms` : `${rate(telemetry.firstTokenMs / 1000)}s` : "—";
+  elements.latestTaskFirstToken.title = valid(telemetry.firstTokenMs) ? `${telemetry.firstTokenMs} ms` : t("noData");
+  elements.latestTaskTokens.textContent = valid(telemetry.totalTokens)
+    ? `${telemetry.partial ? "≥" : ""}${new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en-US", { notation: "compact", maximumFractionDigits: 1 }).format(telemetry.totalTokens)}` : "—";
+  elements.latestTaskTokens.title = valid(telemetry.totalTokens) ? `${telemetry.partial ? "≥" : ""}${telemetry.totalTokens.toLocaleString()} Tokens` : t("noData");
+  elements.latestTaskPeak.textContent = rate(telemetry.peakTokensPerSecond);
+  elements.latestTaskMin.textContent = rate(telemetry.minTokensPerSecond);
+  elements.latestTaskAverage.textContent = rate(telemetry.averageTokensPerSecond);
+  const scope = t("taskTelemetryScope", { task: identity });
+  elements.taskPerformance.title = scope;
+  elements.taskPerformance.setAttribute("aria-label", `${t("latestTaskTitle")}: ${identity}. ${scope}`);
+  elements.taskPerformanceScope.textContent = scope;
 }
 
 function renderActiveTasks(result = {}) {
+  renderTaskPerformance(result.latestTask);
   activeTasksAvailable = Boolean(result.available);
   activeTasksTruncated = Boolean(result.truncated);
   activeTasks = activeTasksAvailable && Array.isArray(result.tasks)
@@ -2389,6 +2577,7 @@ function renderActiveTasks(result = {}) {
   if (activeTasks.length) renderActiveTaskClock();
 
   if (!elements.activeTaskModal.hidden) renderActiveTaskDetails();
+  startPresentationClock();
 }
 
 function openActiveTasks() {
@@ -2519,6 +2708,7 @@ function openSubscription() {
   renderSubscriptionDetails();
   openSecondaryModal(elements.subscriptionModal, elements.subscriptionClose);
   requestAnimationFrame(renderSubscriptionCountdown);
+  startPresentationClock();
 }
 
 function closeSubscription() {
@@ -2593,7 +2783,6 @@ function renderOnline(snapshot) {
   );
 
   renderResetCredits(data.resets, data.events.newReset, data.events.manualReset);
-  renderOfficialResetHistory(data.events.officialReset, data.events.manualReset);
   renderClientUpdate(snapshot.clientUpdate);
   if (!elements.subscriptionModal.hidden) renderSubscriptionDetails();
 }
@@ -2614,7 +2803,6 @@ function renderOffline(snapshot) {
     { history: snapshot.receivedResetHistory },
     { history: snapshot.consumedResetHistory }
   );
-  renderOfficialResetHistory({ history: snapshot.officialResetHistory });
   renderClientUpdate(snapshot.clientUpdate);
   if (!automaticOfflineAlertShown) {
     automaticOfflineAlertShown = true;
@@ -2634,33 +2822,51 @@ function updateLastChecked() {
 function render(snapshot) {
   if (snapshot.online) renderOnline(snapshot);
   else renderOffline(snapshot);
+  renderCheckpoints(snapshot.resetCheckpoints);
   renderTokenUsage(snapshot.tokenUsage);
   renderTokenCost(snapshot.tokenCost);
   renderActiveTasks(snapshot.activeTasks);
   updateLastChecked();
 }
 
-function scheduleNextRefresh(startedAt = Date.now()) {
-  clearTimeout(refreshTimer);
-  const interval = getRefreshDelay(latestSnapshot?.activeTasks);
-  const delay = Math.max(0, interval - Math.max(0, Date.now() - startedAt));
-  refreshTimer = setTimeout(
-    () => refresh({ silent: true }),
-    delay
-  );
+function applySnapshot(snapshot) {
+  if (!snapshot) return;
+  const currentTasks = latestSnapshot?.activeTasks;
+  latestSnapshot = currentTasks?.observedAt > snapshot.activeTasks?.observedAt
+    ? { ...snapshot, activeTasks: currentTasks } : snapshot;
+  render(latestSnapshot);
+}
+
+function startPresentationClock() {
+  const needed = !document.hidden && !windowCollapsed && !topDockRetracted &&
+    (activeTasks.length > 0 || !elements.subscriptionModal.hidden);
+  if (!needed) {
+    if (presentationFrame !== null) cancelAnimationFrame(presentationFrame);
+    presentationFrame = null; return;
+  }
+  if (presentationFrame !== null) return;
+  const tick = () => {
+    presentationFrame = null;
+    const second = Math.floor(Date.now() / 1000);
+    if (second !== lastPresentationSecond) {
+      lastPresentationSecond = second;
+      renderActiveTaskClock();
+      if (!elements.subscriptionModal.hidden) renderSubscriptionCountdown();
+      updateLastChecked();
+    }
+    startPresentationClock();
+  };
+  presentationFrame = requestAnimationFrame(tick);
 }
 
 async function refresh({ initial = false, silent = false } = {}) {
   if (isRefreshing) return false;
   const startedAt = Date.now();
   isRefreshing = true;
-  clearTimeout(refreshTimer);
-  refreshTimer = null;
   if (!silent) elements.refreshButton.classList.add("is-spinning");
   if (initial) elements.loadingLayer.classList.remove("is-hidden");
   try {
-    latestSnapshot = await window.codexMonitor.readQuota();
-    render(latestSnapshot);
+    applySnapshot(await window.codexMonitor.readQuota());
   } catch {
     latestSnapshot = {
       online: false,
@@ -2673,7 +2879,6 @@ async function refresh({ initial = false, silent = false } = {}) {
     isRefreshing = false;
     elements.refreshButton.classList.remove("is-spinning");
     elements.loadingLayer.classList.add("is-hidden");
-    scheduleNextRefresh(startedAt);
   }
   return true;
 }
@@ -2704,6 +2909,7 @@ function applyWindowModeVisual(collapsed, anchor = windowModeAnchor) {
   document.documentElement.style.setProperty("--orb-anchor-x", `${windowModeAnchor.x}px`);
   document.documentElement.style.setProperty("--orb-anchor-y", `${windowModeAnchor.y}px`);
   document.body.classList.toggle("is-window-collapsed", windowCollapsed);
+  startPresentationClock();
 }
 
 function applyTopDockState(state = {}) {
@@ -2713,6 +2919,7 @@ function applyTopDockState(state = {}) {
   elements.topDockToggle.setAttribute("aria-checked", String(topDockEnabled));
   document.body.classList.toggle("is-top-dock-retracted", topDockRetracted);
   document.body.classList.toggle("is-top-dock-docked", topDockDocked);
+  startPresentationClock();
   if (topDockRetracted && Number.isSafeInteger(state.paintRequestId)) {
     acknowledgeTopDockPaint(state.paintRequestId);
   }
@@ -2837,7 +3044,6 @@ async function initialize() {
   applyLanguage();
   applyBackground();
   initializeCropper();
-  renderOfficialResetHistory();
   renderClientUpdate();
   renderTokenUsage();
   renderTokenCost();
@@ -2945,6 +3151,10 @@ async function initialize() {
     if (event.target === elements.tokenCostModal) closeTokenCost();
   });
   elements.activeTaskCard.addEventListener("click", openActiveTasks);
+  elements.taskPerformance.addEventListener("click", openActiveTasks);
+  elements.taskPerformance.addEventListener("keydown", event => {
+    if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openActiveTasks(); }
+  });
   elements.activeTaskCard.addEventListener("keydown", event => {
     if (event.target !== elements.activeTaskCard) return;
     if (event.key === "Enter" || event.key === " ") {
@@ -2955,6 +3165,17 @@ async function initialize() {
   elements.activeTaskClose.addEventListener("click", closeActiveTasks);
   elements.activeTaskDone.addEventListener("click", closeActiveTasks);
   elements.activeTaskList.addEventListener("click", handlePendingTaskAction);
+  elements.confirmAllTasks.addEventListener("click", confirmAllCompletedTasks);
+  elements.taskFilter.addEventListener("change", renderActiveTaskDetails);
+  elements.taskSort.addEventListener("change", () => {
+    renderActiveTaskDetails();
+  });
+  elements.resetProbabilityButton.addEventListener("click", () => openSecondaryModal(elements.resetProbabilityModal, elements.resetProbabilityClose));
+  const closeProbability = () => closeSecondaryModal(elements.resetProbabilityModal, elements.resetProbabilityButton);
+  elements.resetProbabilityClose.addEventListener("click", closeProbability);
+  elements.resetProbabilityDone.addEventListener("click", closeProbability);
+  elements.resetProbabilityModal.addEventListener("click", event => { if (event.target === elements.resetProbabilityModal) closeProbability(); });
+  elements.resetOfficialLink.addEventListener("click", () => closeSecondaryModal(elements.resetCreditModal, null, { onHidden: openOfficialResetHistory }));
   elements.activeTaskModal.addEventListener("click", event => {
     if (event.target === elements.activeTaskModal) closeActiveTasks();
   });
@@ -3061,25 +3282,30 @@ async function initialize() {
     else if (!elements.tokenUsageModal.hidden) closeTokenUsage();
     else if (!elements.resetCreditModal.hidden) closeResetCredits();
     else if (!elements.clientUpdateHistoryModal.hidden) closeClientUpdateHistory();
+    else if (!elements.resetProbabilityModal.hidden) closeSecondaryModal(elements.resetProbabilityModal, elements.resetProbabilityButton);
     else if (!elements.officialResetHistoryModal.hidden) closeOfficialResetHistory();
     else if (!elements.settingsPopover.hidden) closeBackgroundPopover();
   });
 
+  unsubscribeSnapshot = window.codexMonitor.onSnapshot?.(snapshot => {
+    if (!isRefreshing) applySnapshot(snapshot);
+  });
+  unsubscribeTasks = window.codexMonitor.onTasks?.(result => {
+    if (latestSnapshot?.activeTasks?.observedAt > result.observedAt) return;
+    if (latestSnapshot) latestSnapshot = { ...latestSnapshot, activeTasks: result };
+    renderActiveTasks(result);
+  });
+  document.addEventListener("visibilitychange", startPresentationClock);
+  window.addEventListener("online", () => refresh({ silent: true }));
+  window.addEventListener("offline", () => refresh({ silent: true }));
   await refresh({ initial: true });
-  clockTimer = setInterval(() => {
-    if (latestSnapshot?.online) renderOnline(latestSnapshot);
-    updateLastChecked();
-  }, 30_000);
-  activeTaskTimer = setInterval(renderActiveTaskClock, 1_000);
-  subscriptionTimer = setInterval(renderSubscriptionCountdown, 1_000);
+  startPresentationClock();
 }
 
 window.addEventListener("DOMContentLoaded", initialize);
 window.addEventListener("beforeunload", () => {
-  clearTimeout(refreshTimer);
   clearTopDockLeaveTimer();
-  clearInterval(clockTimer);
-  clearInterval(activeTaskTimer);
-  clearInterval(subscriptionTimer);
+  unsubscribeSnapshot?.(); unsubscribeTasks?.();
+  if (presentationFrame !== null) cancelAnimationFrame(presentationFrame);
   cancelAnimationFrame(tokenChartAnimationFrame);
 });

@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld("codexMonitor", {
   readQuota: () => ipcRenderer.invoke("quota:read"),
   readActiveTaskStatus: () => ipcRenderer.invoke("tasks:active-status"),
   focusCodex: () => ipcRenderer.invoke("codex:focus"),
+  openResetSource: url => ipcRenderer.invoke("reset:open-source", url),
   readSettings: () => ipcRenderer.invoke("settings:read"),
   setLanguage: language => ipcRenderer.invoke("settings:language", language),
   setAlwaysOnTop: enabled => ipcRenderer.invoke("settings:alwaysOnTop", enabled),
@@ -22,6 +23,16 @@ contextBridge.exposeInMainWorld("codexMonitor", {
   minimize: () => ipcRenderer.send("window:minimize"),
   hide: () => ipcRenderer.send("window:hide"),
   onRefresh: callback => ipcRenderer.on("quota:refresh", callback),
+  onSnapshot: callback => {
+    const listener = (_event, snapshot) => callback(snapshot);
+    ipcRenderer.on("quota:snapshot", listener);
+    return () => ipcRenderer.removeListener("quota:snapshot", listener);
+  },
+  onTasks: callback => {
+    const listener = (_event, result) => callback(result);
+    ipcRenderer.on("tasks:snapshot", listener);
+    return () => ipcRenderer.removeListener("tasks:snapshot", listener);
+  },
   onAlwaysOnTop: callback => ipcRenderer.on("settings:alwaysOnTop", (_event, enabled) => callback(enabled)),
   onWindowModeChanged: callback => ipcRenderer.on("window:modeChanged", (_event, collapsed, anchor) => callback(collapsed, anchor)),
   onTopDockChanged: callback => ipcRenderer.on("window:topDockChanged", (_event, state) => callback(state))

@@ -1,7 +1,8 @@
-const { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, nativeTheme, screen, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, nativeTheme, screen, dialog, net, shell } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const { QuotaService } = require("./quota-service");
+const { RealtimeSync } = require("./realtime-sync");
 const { JsonStore } = require("./store");
 const { focusCodexWindow } = require("./codex-window-focus");
 const { didWindowMove, startSystemWindowMove } = require("./native-window-drag");
@@ -9,6 +10,7 @@ const { didWindowMove, startSystemWindowMove } = require("./native-window-drag")
 let window;
 let tray;
 let quotaService;
+let realtimeSync;
 let store;
 let isQuitting = false;
 let isAppHidden = false;
@@ -740,8 +742,15 @@ function getBackgroundDataUrl() {
 }
 
 function registerIpc() {
-  ipcMain.handle("quota:read", () => quotaService.read());
+  ipcMain.handle("quota:read", () => realtimeSync.refresh());
   ipcMain.handle("codex:focus", () => focusCodexFromMonitor());
+  ipcMain.handle("reset:open-source", (_event, url) => {
+    if (url === "https://codexresettracker.com/" || url === "https://codex-reset.com/" ||
+        /^https:\/\/x\.com\/thsottiaux\/status\/\d{10,25}$/.test(url || "")) {
+      return shell.openExternal(url);
+    }
+    return false;
+  });
   ipcMain.handle("tasks:active-status", async () => {
     const result = await quotaService.readActiveTasks();
     return {
@@ -883,8 +892,15 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   store = new JsonStore(path.join(app.getPath("userData"), "settings.json"));
   isTopDockEnabled = store.get("topDockEnabled", false);
   quotaService = new QuotaService({
-    appStatePath: path.join(app.getPath("userData"), "quota-state.json")
+    appStatePath: path.join(app.getPath("userData"), "quota-state.json"),
+    fetchImpl: (url, options) => net.fetch(url, options)
   });
+  realtimeSync = new RealtimeSync({
+    service: quotaService,
+    onSnapshot: snapshot => window?.webContents.send("quota:snapshot", snapshot),
+    onTasks: result => window?.webContents.send("tasks:snapshot", result)
+  });
+  realtimeSync.start();
   registerIpc();
   createWindow();
   tray = new Tray(createTrayIcon());
@@ -909,6 +925,7 @@ app.on("before-quit", () => {
   cancelTopDockPaintWaiter();
   saveWindowPosition(window, "windowBounds");
   quotaService?.dispose();
+  realtimeSync?.dispose();
 });
 
 app.on("window-all-closed", event => event.preventDefault());

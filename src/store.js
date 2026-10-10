@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { reconcileCostSnapshots } = require("./codex-cost-usage");
 const { reconcileTaskHistorySnapshots } = require("./codex-active-tasks");
+const { normalizeCheckpointEvents } = require("./reset-checkpoints");
 
 const MAX_STATE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_BACKUP_INTERVAL_MS = 15 * 60 * 1000;
@@ -256,6 +257,7 @@ function normalizeTaskPerformanceRecords(states) {
     completedTaskCount: 0,
     manualInterruptedTaskCount: 0,
     abnormalInterruptedTaskCount: 0,
+    managedStoppedTaskCount: 0,
     historyObservedAt: null,
     historyTruncated: false
   };
@@ -293,7 +295,8 @@ function normalizeTaskPerformanceRecords(states) {
       "totalElapsedSeconds",
       "completedTaskCount",
       "manualInterruptedTaskCount",
-      "abnormalInterruptedTaskCount"
+      "abnormalInterruptedTaskCount",
+      "managedStoppedTaskCount"
     ]) {
       const value = Number(records[key]);
       if (Number.isFinite(value) && value >= 0) {
@@ -318,7 +321,7 @@ function normalizeTaskPerformanceRecords(states) {
   }
   const outcomeTotal = result.completedTaskCount +
     result.manualInterruptedTaskCount +
-    result.abnormalInterruptedTaskCount;
+    result.abnormalInterruptedTaskCount + result.managedStoppedTaskCount;
   result.totalTaskCount = Math.max(
     result.totalTaskCount,
     result.timedTaskCount,
@@ -331,7 +334,9 @@ function reconcileQuotaStates(primary, candidates = []) {
   const states = [primary, ...candidates].filter(isPlainObject);
   const result = { ...(isPlainObject(primary) ? primary : (states[0] || {})) };
 
-  const officialResetHistory = normalizeOfficialResetHistory(states);
+  const officialResetHistory = states.some(state => state?.officialResetSource === "community")
+    ? [] : normalizeOfficialResetHistory(states);
+  if (states.some(state => state?.officialResetSource === "community")) result.officialResetSource = "community";
   const receivedResetHistory = normalizeReceivedResetHistory(states);
   const consumedResetHistory = normalizeConsumedResetHistory(states);
   const clientUpdateHistory = normalizeClientUpdateHistory(states);
@@ -340,6 +345,11 @@ function reconcileQuotaStates(primary, candidates = []) {
   result.receivedResetHistory = receivedResetHistory;
   result.consumedResetHistory = consumedResetHistory;
   result.codexClientUpdateHistory = clientUpdateHistory;
+  const checkpoints = states.map(state => state.resetCheckpointSnapshot).filter(isPlainObject)
+    .sort((a, b) => (b.fetchedAt || 0) - (a.fetchedAt || 0));
+  if (checkpoints.length) result.resetCheckpointSnapshot = {
+    ...checkpoints[0], events: normalizeCheckpointEvents(checkpoints.flatMap(snapshot => snapshot.events || []))
+  };
 
   const knownCreditIds = new Set();
   for (const state of states) {
@@ -427,6 +437,7 @@ function quotaHistoryFingerprint(state) {
     .createHash("sha256")
     .update(JSON.stringify({
       officialResetHistory: normalizeOfficialResetHistory([state]),
+      resetCheckpointEvents: normalizeCheckpointEvents(state?.resetCheckpointSnapshot?.events),
       receivedResetHistory: normalizeReceivedResetHistory([state]),
       consumedResetHistory: normalizeConsumedResetHistory([state]),
       codexClientUpdateHistory: normalizeClientUpdateHistory([state]),

@@ -26,6 +26,60 @@ const emptyActiveTaskReader = {
   })
 };
 
+test("malformed app-server Reserve data falls back to its independent official bucket", async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codex-reserve-service-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  let reserveReads = 0;
+  const raw = {
+    rateLimits: { primary: { usedPercent: 10, windowDurationMins: 300, resetsAt: 2000000000 },
+      secondary: { usedPercent: 20, windowDurationMins: 10080, resetsAt: 2000000000 } },
+    rateLimitsByLimitId: { "gpt-reserve": { primary: { usedPercent: null, windowDurationMins: 10080 } } },
+    rateLimitResetCredits: { availableCount: 0, credits: [] }
+  };
+  const independent = { usedPercent: 60, remainingPercent: 40, windowDurationMins: 10080, resetsAt: 2000000000 };
+  const service = new QuotaService({ appStatePath: path.join(directory, "state.json"),
+    client: { readRateLimits: async () => raw, dispose() {} },
+    versionDetector: { read: async () => null }, subscriptionReader: { read: async () => null },
+    costUsageReader: emptyCostUsageReader, activeTaskReader: emptyActiveTaskReader,
+    reserveReader: { read: async () => { reserveReads++; return independent; } } });
+  const result = await service.read();
+  assert.equal(reserveReads, 1);
+  assert.equal(result.data.reserve.remainingPercent, 40);
+  assert.equal(result.data.windows.weekly.remainingPercent, 80);
+  service.dispose();
+});
+
+test("a brief missing-task scan rebounds without an abnormal notice; goal steps stop safely", async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codex-task-race-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const task = { id: "goal-turn", projectName: "project", startedAt: 90, goalStatus: "active", taskKind: "goal", models: [] };
+  let tasks = [task];
+  let terminalTasks = [];
+  const service = new QuotaService({ appStatePath: path.join(directory, "state.json"), client: { dispose() {} },
+    versionDetector: { read: async () => null }, costUsageReader: emptyCostUsageReader,
+    activeTaskReader: { read: async now => ({ available: true, tasks, terminalTasks, observedAt: now }) } });
+  await service.readActiveTasks(100000);
+  tasks = [];
+  assert.equal((await service.readActiveTasks(105000)).pendingTasks.length, 0);
+  tasks = [task];
+  assert.equal((await service.readActiveTasks(110000)).pendingTasks.length, 0);
+  tasks = [];
+  await service.readActiveTasks(115000);
+  const stopped = await service.readActiveTasks(120000);
+  assert.equal(stopped.pendingTasks[0].outcome, "managed-stopped");
+  assert.equal(stopped.records.abnormalInterruptedTaskCount, 0);
+  assert.equal(stopped.records.managedStoppedTaskCount, 1);
+  tasks = [{ ...task, id: "normal-turn", goalStatus: null }];
+  await service.readActiveTasks(125000);
+  tasks = [];
+  await service.readActiveTasks(130000);
+  terminalTasks = [{ ...task, id: "normal-turn", goalStatus: null, outcome: "completed", endedAt: 129, elapsedSeconds: 39, durationKnown: true }];
+  const completed = await service.readActiveTasks(135000);
+  assert.equal(completed.pendingTasks[0].outcome, "completed");
+  assert.equal(completed.records.abnormalInterruptedTaskCount, 0);
+  service.dispose();
+});
+
 test("requests the account usage endpoint with the protocol's null params", async () => {
   const client = new AppServerClient();
   client.start = async () => {};
@@ -114,7 +168,9 @@ test("emits an abnormal-interruption handoff once without extending its last kno
   assert.equal(active.records.highestEstimatedCostUsd, 3.25);
 
   tasks = [];
-  const completed = await service.readActiveTasks(110_000);
+  const missing = await service.readActiveTasks(110_000);
+  assert.equal(missing.pendingTasks.length, 0);
+  const completed = await service.readActiveTasks(112_000);
   assert.equal(completed.pendingTasks.length, 1);
   assert.equal(completed.completedTasks.length, 1);
   assert.equal(completed.completedTasks[0].projectName, "record-project");
@@ -296,7 +352,7 @@ test("keeps normalized received-reset history available while quota service is o
   service.dispose();
 });
 
-test("keeps official-reset history available while quota service is offline", async t => {
+test("retires local inferred official-reset history even when quota service is offline", async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codex-quota-monitor-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const appStatePath = path.join(directory, "quota-state.json");
@@ -324,12 +380,8 @@ test("keeps official-reset history available while quota service is offline", as
 
   const snapshot = await service.read();
   assert.equal(snapshot.online, false);
-  assert.deepEqual(snapshot.officialResetHistory, [{
-    detectedAt: 1234,
-    detectionMode: "all-limits",
-    previousFiveHourResetAt: 5678,
-    previousWeeklyResetAt: 9012
-  }]);
+  assert.deepEqual(snapshot.officialResetHistory, []);
+  assert.equal(service.state.data.officialResetSource, "community");
   service.dispose();
 });
 

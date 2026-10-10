@@ -9,9 +9,9 @@ const MAX_ROLLOUT_FILES = 1_000;
 const MAX_ROLLOUT_FILE_BYTES = 512 * 1024 * 1024;
 const MAX_ROLLOUT_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 const SCAN_CACHE_MS = 15 * 60 * 1_000;
-const COST_SNAPSHOT_SCHEMA_VERSION = 6;
+const COST_SNAPSHOT_SCHEMA_VERSION = 7;
 const MAX_PERSISTED_ROLLOUTS = 1_000;
-const PRICING_DATE = "2026-09-27";
+const PRICING_DATE = "2026-10-10";
 const LONG_CONTEXT_THRESHOLD = 272_000;
 
 // Standard API text-token prices in USD per one million tokens.
@@ -143,6 +143,14 @@ const MODEL_PRICING = Object.freeze({
   "gpt-6-sol": {
     input: 2,
     cachedInput: 0.2,
+    cacheWrite: 2.5,
+    output: 10,
+    longContext: true
+  },
+  // https://developers.openai.com/api/docs/pricing (Standard, 2026-10-10).
+  "gpt-6.1-sol": {
+    input: 2,
+    cachedInput: 0.1,
     cacheWrite: 2.5,
     output: 10,
     longContext: true
@@ -1050,7 +1058,7 @@ class CodexCostUsageReader {
       rolloutIndex
     };
     this.cachedResult = result;
-    this.cachedAt = indexComplete ? now : 0;
+    this.cachedAt = now; // Partial recovery also needs breathing room between bounded passes.
     return result;
   }
 }

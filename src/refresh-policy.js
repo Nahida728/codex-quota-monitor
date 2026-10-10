@@ -1,7 +1,8 @@
 (function initializeRefreshPolicy() {
-const ACTIVE_REFRESH_MS = 5_000;
-const IDLE_REFRESH_MS = 5_000;
-const ACTIVE_TASK_PROBE_MS = 5_000;
+// Safety fallback delays. Live changes arrive through main-process events.
+const ACTIVE_REFRESH_MS = 30_000;
+const IDLE_REFRESH_MS = 60_000;
+const ACTIVE_TASK_PROBE_MS = 60_000;
 
 function activeTaskCount(value) {
   return Number.isFinite(value?.count) && value.count > 0

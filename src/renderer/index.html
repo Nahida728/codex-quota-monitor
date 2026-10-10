@@ -20,7 +20,7 @@
       <header class="titlebar" id="titlebar">
         <div class="brand">
           <div>
-            <div class="eyebrow">CODEX PULSE</div>
+            <div class="eyebrow">CODEX PULSE · V1.3.0-BETA</div>
             <h1 data-i18n="title">Codex监测台</h1>
           </div>
         </div>
@@ -157,34 +157,38 @@
         </article>
       </section>
 
+      <section class="task-performance no-drag" id="taskPerformance" role="button" tabindex="0">
+        <div class="task-performance-heading"><strong data-i18n="latestTaskTitle">最近任务</strong><span id="latestTaskIdentity">—</span><small data-i18n="taskRateShort">区间输出 · tok/s</small></div>
+        <div class="task-performance-grid">
+          <div><span data-i18n="taskFirstToken">首字响应</span><strong id="latestTaskFirstToken">—</strong></div>
+          <div><span data-i18n="taskTotalTokens">总 Tokens</span><strong id="latestTaskTokens">—</strong></div>
+          <div><span data-i18n="taskPeakRate">峰值 tok/s</span><strong id="latestTaskPeak">—</strong></div>
+          <div><span data-i18n="taskMinRate">最低 tok/s</span><strong id="latestTaskMin">—</strong></div>
+          <div><span data-i18n="taskAverageRate">平均 tok/s</span><strong id="latestTaskAverage">—</strong></div>
+        </div>
+      </section>
+
       <section class="signals" id="statusSection" aria-label="状态提醒">
-        <article class="status-card status-card-button no-drag" id="resetCreditButton" role="button" tabindex="0">
-          <div class="status-card-top">
-            <div class="signal-icon" id="resetCreditIcon">
-            <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18"></path></svg>
-            </div>
-            <span class="status-count" id="resetStatusCount">--</span>
-          </div>
-          <div class="signal-copy">
-            <span data-i18n="resetCreditTitle">额度重置次数</span>
-            <strong id="resetCreditStatus">--</strong>
-          </div>
-          <small class="status-card-detail" id="resetCreditDetail" data-i18n="resetCreditCardHint">点击查看列表与收到记录</small>
-        </article>
-        <article class="status-card status-card-button no-drag" id="officialResetButton" role="button" tabindex="0">
-          <div class="status-card-top">
-            <div class="signal-icon">
-              <svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.6 2.8 8.2 7 10 4.2-1.8 7-5.4 7-10V6l-7-3Z"></path><path d="m12 7 .9 2.1 2.1.9-2.1.9L12 14l-.9-2.1L9 11l2.1-.9L12 7Z"></path></svg>
-            </div>
-            <div class="signal-check" id="officialResetCheck">
-              <svg viewBox="0 0 24 24"><path d="M8 6h11M8 12h11M8 18h11"></path><circle cx="4" cy="6" r=".7"></circle><circle cx="4" cy="12" r=".7"></circle><circle cx="4" cy="18" r=".7"></circle></svg>
-            </div>
-          </div>
-          <div class="signal-copy">
-            <span data-i18n="officialResetQuestion">官方额度重置</span>
+        <article class="status-card reset-hub no-drag">
+          <span class="section-label" data-i18n="resetHubTitle">重置管理</span>
+          <button id="resetCreditButton" class="reset-hub-action" type="button">
+            <span class="signal-icon" id="resetCreditIcon" hidden></span>
+            <span data-i18n="resetAvailableShort">可用次数</span>
+            <strong class="status-count" id="resetStatusCount">--</strong>
+            <span id="resetCreditStatus" hidden>--</span>
+          </button>
+          <button id="officialResetButton" class="reset-hub-action official-action" type="button">
+            <span id="officialResetCheck" hidden></span>
+            <span data-i18n="officialResetQuestion">官方重置</span>
             <strong id="officialResetStatus">--</strong>
-          </div>
+          </button>
+          <small id="resetCreditDetail" hidden></small>
         </article>
+        <button class="status-card probability-card no-drag" id="resetProbabilityButton" type="button">
+          <span class="section-label" data-i18n="resetProbabilityTitle">重置概率</span>
+          <span class="probability-values"><span><small>24h</small><strong id="resetProbability24">—</strong></span><span><small>48h</small><strong id="resetProbability48">—</strong></span></span>
+          <small id="resetProbabilityStatus" data-i18n="checkpointUnavailable">等待检查站</small>
+        </button>
         <article class="status-card status-card-button no-drag" id="clientUpdateCard" role="button" tabindex="0" aria-label="查看客户端版本更新时间线">
           <div class="status-card-top">
             <div class="signal-icon" id="clientUpdateIcon">
@@ -276,7 +280,7 @@
       <footer>
         <span id="lastChecked" data-i18n="waiting">等待首次检测</span>
         <span class="footer-separator">·</span>
-        <span id="autoRefreshLabel" data-i18n="autoRefresh">每 5 秒自动刷新</span>
+        <span id="autoRefreshLabel" data-i18n="autoRefresh">事件同步 · 低频兜底</span>
       </footer>
 
       <div class="drag-edge drag-edge-top" data-drag-edge="top" aria-hidden="true"></div>
@@ -386,11 +390,23 @@
           <div class="reset-credit-list reset-detail-list" id="resetCreditList" aria-live="polite">
             <div class="reset-credit-empty" data-i18n="noCredits">暂无可用次数</div>
           </div>
+          <button class="glass-button reset-official-link" id="resetOfficialLink" type="button" data-i18n="openOfficialResetHistory">查看官方重置记录</button>
           <h3 class="reset-detail-heading received-heading" data-i18n="receivedResetHistoryTitle">收到记录</h3>
           <div class="received-reset-history" id="receivedResetHistoryList"></div>
           <h3 class="reset-detail-heading consumed-heading" data-i18n="consumedResetHistoryTitle">使用记录</h3>
           <div class="consumed-reset-history" id="consumedResetHistoryList"></div>
           <button class="glass-button primary reset-detail-done" id="resetCreditDone" type="button" data-i18n="close">关闭</button>
+        </div>
+      </section>
+
+      <section class="history-modal" id="resetProbabilityModal" hidden aria-modal="true" role="dialog" aria-labelledby="resetProbabilityTitle">
+        <div class="history-dialog checkpoint-dialog">
+          <div class="history-heading"><div><span class="eyebrow">RESET RADAR</span><h2 id="resetProbabilityTitle" data-i18n="resetProbabilityTitle">重置概率</h2></div><button class="popover-close" id="resetProbabilityClose" type="button" aria-label="关闭">×</button></div>
+          <div class="checkpoint-summary" id="checkpointSummary"></div>
+          <p id="checkpointMethod"></p>
+          <p id="checkpointFreshness"></p>
+          <div class="checkpoint-history" id="checkpointHistory"></div>
+          <button class="glass-button primary history-done" id="resetProbabilityDone" type="button" data-i18n="close">关闭</button>
         </div>
       </section>
 
@@ -403,7 +419,7 @@
             </div>
             <button class="popover-close" id="officialResetHistoryClose" type="button" aria-label="关闭">×</button>
           </div>
-          <p data-i18n="officialResetHistoryHint">记录检测器观察到双额度在正常恢复时间前同时恢复 100% 的时间，数据永久保存在本机。</p>
+          <p data-i18n="officialResetHistoryHint">仅显示社区检查站收录的官方重置公告，附原始来源；不再显示本机额度变化推断。</p>
           <div class="official-reset-history" id="officialResetHistoryList"></div>
           <button class="glass-button primary history-done" id="officialResetHistoryDone" type="button" data-i18n="close">关闭</button>
         </div>
@@ -576,6 +592,12 @@
             </article>
           </div>
           <p class="active-task-explanation" data-i18n="activeTaskDetailsHint">按本机 Codex 当前回合的 Token 使用量与标准 API 价格估算，不代表 Codex 订阅实际收费。</p>
+          <p class="active-task-explanation task-performance-scope" id="taskPerformanceScope"></p>
+          <div class="task-toolbar no-drag">
+            <select id="taskFilter" data-label-key="taskFilterLabel"><option value="all" data-i18n="taskFilterAll">全部任务</option><option value="running" data-i18n="activeTaskRunningSection">运行中</option><option value="pending" data-i18n="activeTaskPendingSection">待确认</option><option value="goal" data-i18n="taskKindGoal">/goal</option><option value="subagent" data-i18n="taskKindSubagent">子代理</option></select>
+            <select id="taskSort" data-label-key="taskSortLabel"><option value="time" data-i18n="taskSortTime">按时间</option><option value="cost" data-i18n="taskSortCost">按金额</option><option value="duration" data-i18n="taskSortDuration">按时长</option></select>
+            <button class="glass-button primary" id="confirmAllTasks" type="button" data-i18n="confirmAllTasks">一键确认</button>
+          </div>
           <div class="active-task-list" id="activeTaskList" aria-live="polite"></div>
           <button class="glass-button primary active-task-done" id="activeTaskDone" type="button" data-i18n="close">关闭</button>
         </div>
