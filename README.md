@@ -37,7 +37,9 @@ Windows x64；需要能够连接 OpenAI 服务的网络。API Key 登录通常�
 
 ## 1.3.0 带来了什么
 
-1.3.2 修复公开重置公告被误过滤、手动刷新复用旧缓存的问题。公告与概率独立同步，自动检查最长约一分钟；建议升级。原因和修复详情见更新日志。
+1.3.3 是紧急补丁，修复大账本在升级重启后被跳过、API 等价金额下降及旧会话回放造成任务耗时暴增的问题，支持从有效归档恢复原有统计。建议升级；错误来源和修复详情见更新日志。
+
+1.3.2 修复公开重置公告被误过滤、手动刷新复用旧缓存的问题。公告与概率独立同步，自动检查最长约一分钟。
 
 1.3.1 是紧急补丁，修复任务漏报和看板停留在已完成回合的问题，并在看板右上角加入运行并发数和子智能体提示。建议 1.3.0 用户升级；错误来源和修复详情见更新日志。
 
@@ -119,7 +121,9 @@ Requires Windows x64 and network access to OpenAI. API-key mode usually does not
 
 ### What's new in 1.3.0
 
-1.3.2 fixes discarded public reset confirmations and stale manual-refresh results. Announcements and odds update independently, with automatic checks up to roughly one minute apart. Upgrading is recommended; see the changelog for causes and fixes.
+The 1.3.3 emergency patch restores large ledgers skipped after upgrade restarts and fixes inflated task durations from replayed sessions. Upgrading is recommended. Existing statistics can be recovered from valid archives; see the changelog for causes and fixes.
+
+1.3.2 fixes discarded public reset confirmations and stale manual-refresh results. Announcements and odds update independently, with automatic checks up to roughly one minute apart.
 
 The 1.3.1 emergency patch restores hidden live tasks, keeps the dashboard on running turns, and adds a concurrent-task count with subagent details. It is recommended for 1.3.0 users; the changelog documents the causes and fixes.
 

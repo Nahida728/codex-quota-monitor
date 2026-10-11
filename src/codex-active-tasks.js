@@ -132,6 +132,14 @@ function terminalDuration(startRecord, terminalRecord, syntheticEvidence = false
       durationKnown: true
     };
   }
+  // Replayed final-answer timestamps are ingestion times; explicit lifecycle
+  // durations remain valid. Without those, only a non-replayed start can time
+  // a final answer safely.
+  if (terminalRecord?.finalAnswer &&
+      (!Number.isFinite(startRecord?.eventAt) ||
+       Math.abs(startRecord.eventAt - startRecord.startedAt) > 1)) {
+    return { elapsedSeconds: 0, durationKnown: false };
+  }
   if (
     terminalRecord?.completedAtExplicit &&
     Number.isFinite(terminalRecord.eventAt) &&
@@ -579,6 +587,7 @@ async function scanTaskHistoryFile(file, history, now, goalContexts = new Map())
   let projectName = null;
   let context = {};
   let active = null;
+  let pendingFinal = null;
   let lastObservedAt = null;
   const stream = fsSync.createReadStream(file.path, { encoding: "utf8" });
   const lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
@@ -617,6 +626,7 @@ async function scanTaskHistoryFile(file, history, now, goalContexts = new Map())
       )
     });
     active = null;
+    pendingFinal = null;
   }
 
   for await (const line of lines) {
@@ -631,8 +641,10 @@ async function scanTaskHistoryFile(file, history, now, goalContexts = new Map())
       continue;
     }
     if (record?.kind === "task_started") {
+      if (active && record.turnId && record.turnId === active.turnId) continue;
       if (active) {
-        finishActive({
+        if (pendingFinal) finishActive(pendingFinal);
+        else finishActive({
           eventAt: record.eventAt || record.startedAt,
           durationSeconds: null
         }, context.goalStatus ? "managed-stopped" : "abnormal-interrupted", true);
@@ -646,6 +658,10 @@ async function scanTaskHistoryFile(file, history, now, goalContexts = new Map())
           costLines: []
         };
       }
+      continue;
+    }
+    if (active && record?.finalAnswer) {
+      pendingFinal = record;
       continue;
     }
     if (
@@ -671,6 +687,7 @@ async function scanTaskHistoryFile(file, history, now, goalContexts = new Map())
     }
   }
 
+  if (active && pendingFinal) finishActive(pendingFinal);
   if (active && file.archived) {
     finishActive({
       eventAt: lastObservedAt,

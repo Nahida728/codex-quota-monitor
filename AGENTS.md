@@ -1044,3 +1044,23 @@ Verify:
   observation. Preserve prior public history on failures and archive recovery.
 - Public sources currently use bounded checks, not push delivery; automatic checks
   take up to roughly one minute plus source/network delay. Do not claim streaming.
+
+## Ledger recovery and replayed task durations (1.3.3)
+
+- State reads and writes share a 64 MiB bound. The old 4 MiB reader rejected
+  valid writer-produced model ledgers after restart. Never silently replace an
+  oversized valid ledger with an empty baseline; preserve the previous file if
+  a write exceeds the recoverable bound. Fold recovery archives sequentially,
+  cache their validation metadata, and bound uncached retention validation.
+- Task records belong to a persisted task ledger generation. During recovery,
+  a newer intact model-ledger lineage takes precedence over task totals from a
+  reset scan caused by missing state. Preserve independent reset/version history.
+  Later model-only full scans must not change the explicit task lineage marker.
+- A replayed final_answer can carry its replay time while task_started retains
+  the original started_at. Prefer the following explicit duration_ms completion
+  record. A final answer without explicit duration can use timestamps only when
+  the start timestamp matches started_at; otherwise its duration is unavailable.
+  Repeated starts for the same active turn must not create extra tasks.
+- For persistence changes, verify a real-size ledger across a cold restart,
+  archive recovery, and one incremental update. Displayed API-equivalent cost
+  is calibrated; compare it separately from the raw local cost ledger.

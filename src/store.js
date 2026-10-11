@@ -5,7 +5,7 @@ const { reconcileCostSnapshots } = require("./codex-cost-usage");
 const { reconcileTaskHistorySnapshots } = require("./codex-active-tasks");
 const { normalizeCheckpointEvents } = require("./reset-checkpoints");
 
-const MAX_STATE_BYTES = 4 * 1024 * 1024;
+const MAX_STATE_BYTES = 64 * 1024 * 1024;
 const DEFAULT_BACKUP_INTERVAL_MS = 15 * 60 * 1000;
 const DEFAULT_MAX_BACKUPS = 192;
 const MAX_BACKUP_CANDIDATES = 512;
@@ -39,6 +39,9 @@ function writeFileDurably(filePath, contents, { exclusive = false } = {}) {
 
 function writeJsonAtomically(filePath, value) {
   const contents = JSON.stringify(value, null, 2);
+  if (Buffer.byteLength(contents) > MAX_STATE_BYTES) {
+    throw new RangeError("State exceeds the recoverable file size limit");
+  }
   const temporary = `${filePath}.tmp-${process.pid}-${crypto.randomUUID()}`;
   try {
     writeFileDurably(temporary, contents, { exclusive: true });
@@ -405,10 +408,19 @@ function reconcileQuotaStates(primary, candidates = []) {
     states.map(state => state.tokenCostSnapshot)
   );
   if (tokenCostSnapshot) result.tokenCostSnapshot = tokenCostSnapshot;
-  result.taskPerformanceRecords = normalizeTaskPerformanceRecords(states);
-  if (states.some(state => isPlainObject(state.taskHistorySnapshot))) {
+  // A lost model ledger also restarted the historical task scan. Keep task
+  // records from the recovered lineage, never max corrupted reset-scan totals
+  // back into it. An explicit marker survives subsequent model-only full scans.
+  const taskGeneration = Math.max(0, ...states.map(state =>
+    Number(state.taskLedgerGeneration ?? state.tokenCostSnapshot?.ledgerGeneration) || 0));
+  const taskStates = states.filter(state =>
+    (Number(state.taskLedgerGeneration ?? state.tokenCostSnapshot?.ledgerGeneration) || 0) === taskGeneration);
+  result.taskLedgerGeneration = taskGeneration;
+  result.taskPerformanceRecords = normalizeTaskPerformanceRecords(taskStates);
+  delete result.taskHistorySnapshot;
+  if (taskStates.some(state => isPlainObject(state.taskHistorySnapshot))) {
     result.taskHistorySnapshot = reconcileTaskHistorySnapshots(
-      states.map(state => state.taskHistorySnapshot),
+      taskStates.map(state => state.taskHistorySnapshot),
       result.taskPerformanceRecords
     );
   }
@@ -486,6 +498,7 @@ class JsonStore {
     this.lastBackupAt = 0;
     this.lastProtectedFingerprint = null;
     this.protectedState = {};
+    this.validatedBackups = new Map();
     this.load();
   }
 
@@ -498,7 +511,7 @@ class JsonStore {
         const absolute = path.join(this.backupDirectory, entry.name);
         try {
           const stat = fs.statSync(absolute);
-          files.push({ path: absolute, mtimeMs: stat.mtimeMs });
+          files.push({ path: absolute, mtimeMs: stat.mtimeMs, size: stat.size });
         } catch {}
       }
     } catch {}
@@ -511,7 +524,7 @@ class JsonStore {
         const absolute = path.join(directory, entry.name);
         try {
           const stat = fs.statSync(absolute);
-          files.push({ path: absolute, mtimeMs: stat.mtimeMs });
+          files.push({ path: absolute, mtimeMs: stat.mtimeMs, size: stat.size });
         } catch {}
       }
     } catch {}
@@ -529,27 +542,30 @@ class JsonStore {
     }
 
     const recoveryFiles = this.listRecoveryFiles();
-    const candidates = recoveryFiles
-      .map(file => ({ ...file, data: readJsonObject(file.path) }))
-      .filter(file => file.data);
-    const candidateStates = candidates.map(file => file.data);
-    const base = primary && Object.keys(primary).length
-      ? primary
-      : (candidateStates[0] || primary || {});
-    this.data = this.reconcile
-      ? this.reconcile(base, candidateStates)
-      : (primary || candidateStates[0] || {});
+    // Fold one bounded archive at a time. Retaining hundreds of complete
+    // model ledgers in an array can exhaust memory on a cold restart.
+    this.data = primary || {};
+    let validCount = 0;
+    for (const file of recoveryFiles) {
+      const candidate = readJsonObject(file.path);
+      this.validatedBackups.set(file.path, { mtimeMs: file.mtimeMs, size: file.size, valid: Boolean(candidate) });
+      if (!candidate) continue;
+      validCount += 1;
+      if ((!primary || !Object.keys(primary).length) && validCount === 1) this.data = candidate;
+      if (this.reconcile) this.data = this.reconcile(this.data, [candidate]);
+      if (file.path.startsWith(`${this.backupDirectory}${path.sep}`)) {
+        this.lastBackupAt = Math.max(this.lastBackupAt, file.mtimeMs);
+      }
+    }
+    if (this.reconcile) this.data = this.reconcile(this.data, []);
     this.protectedState = this.reconcile
-      ? this.reconcile({}, [this.data, ...candidateStates])
+      ? this.reconcile({}, [this.data])
       : { ...this.data };
-    this.lastBackupAt = candidates
-      .filter(file => file.path.startsWith(`${this.backupDirectory}${path.sep}`))
-      .reduce((latest, file) => Math.max(latest, file.mtimeMs), 0);
     this.lastProtectedFingerprint = this.protectedFingerprint?.(this.protectedState) || null;
 
     const primaryChanged = !primary ||
       JSON.stringify(primary) !== JSON.stringify(this.data);
-    if (primaryChanged && (primary || candidates.length)) {
+    if (primaryChanged && (primary || validCount)) {
       writeJsonAtomically(this.filePath, this.data);
     }
   }
@@ -569,12 +585,17 @@ class JsonStore {
     if (!force && !protectedChanged && !intervalElapsed) return false;
 
     const contents = JSON.stringify(this.data, null, 2);
+    if (Buffer.byteLength(contents) > MAX_STATE_BYTES) {
+      throw new RangeError("State exceeds the recoverable file size limit");
+    }
     const digest = crypto.createHash("sha256").update(contents).digest("hex").slice(0, 16);
     const filename = `${String(Math.floor(now)).padStart(16, "0")}-${digest}.json`;
     const destination = path.join(this.backupDirectory, filename);
     try {
       fs.mkdirSync(this.backupDirectory, { recursive: true });
       writeFileDurably(destination, contents, { exclusive: true });
+      const stat = fs.statSync(destination);
+      this.validatedBackups.set(destination, { mtimeMs: stat.mtimeMs, size: stat.size, valid: true });
       this.lastBackupAt = now;
       this.lastProtectedFingerprint = fingerprint;
       return true;
@@ -590,6 +611,7 @@ class JsonStore {
   pruneBackups() {
     if (!this.backupDirectory) return;
     let files;
+    let validationBudget = 4;
     try {
       files = fs.readdirSync(this.backupDirectory, { withFileTypes: true })
         .filter(entry => entry.isFile() && entry.name.endsWith(".json"))
@@ -597,7 +619,15 @@ class JsonStore {
           name: entry.name,
           path: path.join(this.backupDirectory, entry.name)
         }))
-        .filter(file => readJsonObject(file.path))
+        .filter(file => {
+          const stat = fs.statSync(file.path);
+          const cached = this.validatedBackups.get(file.path);
+          if (cached?.mtimeMs === stat.mtimeMs && cached?.size === stat.size) return cached.valid;
+          if (validationBudget-- <= 0) return false;
+          const valid = Boolean(readJsonObject(file.path));
+          this.validatedBackups.set(file.path, { mtimeMs: stat.mtimeMs, size: stat.size, valid });
+          return valid;
+        })
         .sort((left, right) => right.name.localeCompare(left.name));
     } catch {
       return;
@@ -608,6 +638,7 @@ class JsonStore {
       ) continue;
       try {
         fs.unlinkSync(file.path);
+        this.validatedBackups.delete(file.path);
       } catch {}
     }
   }
