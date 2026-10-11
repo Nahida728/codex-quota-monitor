@@ -47,6 +47,11 @@ contextBridge.exposeInMainWorld("codexMonitor", {
     ipcRenderer.on("tasks:snapshot", listener);
     return () => ipcRenderer.removeListener("tasks:snapshot", listener);
   },
+  onCheckpoints: callback => {
+    const listener = (_event, checkpoint) => callback(checkpoint);
+    ipcRenderer.on("checkpoints:snapshot", listener);
+    return () => ipcRenderer.removeListener("checkpoints:snapshot", listener);
+  },
   onAlwaysOnTop: callback => ipcRenderer.on("settings:alwaysOnTop", (_event, enabled) => callback(enabled)),
   onWindowModeChanged: callback => ipcRenderer.on("window:modeChanged", (_event, collapsed, anchor) => callback(collapsed, anchor)),
   onTopDockChanged: callback => ipcRenderer.on("window:topDockChanged", (_event, state) => callback(state))

@@ -1,5 +1,37 @@
 # Changelog / 更新日志
 
+## 1.3.2 补丁 / Patch — 2026-10-11
+
+### 中文
+
+修复“官方重置”停留在旧公告的问题，建议 1.3.1 及更早版本升级。
+
+**错误来源**：检查站的实时公告使用 `confirmed: true`，同时保留 `confidence: medium` 和待核验标记。旧解析器只接受高置信度归档或另一种验证标记，误过滤了已经明确确认的新公告。手动刷新还会命中一分钟缓存；公告显示与额度、消费读取绑定，也可能被慢请求延后。
+
+**修复情况**
+
+- 兼容实时公告的明确确认字段，继续排除未确认记录、预告、重置卡赠送及不安全来源链接。
+- 手动刷新重新校验网站数据，自动请求也向 HTTP 缓存发起校验。合并进行中的请求，增加五秒防连点保护。
+- 重置公告和 24 / 48 小时概率读取完成后立即同步，不再等待额度和本地统计；旧整页快照不能覆盖较新的检查站数据。
+- 保留历史公告及现有设置、统计。断网或来源失败时沿用历史记录，不恢复本机推断的重置。
+
+来源目前通过定时检查同步，自动检查最长约一分钟，另加网站自身更新及网络延迟；不提供网站推送或逐秒刷新。
+
+### English
+
+Fixed the official-reset card retaining an older announcement. Recommended for 1.3.1 and earlier users.
+
+**Cause**: Live checkpoint records use `confirmed: true` while retaining `confidence: medium` and a pending verification flag. The old parser required high-confidence archive records or a different verification flag, discarding explicit new confirmations. Manual refresh also reused a one-minute cache, and slow quota or cost reads could delay announcement display.
+
+**Fixes**
+
+- Accept explicit live confirmations while excluding unconfirmed records, previews, banked grants and unsafe source links.
+- Revalidate website data on manual refresh and ask HTTP caches to revalidate automatic requests. Coalesce in-flight reads and apply a five-second manual request guard.
+- Publish reset announcements and 24/48-hour odds as soon as their read completes. Quota and local statistics no longer delay them, and older full snapshots cannot overwrite newer checkpoint observations.
+- Retain announcement history, settings and recorded statistics through source failures. Retired local reset inference stays excluded.
+
+Sources are checked periodically, with up to roughly one minute between automatic checks plus source and network delay. This is not website push delivery or per-second polling.
+
 ## 1.3.1 紧急补丁 / Emergency patch — 2026-10-10
 
 ### 中文

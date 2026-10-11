@@ -26,6 +26,32 @@ const emptyActiveTaskReader = {
   })
 };
 
+test("checkpoint updates publish and persist before a slow failing quota read finishes", async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codex-checkpoint-sync-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  let rejectQuota, options;
+  const checkpoint = { available: true, observedAt: Date.now(), fetchedAt: Date.now(), events: [
+    { at: 1791691269, sourceUrl: "https://x.com/thsottiaux/status/2109132167112782291" }
+  ] };
+  const service = new QuotaService({ appStatePath: path.join(directory, "state.json"),
+    client: { readRateLimits: () => new Promise((_resolve, reject) => { rejectQuota = reject; }), dispose() {} },
+    checkpointReader: { read: async (_now, _previous, value) => { options = value; return checkpoint; } },
+    versionDetector: { read: async () => null }, subscriptionReader: { read: async () => null },
+    costUsageReader: emptyCostUsageReader, activeTaskReader: emptyActiveTaskReader });
+  let published;
+  service.onCheckpoints = value => { published = value; };
+  const pending = service.read({ forceCheckpoints: true });
+  for (let index = 0; index < 8; index++) await Promise.resolve();
+  assert.equal(published, checkpoint);
+  assert.deepEqual(options, { force: true });
+  assert.deepEqual(service.state.data.resetCheckpointSnapshot, checkpoint);
+  rejectQuota(new Error("offline"));
+  const result = await pending;
+  assert.equal(result.online, false);
+  assert.equal(result.resetCheckpoints, checkpoint);
+  service.dispose();
+});
+
 test("malformed app-server Reserve data falls back to its independent official bucket", async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codex-reserve-service-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));

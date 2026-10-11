@@ -699,6 +699,8 @@ let presentationFrame = null;
 let lastPresentationSecond = null;
 let unsubscribeSnapshot = null;
 let unsubscribeTasks = null;
+let unsubscribeCheckpoints = null;
+let latestCheckpoints = null;
 let isRefreshing = false;
 let backgroundDataUrl = null;
 let backgroundOpacity = 0.34;
@@ -1397,6 +1399,8 @@ function appendCheckpointRows(container, checkpoint) {
 
 function renderCheckpoints(checkpoint = {}) {
   checkpoint ||= {};
+  if ((latestCheckpoints?.observedAt || 0) > (checkpoint.observedAt || 0)) checkpoint = latestCheckpoints;
+  else latestCheckpoints = checkpoint;
   const percent = value => Number.isFinite(value) ? `${value}%` : "—";
   elements.resetProbability24.textContent = percent(checkpoint.probability24);
   elements.resetProbability48.textContent = percent(checkpoint.probability48);
@@ -3415,6 +3419,10 @@ async function initialize() {
     if (latestSnapshot) latestSnapshot = { ...latestSnapshot, activeTasks: result };
     renderActiveTasks(result);
   });
+  unsubscribeCheckpoints = window.codexMonitor.onCheckpoints?.(checkpoint => {
+    if (latestSnapshot) latestSnapshot = { ...latestSnapshot, resetCheckpoints: checkpoint };
+    renderCheckpoints(checkpoint);
+  });
   window.codexMonitor.onCost?.(cost => {
     if (latestSnapshot) latestSnapshot = { ...latestSnapshot, tokenCost: cost };
     renderTokenCost(cost);
@@ -3429,7 +3437,7 @@ async function initialize() {
 window.addEventListener("DOMContentLoaded", initialize);
 window.addEventListener("beforeunload", () => {
   clearTopDockLeaveTimer();
-  unsubscribeSnapshot?.(); unsubscribeTasks?.();
+  unsubscribeSnapshot?.(); unsubscribeTasks?.(); unsubscribeCheckpoints?.();
   if (presentationFrame !== null) cancelAnimationFrame(presentationFrame);
   cancelAnimationFrame(tokenChartAnimationFrame);
 });

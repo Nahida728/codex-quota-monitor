@@ -1,3 +1,8 @@
+# 工作方式
+
+- 优先实现和修复。默认只运行本次改动直接相关、能发现真实风险的少量定向检查；不默认运行全套回归、重复已通过的检查、反复截图或新增大批测试。
+- 只有具体故障或高风险边界才扩展验证。涉及存档、货币、认证与发布时，保留数据安全及版本、哈希、签名门禁；明确说明未验证的部分。
+
 # Codex Quota Monitor — Contributor Rules
 
 This file is the persistent engineering contract for Codex and human contributors.
@@ -857,8 +862,9 @@ Historical language/readability failures:
 
 ## Testing matrix
 
-Run `npm test` for every functional change. Add regression coverage before or with
-the fix. At minimum, automated tests must continue covering:
+Run focused checks for the changed behavior; broaden only for an evidenced risk.
+Preserve existing coverage and add a small regression check when useful. Existing
+automated coverage includes:
 
 - 5-hour and weekly duration-based identification;
 - missing/paused 5-hour window;
@@ -936,7 +942,7 @@ Verify:
    Padded display versions use valid SemVer internally: 1.3.51 in package/lock
    metadata, with displayVersion/buildVersion and filenames set to 1.3.051.
 4. Run `node --check` for changed JavaScript where useful.
-5. Run `npm test`.
+5. Run the directly relevant targeted checks.
 6. Complete the visual/manual matrix proportionate to the change.
 7. Run `npm run build`.
 8. Confirm portable and NSIS filenames and architectures.
@@ -1022,3 +1028,19 @@ Verify:
 - Release asset names are ASCII and include the SemVer version. Publish latest.yml (beta.yml for beta channels)
   and the setup blockmap alongside the setup, portable, and SHA-256 manifest.
   Keep build.files as the src/package allowlist and inspect actual ASAR contents.
+
+## Checkpoint synchronization (1.3.2)
+
+- The live radar's explicit confirmed=true is confirmation evidence even when
+  confidence=medium and reset_verification_status=pending. Accept it only for
+  non-preview global resets with a validated official-post URL. Exclude explicit
+  confirmed=false, banked grants and banked reset kinds; retain legacy high-confidence
+  archive/verified records that lack the newer confirmation field.
+- Revalidate public endpoints with no-cache requests. Manual refresh bypasses the
+  one-minute reader cache, with one in-flight request and a five-second force guard.
+  A manual request during a full read queues at most one forced follow-up.
+- Publish normalized checkpoint data as soon as it resolves, independently of
+  quota/cost reads. Older full snapshots must not roll back a newer checkpoint
+  observation. Preserve prior public history on failures and archive recovery.
+- Public sources currently use bounded checks, not push delivery; automatic checks
+  take up to roughly one minute plus source/network delay. Do not claim streaming.

@@ -77,7 +77,7 @@ function checkpointSummary(snapshot, now = Date.now(), cached = false) {
     ? Math.round(100 * (1 - Math.exp(-Math.LN2 * hours * 3600 / medianSeconds))) : null;
   const forecast = normalizeForecast(snapshot?.forecast, now);
   const useForecast = forecast && !stale && now - forecast.checkedAt <= 24 * 3600000;
-  return { available: events.length > 0, sourceUrl: snapshot?.sourceUrl === RADAR_URL ? RADAR_URL : SOURCE_URL, events,
+  return { available: events.length > 0, observedAt: now, sourceUrl: snapshot?.sourceUrl === RADAR_URL ? RADAR_URL : SOURCE_URL, events,
     latestAt: events.at(-1)?.at || null, sourceCheckedAt,
     fetchedAt: Number.isFinite(snapshot?.fetchedAt) && snapshot.fetchedAt <= now + 300000 ? snapshot.fetchedAt : null, cached, stale,
     sampleCount: gaps.length, medianSeconds, windowDays: 183,
@@ -100,21 +100,27 @@ function parseRadarTimeline(raw, now = Date.now()) {
   const sourceCheckedAt = Date.parse(raw?.updated_at);
   if (!Number.isFinite(sourceCheckedAt) || sourceCheckedAt <= 0 || sourceCheckedAt > now + 300000 || !Array.isArray(raw?.events)) throw new Error("SOURCE_SCHEMA_CHANGED");
   const events = normalizeCheckpointEvents(raw.events.filter(event =>
-    event?.type === "reset" && event?.scope === "global" && event?.confidence === "high" &&
-    event?.preview === false && (event.source === "archive" || event.reset_verification_status === "verified")
+    event?.type === "reset" && event?.scope === "global" && event?.preview === false &&
+    event?.banked_grant !== true && event?.reset_kind !== "banked" &&
+    (event.confirmed === true && ["high", "medium"].includes(event.confidence) ||
+      event.confirmed !== false && event.confidence === "high" &&
+      (event.source === "archive" || event.reset_verification_status === "verified"))
   ).map(event => ({ at: Date.parse(event.effective_at || event.announced_at) / 1000, sourceUrl: event.url })), now);
   if (!events.length) throw new Error("SOURCE_NO_CONFIRMED_EVENTS");
   return { sourceUrl: RADAR_URL, events, sourceCheckedAt, fetchedAt: now };
 }
 
 class ResetCheckpointReader {
-  constructor({ fetchImpl = globalThis.fetch } = {}) { this.fetch = fetchImpl; this.nextReadAt = 0; this.inFlight = null; }
-  async read(now = Date.now(), previous = null) {
+  constructor({ fetchImpl = globalThis.fetch } = {}) { this.fetch = fetchImpl; this.nextReadAt = 0; this.lastAttemptAt = -Infinity; this.inFlight = null; }
+  async read(now = Date.now(), previous = null, { force = false } = {}) {
     if (this.inFlight) return this.inFlight;
-    if (now < this.nextReadAt) return checkpointSummary(this.snapshot || previous, now, true);
+    if (now < this.nextReadAt && (!force || now - this.lastAttemptAt < 5000)) return checkpointSummary(this.snapshot || previous, now, true);
+    this.lastAttemptAt = now;
     this.inFlight = (async () => {
       try {
-        const getText = async url => readBoundedText(await this.fetch(url, { redirect: "error", signal: AbortSignal.timeout(6000) }));
+        const getText = async url => readBoundedText(await this.fetch(url, {
+          redirect: "error", cache: "no-cache", headers: { "Cache-Control": "no-cache" }, signal: AbortSignal.timeout(6000)
+        }));
         const results = await Promise.allSettled([
           getText(`${RADAR_URL}api/timeline`).then(text => parseRadarTimeline(JSON.parse(text), now)),
           getText(SOURCE_URL).then(text => ({ ...parseCheckpointPage(text, now), sourceUrl: SOURCE_URL })),

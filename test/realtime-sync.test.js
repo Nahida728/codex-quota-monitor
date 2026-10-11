@@ -93,3 +93,20 @@ test("live telemetry changes reach the task channel before a turn completes",asy
   assert.equal(h.events.filter(([kind])=>kind==='local').at(-1)[1].count,0);
   h.sync.dispose();
 });
+
+test("manual refresh during an in-flight snapshot queues one forced checkpoint read", async () => {
+  let finish;
+  const options = [];
+  const h = harness({ client: {}, readActiveTasks: async () => ({ tasks: [] }), read: value => {
+    options.push(value);
+    return options.length === 1 ? new Promise(resolve => { finish = resolve; }) : Promise.resolve({ online: true });
+  } });
+  const pending = h.sync.refresh();
+  h.sync.refresh({ forceCheckpoints: true });
+  h.sync.refresh({ forceCheckpoints: true });
+  assert.equal(options.length, 1);
+  finish({ online: true }); await pending;
+  await h.advance(3000);
+  assert.deepEqual(options, [{ forceCheckpoints: false }, { forceCheckpoints: true }]);
+  h.sync.dispose();
+});

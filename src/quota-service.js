@@ -322,9 +322,9 @@ class QuotaService {
     this.lastTaskRecordWriteAt = 0;
   }
 
-  async read() {
+  async read({ forceCheckpoints = false } = {}) {
     if (this.inFlight) return this.inFlight;
-    this.inFlight = this.performRead().finally(() => {
+    this.inFlight = this.performRead({ forceCheckpoints }).finally(() => {
       this.inFlight = null;
     });
     return this.inFlight;
@@ -481,10 +481,21 @@ class QuotaService {
     return this.activeTaskInFlight;
   }
 
-  async performRead() {
+  async performRead({ forceCheckpoints = false } = {}) {
     const checkedAt = Date.now();
-    const checkpointPromise = this.checkpointReader?.read(checkedAt, this.state.data.resetCheckpointSnapshot)
-      .catch(() => null) || Promise.resolve(null);
+    const checkpointPromise = this.checkpointReader?.read(checkedAt, this.state.data.resetCheckpointSnapshot, { force: forceCheckpoints })
+      .then(checkpoint => {
+        if (checkpoint?.available) this.state.set("resetCheckpointSnapshot", checkpoint);
+        if (!this.disposed && checkpoint) {
+          const { observedAt, cached, ...content } = checkpoint;
+          const fingerprint = JSON.stringify(content);
+          if (fingerprint !== this.lastCheckpointFingerprint) {
+            this.lastCheckpointFingerprint = fingerprint;
+            this.onCheckpoints?.(checkpoint);
+          }
+        }
+        return checkpoint;
+      }).catch(() => null) || Promise.resolve(null);
     const quotaPromise = Promise.resolve().then(() => this.client.readRateLimits());
     const reservePromise = quotaPromise.then(raw => {
       const buckets = raw?.rateLimitsByLimitId;
@@ -493,10 +504,6 @@ class QuotaService {
       const hasReserve = Boolean(identifyWindows(reserve).weekly);
       return !hasReserve && this.reserveReader ? this.reserveReader.read() : null;
     }).catch(() => null);
-    const saveCheckpoints = checkpoint => {
-      if (checkpoint?.available) this.state.set("resetCheckpointSnapshot", checkpoint);
-      return checkpoint;
-    };
     const versionPromise = this.versionDetector.read(checkedAt).catch(() => null);
     const tokenUsagePromise = typeof this.client.readTokenUsage === "function"
       ? Promise.resolve().then(() => this.client.readTokenUsage()).catch(() => null)
@@ -528,7 +535,7 @@ class QuotaService {
       ]);
       const normalized = normalizeQuotaResponse(raw, this.state.data, Math.floor(checkedAt / 1000), { officialResetSource: "community" });
       if (!normalized.reserve) normalized.reserve = await reservePromise;
-      const resetCheckpoints = saveCheckpoints(await checkpointPromise);
+      const resetCheckpoints = await checkpointPromise;
       const persisted = normalized.persistence;
       delete normalized.persistence;
       const tokenUsage = normalizeTokenUsageResponse(tokenUsageRaw, this.state.data, checkedAt);
@@ -594,7 +601,7 @@ class QuotaService {
       else if (/timeout/i.test(message)) errorCode = "TIMEOUT";
       return {
         online: false,
-        resetCheckpoints: saveCheckpoints(await checkpointPromise),
+        resetCheckpoints: await checkpointPromise,
         checkedAt,
         lastSuccessfulAt: this.state.get("lastSuccessfulAt", null),
         data: null,
