@@ -747,7 +747,7 @@ function registerIpc() {
   ipcMain.handle("monitor-update:read", () => monitorUpdater?.snapshot());
   ipcMain.handle("monitor-update:check", () => monitorUpdater?.check());
   ipcMain.handle("monitor-update:install", () => monitorUpdater?.install());
-  ipcMain.handle("quota:read", () => realtimeSync.refresh());
+  ipcMain.handle("quota:read", () => realtimeSync.refresh({ forceCheckpoints: true }));
   ipcMain.handle("cost:rescan", async () => {
     const result = await quotaService.rescanCost();
     realtimeSync.requestRemote();
@@ -912,6 +912,10 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     onTasks: result => window?.webContents.send("tasks:snapshot", result)
   });
   realtimeSync.start();
+  quotaService.onCheckpoints = checkpoint => {
+    if (realtimeSync.latest) realtimeSync.latest = { ...realtimeSync.latest, resetCheckpoints: checkpoint };
+    window?.webContents.send("checkpoints:snapshot", checkpoint);
+  };
   quotaService.onCostSnapshot = cost => {
     if (realtimeSync.latest) realtimeSync.latest = { ...realtimeSync.latest, tokenCost: cost };
     window?.webContents.send("cost:snapshot", cost);

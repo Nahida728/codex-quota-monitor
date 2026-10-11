@@ -66,12 +66,18 @@ class RealtimeSync {
     this.remoteTimer = this.setTimer(() => { this.remoteTimer = null; this.refresh().catch(() => {}); }, delay);
     this.remoteTimer.unref?.();
   }
-  async refresh() {
+  async refresh({ forceCheckpoints = false } = {}) {
     if (this.stopped) return null;
-    if (this.remoteInFlight) return this.remoteInFlight;
+    if (forceCheckpoints) this.forceCheckpointsPending = true;
+    if (this.remoteInFlight) {
+      if (forceCheckpoints) this.remoteDirty = true;
+      return this.remoteInFlight;
+    }
     if (this.remoteTimer) this.clearTimer(this.remoteTimer);
     this.remoteTimer = null; this.remoteDirty = false;
-    this.remoteInFlight = this.service.read().then(snapshot => {
+    const force = Boolean(this.forceCheckpointsPending);
+    this.forceCheckpointsPending = false;
+    this.remoteInFlight = this.service.read({ forceCheckpoints: force }).then(snapshot => {
       this.latest = snapshot;
       if (!this.stopped) this.onSnapshot?.(snapshot);
       return snapshot;

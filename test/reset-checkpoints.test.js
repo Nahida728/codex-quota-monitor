@@ -62,3 +62,41 @@ test("offline reads and archive reconciliation preserve checkpoint history separ
   assert.equal(recovered.resetCheckpointSnapshot.events.length, 5);
   assert.equal(recovered.officialResetHistory.length, 0);
 });
+
+test("live explicit confirmations survive medium confidence while unconfirmed and banked records stay excluded", () => {
+  const event = { type: "reset", scope: "global", confidence: "medium", preview: false,
+    source: "live", confirmed: true, reset_verification_status: "pending", banked_grant: false,
+    announced_at: new Date(now - 1000).toISOString(), url: "https://x.com/thsottiaux/status/2109132167112782291" };
+  const timeline = { updated_at: new Date(now).toISOString(), events: [event,
+    { ...event, confirmed: false }, { ...event, confirmed: undefined }, { ...event, preview: true },
+    { ...event, type: "credits" }, { ...event, banked_grant: true }, { ...event, reset_kind: "banked" },
+    { ...event, confidence: "low" }, { ...event, url: "https://other.invalid/" },
+    { ...event, confidence: "high", source: "archive", confirmed: false }] };
+  assert.deepEqual(parseRadarTimeline(timeline, now).events, [{ at: (now - 1000) / 1000, sourceUrl: event.url }]);
+});
+
+test("manual refresh revalidates cached sources with bounded coalescing and retains history on failure", async () => {
+  let calls = 0, fail = false;
+  const reader = new ResetCheckpointReader({ fetchImpl: async (_url, options) => {
+    calls++;
+    assert.equal(options.cache, "no-cache");
+    assert.equal(options.headers["Cache-Control"], "no-cache");
+    if (fail) throw new Error("offline");
+    return new Response(page());
+  } });
+  await reader.read(now);
+  await reader.read(now + 10000);
+  assert.equal(calls, 3);
+  const [first, second] = await Promise.all([reader.read(now + 10000, null, { force: true }), reader.read(now + 10000, null, { force: true })]);
+  assert.equal(calls, 6);
+  assert.deepEqual(first, second);
+  await reader.read(now + 11000, null, { force: true });
+  assert.equal(calls, 6);
+  fail = true;
+  const offline = await reader.read(now + 20000, first, { force: true });
+  assert.equal(offline.cached, true);
+  assert.equal(offline.events.length, 5);
+  assert.equal(offline.observedAt, now + 20000);
+  const recovered = reconcileQuotaStates({}, [{ resetCheckpointSnapshot: first }]);
+  assert.equal(recovered.resetCheckpointSnapshot.events.length, 5);
+});
