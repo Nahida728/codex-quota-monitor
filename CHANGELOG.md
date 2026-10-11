@@ -1,5 +1,37 @@
 # Changelog / 更新日志
 
+## 1.3.3 紧急补丁 / Emergency patch — 2026-10-11
+
+### 中文
+
+**建议 1.3.2 及更早版本用户升级。** 修复升级重启后 API 等价金额下降、任务累计耗时异常增加的问题。
+
+**错误来源**：状态写入器能保存超过 4 MiB 的账本，启动读取器却拒绝这些文件，连同有效归档一起跳过，导致历史统计从头扫描。任务扫描器又提前使用旧会话回放的 `final_answer` 时间戳计算耗时，把回放前的数天间隔计入任务，忽略了随后提供的正确完成耗时。这些问题在 1.3.2 重启后暴露；该版本没有调整模型价格。
+
+**修复情况**
+
+- 状态读写统一采用 64 MiB 上限，超限写入保留原文件；有效的大账本可从不可变归档恢复。
+- 恢复任务账本时识别原有数据代次，排除状态丢失后错误重扫产生的累计值，同时保留重置和客户端更新历史。
+- 优先使用明确的完成耗时。缺少完成耗时的回放记录标记为耗时未知，不再把回放时间算成工作时间。
+- 逐份合并归档，缓存校验结果并限制每次额外校验数量，避免把全部大账本同时载入内存或在每次写入时重复解析。
+
+恢复保留已经扫描的旧会话数值，增量读取后续追加记录。完整会话重扫仍由用户手动启动。恢复范围取决于本机保留的有效账本及归档，缺失的历史不能凭空补齐。
+
+### English
+
+**Recommended for users of 1.3.2 and earlier.** Fixed API-equivalent cost falling after an upgrade restart and cumulative task duration increasing unexpectedly.
+
+**Cause**: The writer could save ledgers above 4 MiB, but the startup reader rejected both those files and their valid archives, restarting historical scans. The task scanner also used a replayed `final_answer` timestamp before reading the explicit completion duration, counting days between original execution and replay as work. These defects surfaced after the 1.3.2 restart; that release did not change model prices.
+
+**Fixes**
+
+- Apply the same 64 MiB bound to state reads and writes. Oversized writes preserve the previous file, and valid large ledgers can be recovered from immutable archives.
+- Recover task records from the intact ledger generation, excluding totals produced by the erroneous reset scan while retaining reset and client-update history.
+- Prefer explicit completion durations. Replayed records without reliable duration evidence remain untimed.
+- Merge archives individually, cache validation results and bound additional retention checks to avoid loading every large ledger simultaneously or repeatedly parsing them on each write.
+
+Previously indexed sessions retain their recorded numbers. Subsequent appends are read incrementally; a complete rescan remains a manual action. Recovery depends on valid local ledgers and retained archives; missing history cannot be reconstructed without evidence.
+
 ## 1.3.2 补丁 / Patch — 2026-10-11
 
 ### 中文
