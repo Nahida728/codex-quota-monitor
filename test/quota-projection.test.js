@@ -28,6 +28,18 @@ test("projects only same-window deltas and preserves a mid-window anchor across 
   const restored = JSON.parse(JSON.stringify(normalized.persistence));
   assert.equal(normalizeQuotaResponse(raw(40, 34), restored, now + 60).weeklyProjection.remainingPercent, 54);
   assert.equal(restored.quotaProjectionBaseline.fiveUsed, 20);
+  let state = {};
+  for (const [five, week, drift] of [[44, 61, 0], [45, 61, 1], [45, 61, 0], [46, 62, 1]]) {
+    const result = projectWeeklyQuota(windows(five, week, now + 10000 + drift, now + 600000 + drift), state, now + five);
+    state = { quotaProjectionBaseline: JSON.parse(JSON.stringify(result.baseline)) };
+    assert.equal(state.quotaProjectionBaseline.fiveUsed, 44);
+    if (five === 45) assert.equal(result.projection.reason, "waiting-weekly");
+    if (five === 46) assert.equal(result.projection.remainingPercent, 11);
+  }
+  // Compare against the original reset timestamp, preventing slow drift from
+  // turning into an unlimited tolerance. A genuinely expired anchor is invalid.
+  assert.equal(projectWeeklyQuota(windows(47, 63, now + 10006), state, now + 100).projection.available, false);
+  assert.equal(projectWeeklyQuota(windows(47, 63, now + 10001), state, now + 10000).projection.available, false);
 });
 
 test("discard reset/rollback samples, missing windows and renewal crossings; cap weekly exhaustion", () => {

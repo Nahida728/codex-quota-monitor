@@ -39,6 +39,8 @@ Windows x64；需要能够连接 OpenAI 服务的网络。API Key 登录通常�
 
 ## 版本更新
 
+1.3.41 修复周额度预测因恢复时间戳微小波动反复重采样的问题，并放大重置日历的格子与间距，支持在日历内部横向滚动。
+
 1.3.4 新增周额度预测刻线，以及官方公告、收到和消耗重置次数的全年日历。格子按天汇总，可切换历史年份并查看原始详情；预测依据同一轮 5 小时窗口内的额度消耗比例。
 
 1.3.3 是紧急补丁，修复大账本在升级重启后被跳过、API 等价金额下降及旧会话回放造成任务耗时暴增的问题，支持从有效归档恢复原有统计。建议升级；错误来源和修复详情见更新日志。
@@ -126,6 +128,8 @@ Codex Quota Monitor is a compact Windows desktop companion for Codex. A floating
 Requires Windows x64 and network access to OpenAI. API-key mode usually does not supply subscription quota. GPT Reserve stays unavailable when its independent bucket is absent.
 
 ### Recent updates
+
+1.3.41 fixes quota projection repeatedly restarting on small recovery-timestamp changes and enlarges reset-calendar cells and spacing, with internal horizontal scrolling.
 
 1.3.4 adds a weekly-quota projection marker and yearly calendars for official announcements and received/consumed reset credits. Select a day or an older year to inspect retained details. The projection uses observed quota-consumption deltas within the same 5-hour window.
 

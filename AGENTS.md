@@ -1081,3 +1081,13 @@ Verify:
   create selected-day details in batches. History scrolls inside a no-drag area;
   six current credits and the dialog close action remain reachable. Calendar
   selection supports keyboard arrows and exposes dates/counts to accessibility.
+- Recovery timestamps for an unchanged quota window can alternate by one second.
+  Compare them to the original sampling anchor with a bounded five-second
+  tolerance, never to a continually shifted timestamp. Preserve samples through
+  that jitter; an expired anchor, meaningful window change or counter decrease
+  still invalidates them. Rounded weekly percentages may legitimately stay flat;
+  explain that state rather than showing an unexplained sampling wait.
+- Calendar day targets are at least 12 CSS pixels with three-pixel gaps. Do not
+  compress a whole year into six-pixel targets to avoid horizontal scrolling.
+  Keep month labels aligned and scroll the selected cell into view on keyboard
+  navigation/year selection, within the existing fixed dialog.

@@ -1,6 +1,6 @@
 {
   "name": "codex-quota-monitor",
-  "version": "1.3.4",
+  "version": "1.3.41",
   "description": "A bilingual liquid-glass desktop monitor for Codex rate limits and reset credits.",
   "main": "src/main.js",
   "author": "Codex Quota Monitor",
@@ -57,7 +57,7 @@
     "portable": {
       "artifactName": "codex-quota-monitor-${version}-portable-${arch}.${ext}"
     },
-    "buildVersion": "1.3.4.0",
+    "buildVersion": "1.3.41.0",
     "beforePack": "./scripts/filter-packaged-docs.cjs",
     "publish": {
       "provider": "github",
@@ -76,5 +76,5 @@
     "koffi": "^3.1.2",
     "semver": "7.7.3"
   },
-  "displayVersion": "1.3.4"
+  "displayVersion": "1.3.41"
 }

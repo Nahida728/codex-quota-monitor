@@ -106,6 +106,8 @@ const i18n = {
     weekly: "1 周额度",
     weeklyForecast: "预计剩余 {value}%",
     weeklyForecastCollecting: "预测采样中",
+    weeklyForecastWaitingWeekly: "等待周额度变化",
+    weeklyForecastSamplingHint: "保留同一窗口内的采样，等待两种额度都有可见消耗增量。目前 5 小时额度变化 {five} 个百分点，周额度变化 {week} 个百分点；整数百分比读数可能延迟显示较小的消耗。",
     weeklyForecastUnavailable: "预测暂不可用",
     weeklyForecastRenews: "周额度先恢复",
     weeklyForecastHint: "若本轮 5 小时额度用尽，预计周额度剩余 {value}%。按同一窗口内已观察的消耗增量推算：5 小时消耗 {five}%，周额度消耗 {week}%。假设后续消耗比例不变；模型和使用方式变化会影响结果。",
@@ -114,7 +116,7 @@ const i18n = {
     calendarYear: "记录年份",
     calendarLess: "少",
     calendarMore: "多",
-    calendarHint: "点击格子查看当天记录",
+    calendarHint: "左右滚动，点击格子查看记录",
     calendarDay: "{date}，记录 {count} 次",
     calendarNoRecords: "当天暂无记录",
     calendarTotal: "所选范围记录 {count} 次",
@@ -434,6 +436,8 @@ const i18n = {
     weekly: "Weekly quota",
     weeklyForecast: "Est. left {value}%",
     weeklyForecastCollecting: "Collecting samples",
+    weeklyForecastWaitingWeekly: "Awaiting weekly data",
+    weeklyForecastSamplingHint: "Samples are retained within the same window until both quotas show consumption changes. Observed changes: {five} percentage points of 5-hour quota and {week} of weekly quota. Rounded percentages can delay visibility of small changes.",
     weeklyForecastUnavailable: "Estimate unavailable",
     weeklyForecastRenews: "Weekly renews first",
     weeklyForecastHint: "If this 5-hour quota is exhausted, estimated weekly quota remaining: {value}%. Observed consumption in the same window: {five}% of the 5-hour quota and {week}% of the weekly quota. Assumes the same consumption ratio continues; changes in models and usage can affect the result.",
@@ -442,7 +446,7 @@ const i18n = {
     calendarYear: "Record year",
     calendarLess: "Less",
     calendarMore: "More",
-    calendarHint: "Select a day to see its records",
+    calendarHint: "Scroll sideways; select a day for details",
     calendarDay: "{date}; recorded resets: {count}",
     calendarNoRecords: "No records for this day",
     calendarTotal: "{count} resets recorded in this range",
@@ -1218,11 +1222,14 @@ function renderWeeklyProjection(projection) {
   elements.weeklyProjectionMarker.hidden = !valid;
   note.classList.toggle("is-estimated", Boolean(valid));
   note.textContent = valid ? t("weeklyForecast", { value: projection.remainingPercent })
-    : t(projection?.reason === "weekly-renews" ? "weeklyForecastRenews"
+    : t(projection?.reason === "waiting-weekly" ? "weeklyForecastWaitingWeekly"
+      : projection?.reason === "weekly-renews" ? "weeklyForecastRenews"
       : projection?.reason === "collecting" ? "weeklyForecastCollecting" : "weeklyForecastUnavailable");
   note.title = valid ? [t("weeklyForecastHint", { value: projection.remainingPercent,
     five: projection.fiveHourDelta, week: projection.weeklyDelta }),
-    projection.weeklyLimitFirst ? t("weeklyForecastLimit") : ""].filter(Boolean).join("\n") : note.textContent;
+    projection.weeklyLimitFirst ? t("weeklyForecastLimit") : ""].filter(Boolean).join("\n")
+    : ["collecting", "waiting-weekly"].includes(projection?.reason)
+      ? t("weeklyForecastSamplingHint", { five: projection.fiveHourDelta ?? 0, week: projection.weeklyDelta ?? 0 }) : note.textContent;
   note.setAttribute("aria-label", note.title);
   if (valid) elements.weeklyProjectionMarker.style.left = `${projection.remainingPercent}%`;
 }
@@ -1231,7 +1238,10 @@ const resetCalendarStates = new WeakMap();
 function positionResetCalendars(root = document) {
   root.querySelectorAll(".reset-calendar-scroll").forEach(scroll => {
     if (!scroll.dataset.positioned && scroll.clientWidth > 0) {
-      scroll.scrollLeft = scroll.scrollWidth;
+      const selected = scroll.querySelector('.reset-calendar-cell[aria-pressed="true"]');
+      if (selected) scroll.scrollLeft += selected.getBoundingClientRect().left - scroll.getBoundingClientRect().left
+        - scroll.clientWidth * .75;
+      else scroll.scrollLeft = scroll.scrollWidth;
       scroll.dataset.positioned = "true";
     }
   });
@@ -1312,6 +1322,13 @@ function renderResetCalendar(container, events, createRow, source = null) {
       state.selected = day.key;
       buttons.forEach(button => { const chosen = button.dataset.day === day.key;
         button.setAttribute("aria-pressed", String(chosen)); button.tabIndex = chosen ? 0 : -1; });
+      const chosen = buttons.find(button => button.dataset.day === day.key);
+      if (scroll.clientWidth > 0 && chosen) {
+        const left = chosen.getBoundingClientRect().left - scroll.getBoundingClientRect().left + scroll.scrollLeft;
+        if (left < scroll.scrollLeft) scroll.scrollLeft = left;
+        else if (left + chosen.offsetWidth > scroll.scrollLeft + scroll.clientWidth)
+          scroll.scrollLeft = left + chosen.offsetWidth - scroll.clientWidth;
+      }
       details.replaceChildren();
       const date = document.createElement("strong"); date.className = "reset-calendar-date";
       date.textContent = t("calendarDay", { date: calendarDate(day.key), count: day.count });
