@@ -26,6 +26,7 @@ http.createServer((request, response) => {
     const htmlPath = path.join(root, "src", "renderer", "index.html");
     const html = fs.readFileSync(htmlPath, "utf8")
       .replace("./styles.css", "/src/renderer/styles.css")
+      .replace("./reset-calendar.js", "/src/renderer/reset-calendar.js")
       .replace("./crop-geometry.js", "/src/renderer/crop-geometry.js")
       .replace("../token-usage.js", "/src/token-usage.js")
       .replace("../refresh-policy.js", "/src/refresh-policy.js")

@@ -1064,3 +1064,20 @@ Verify:
 - For persistence changes, verify a real-size ledger across a cold restart,
   archive recovery, and one incremental update. Displayed API-equivalent cost
   is calibrated; compare it separately from the raw local cost ledger.
+
+## Weekly projection and reset calendars
+
+- Extrapolate weekly remaining quota only from observed percent deltas in the
+  same 5-hour and weekly windows. Persist one bounded sampling baseline. Never
+  use lifetime Tokens, earlier weekly consumption, or an assumed zero anchor.
+  Window changes, counter decreases and a weekly renewal before the 5-hour
+  recovery invalidate the estimate. Hide the marker offline or after expiry;
+  explain the constant-consumption-ratio assumption and insufficient samples.
+- Reset calendars group records by local calendar day. Official cells count
+  validated website announcements; credit cells count granted/consumed credits.
+  No-record cells mean missing observations, not confirmed absence of activity.
+  Preserve all underlying history and source links; allow older-year selection.
+- Keep each calendar bounded to at most 54 weeks, reuse unchanged DOM, and
+  create selected-day details in batches. History scrolls inside a no-drag area;
+  six current credits and the dialog close action remain reachable. Calendar
+  selection supports keyboard arrows and exposes dates/counts to accessibility.

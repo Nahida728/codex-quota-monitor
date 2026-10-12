@@ -20,6 +20,8 @@
 | --- | --- |
 | 三种额度 | 5 小时、每周、独立 GPT Reserve 的剩余比例与恢复时间 |
 | 重置 | 可用重置次数、每次到期时间、收到和使用记录、社区公开重置公告 |
+| 本轮预测 | 周额度条标记用尽本轮 5 小时额度后的预计余额，附采样依据 |
+| 重置日历 | 公告、收到和消耗记录按天显示，支持历史年份与格子详情 |
 | 重置概率 | 检查站提供的 24 / 48 小时估计，附来源、更新时间和统计范围 |
 | 用量与消费 | 官方累计 Token、工作天数、日 / 周 / 月趋势、本地模型明细与 API 等价消费 |
 | 最近任务 | 首字响应、实时总 Tokens、峰值 / 最低 / 平均输出速率、缓存命中率 |
@@ -35,7 +37,9 @@
 
 Windows x64；需要能够连接 OpenAI 服务的网络。API Key 登录通常不提供订阅额度。官方未返回 Reserve 独立桶时，界面会显示“未返回”。
 
-## 1.3.0 带来了什么
+## 版本更新
+
+1.3.4 新增周额度预测刻线，以及官方公告、收到和消耗重置次数的全年日历。格子按天汇总，可切换历史年份并查看原始详情；预测依据同一轮 5 小时窗口内的额度消耗比例。
 
 1.3.3 是紧急补丁，修复大账本在升级重启后被跳过、API 等价金额下降及旧会话回放造成任务耗时暴增的问题，支持从有效归档恢复原有统计。建议升级；错误来源和修复详情见更新日志。
 
@@ -104,6 +108,8 @@ Codex Quota Monitor is a compact Windows desktop companion for Codex. A floating
 | --- | --- |
 | Quota | Remaining 5-hour, weekly and independent GPT Reserve quota, with recovery times |
 | Resets | Available credits, individual expiry dates, received/consumed history and public announcements |
+| Quota projection | Weekly balance estimated after exhausting this 5-hour quota, with observed inputs |
+| Reset calendar | Daily announcement and received/consumed credit grids, with year selection and day details |
 | Reset estimates | Community 24 / 48-hour probabilities with source, freshness and sample information |
 | Usage and cost | Official lifetime tokens, recorded work days, daily/weekly/monthly trends and local model costs |
 | Latest task | First-token latency, live total tokens, peak/minimum/average output rates and cache hit rate |
@@ -119,7 +125,9 @@ Codex Quota Monitor is a compact Windows desktop companion for Codex. A floating
 
 Requires Windows x64 and network access to OpenAI. API-key mode usually does not supply subscription quota. GPT Reserve stays unavailable when its independent bucket is absent.
 
-### What's new in 1.3.0
+### Recent updates
+
+1.3.4 adds a weekly-quota projection marker and yearly calendars for official announcements and received/consumed reset credits. Select a day or an older year to inspect retained details. The projection uses observed quota-consumption deltas within the same 5-hour window.
 
 The 1.3.3 emergency patch restores large ledgers skipped after upgrade restarts and fixes inflated task durations from replayed sessions. Upgrading is recommended. Existing statistics can be recovered from valid archives; see the changelog for causes and fixes.
 

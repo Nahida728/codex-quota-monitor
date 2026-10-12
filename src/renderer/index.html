@@ -130,17 +130,18 @@
           </div>
         </article>
 
-        <article class="quota-panel" id="weeklyPanel">
+        <article class="quota-panel weekly-panel" id="weeklyPanel">
           <div class="quota-heading">
             <div class="quota-icon violet">
               <svg viewBox="0 0 24 24"><path d="M7 3v3m10-3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z"></path></svg>
             </div>
-            <div class="quota-name" data-i18n="weekly">1 周额度</div>
+            <div class="quota-name"><span data-i18n="weekly">1 周额度</span><small id="weeklyProjectionNote" class="weekly-projection-note">预测采样中</small></div>
             <div class="quota-number" id="weeklyNumber"><span>--</span><small>%</small></div>
           </div>
           <div class="quota-reset" id="weeklyReset">--</div>
-          <div class="progress-track">
+          <div class="progress-track weekly-track">
             <div class="progress-glow violet-progress" id="weeklyProgress"></div>
+            <span id="weeklyProjectionMarker" class="weekly-projection-marker" hidden aria-hidden="true"></span>
           </div>
           <div class="quota-caption">
             <span data-i18n="remaining">剩余</span>
@@ -400,10 +401,12 @@
             <div class="reset-credit-empty" data-i18n="noCredits">暂无可用次数</div>
           </div>
           <button class="glass-button reset-official-link" id="resetOfficialLink" type="button" data-i18n="openOfficialResetHistory">查看官方重置记录</button>
-          <h3 class="reset-detail-heading received-heading" data-i18n="receivedResetHistoryTitle">收到记录</h3>
-          <div class="received-reset-history" id="receivedResetHistoryList"></div>
-          <h3 class="reset-detail-heading consumed-heading" data-i18n="consumedResetHistoryTitle">使用记录</h3>
-          <div class="consumed-reset-history" id="consumedResetHistoryList"></div>
+          <div class="reset-history-stack">
+            <h3 class="reset-detail-heading received-heading" data-i18n="receivedResetHistoryTitle">收到记录</h3>
+            <div class="received-reset-history" id="receivedResetHistoryList"></div>
+            <h3 class="reset-detail-heading consumed-heading" data-i18n="consumedResetHistoryTitle">使用记录</h3>
+            <div class="consumed-reset-history" id="consumedResetHistoryList"></div>
+          </div>
           <button class="glass-button primary reset-detail-done" id="resetCreditDone" type="button" data-i18n="close">关闭</button>
         </div>
       </section>
@@ -667,6 +670,7 @@
     <script src="./crop-geometry.js"></script>
     <script src="../token-usage.js"></script>
     <script src="../refresh-policy.js"></script>
+    <script src="./reset-calendar.js"></script>
     <script src="./renderer.js"></script>
   </body>
 </html>
