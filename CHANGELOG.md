@@ -1,5 +1,19 @@
 # Changelog / 更新日志
 
+## 1.3.4 — 2026-10-13
+
+### 中文
+
+- 周额度条新增预测刻线和预计剩余比例。根据同一轮 5 小时窗口内两种额度的消耗增量，估算用尽本轮 5 小时额度后的周额度余额。采样不足、窗口切换、额度回升或周额度提前恢复时隐藏预测；提示中说明计算依据和比例假设。
+- 官方重置公告、收到的可储存重置次数、消耗记录改为全年日历格子。按天聚合，颜色深浅表示次数；可切换历史年份，点击查看时间、额度类型、余额变化和公告来源。
+- 保留原有历史数据和可用重置列表。日历缓存相同数据，详情按需分批显示；历史区可滚动，六条可用记录存在时关闭按钮仍可达。
+
+### English
+
+- Added a weekly-quota marker and estimated remaining percentage after exhausting the current 5-hour quota, based on observed consumption deltas within the same window. Insufficient samples, window changes, counter decreases and an earlier weekly renewal suppress the estimate. The tooltip explains its inputs and constant-ratio assumption.
+- Replaced official announcements and received/consumed banked-reset history with yearly calendar grids. Daily color intensity represents reset counts; year selection and day details retain timestamps, credit types, balance changes and source links.
+- Retained existing history and available-credit details. Unchanged calendars are cached and day details load in batches. History scrolls within the dialog, keeping the close control reachable with six available credits.
+
 ## 1.3.3 紧急补丁 / Emergency patch — 2026-10-11
 
 ### 中文

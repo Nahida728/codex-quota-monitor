@@ -257,6 +257,9 @@ const snapshot = {
   receivedResetHistory: previewReceivedResetHistory,
   data: offline ? null : {
     planType: "plus",
+    weeklyProjection: params.get("fiveHour") === "1" ? { available: true, remainingPercent: 75.4,
+      fiveHourDelta: 20, weeklyDelta: 4, fiveResetAt: nowSeconds + 3600,
+      weeklyResetAt: nowSeconds + 4 * 86400 } : { available: false, reason: "unavailable" },
     reserve: params.get("reserve") === "1" ? { remainingPercent: 63, usedPercent: 37, resetsAt: nowSeconds + 6 * 86400 } : null,
     windows: {
       fiveHour: params.get("fiveHour") === "1" ? { remainingPercent: 78, usedPercent: 22, resetsAt: nowSeconds + 3600 } : null,
@@ -276,7 +279,8 @@ const snapshot = {
         count: 2,
         history: previewReceivedResetHistory
       },
-      manualReset: { detected: false },
+      manualReset: { detected: false, history: [{ detectedAt: nowSeconds - 3 * 86400, count: 1,
+        previousAvailableCount: 7, availableCount: 6, items: [{ resetType: "codexRateLimits" }] }] },
       officialReset: {
         detected: true,
         latestAt: nowSeconds - 7_200,
@@ -299,7 +303,7 @@ window.codexMonitor = {
   focusCodex: async () => true,
   openResetSource: async () => true,
   readSettings: async () => ({
-    monitorVersion: "1.3.2",
+    monitorVersion: "1.3.4",
     language: params.get("lang") === "en" ? "en" : "zh",
     alwaysOnTop: true,
     positionLocked: false,

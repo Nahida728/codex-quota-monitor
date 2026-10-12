@@ -4,6 +4,7 @@ const WINDOW_TOLERANCE_MINUTES = 60;
 const NEW_RESET_EVENT_TTL_SECONDS = 7 * 24 * 60 * 60;
 const OFFICIAL_RESET_DEDUP_SECONDS = 2 * 60;
 const MANUAL_RESET_EVIDENCE_VERSION = 2;
+const { projectWeeklyQuota } = require("./quota-projection");
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, Number(value) || 0));
@@ -571,14 +572,16 @@ function normalizeQuotaResponse(raw, previousState = {}, nowSeconds = Math.floor
     )
   };
   const events = deriveEvents(previousState, normalized, nowSeconds, options);
+  const forecast = projectWeeklyQuota(normalized.windows, previousState, nowSeconds);
   return {
     ...normalized,
+    weeklyProjection: forecast.projection,
     events: {
       newReset: events.newReset,
       officialReset: events.officialReset,
       manualReset: events.manualReset
     },
-    persistence: events.persistence
+    persistence: { ...events.persistence, quotaProjectionBaseline: forecast.baseline }
   };
 }
 

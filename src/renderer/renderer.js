@@ -104,6 +104,21 @@ const i18n = {
     subscriptionProjectedNote: "Codex 当前仅提供上个账期时间，已按原月度周期推算；实际续费时间以订阅平台为准。",
     fiveHour: "5 小时额度",
     weekly: "1 周额度",
+    weeklyForecast: "预计剩余 {value}%",
+    weeklyForecastCollecting: "预测采样中",
+    weeklyForecastUnavailable: "预测暂不可用",
+    weeklyForecastRenews: "周额度先恢复",
+    weeklyForecastHint: "若本轮 5 小时额度用尽，预计周额度剩余 {value}%。按同一窗口内已观察的消耗增量推算：5 小时消耗 {five}%，周额度消耗 {week}%。假设后续消耗比例不变；模型和使用方式变化会影响结果。",
+    weeklyForecastLimit: "按当前消耗比例，周额度可能先用尽。",
+    calendarPastYear: "近一年",
+    calendarYear: "记录年份",
+    calendarLess: "少",
+    calendarMore: "多",
+    calendarHint: "点击格子查看当天记录",
+    calendarDay: "{date}，记录 {count} 次",
+    calendarNoRecords: "当天暂无记录",
+    calendarTotal: "所选范围记录 {count} 次",
+    calendarLoadMore: "显示更多记录",
     reserve: "GPT Reserve",
     remaining: "剩余",
     used: "已使用 {value}%",
@@ -417,6 +432,21 @@ const i18n = {
     subscriptionProjectedNote: "Codex currently exposes the previous billing period, so this is projected using its monthly cycle. Check your subscription platform for the final renewal time.",
     fiveHour: "5-hour quota",
     weekly: "Weekly quota",
+    weeklyForecast: "Est. left {value}%",
+    weeklyForecastCollecting: "Collecting samples",
+    weeklyForecastUnavailable: "Estimate unavailable",
+    weeklyForecastRenews: "Weekly renews first",
+    weeklyForecastHint: "If this 5-hour quota is exhausted, estimated weekly quota remaining: {value}%. Observed consumption in the same window: {five}% of the 5-hour quota and {week}% of the weekly quota. Assumes the same consumption ratio continues; changes in models and usage can affect the result.",
+    weeklyForecastLimit: "At the current ratio, the weekly quota may run out first.",
+    calendarPastYear: "Past year",
+    calendarYear: "Record year",
+    calendarLess: "Less",
+    calendarMore: "More",
+    calendarHint: "Select a day to see its records",
+    calendarDay: "{date}; recorded resets: {count}",
+    calendarNoRecords: "No records for this day",
+    calendarTotal: "{count} resets recorded in this range",
+    calendarLoadMore: "Show more records",
     reserve: "GPT Reserve",
     remaining: "Remaining",
     used: "{value}% used",
@@ -433,13 +463,13 @@ const i18n = {
     receivedResetHistoryTitle: "Received history",
     receivedResetHistoryEmpty: "No newly received reset credits have been detected",
     receivedResetHistoryCount: "{count} received events",
-    receivedResetEntry: "Received {count} reset credits",
+    receivedResetEntry: "Reset credits received: {count}",
     receivedResetLegacy: "New reset credits detected by an earlier version",
     receivedResetAt: "Detected {time}",
     consumedResetHistoryTitle: "Usage history",
     consumedResetHistoryEmpty: "No reset-credit usage has been detected",
     consumedResetHistoryCount: "{count} usage events",
-    consumedResetEntry: "Used {count} reset credits",
+    consumedResetEntry: "Reset credits used: {count}",
     consumedResetAt: "Detected {time}",
     consumedResetBalance: "{before} → {after} available",
     resetType: "Reset type",
@@ -645,7 +675,7 @@ const elements = Object.fromEntries([
   "cropModal", "cropClose", "cropCancel", "cropApply", "cropStage", "cropImage", "cropBox",
   "cropResizeHandle", "cropSourceInfo",
   "fiveHourPanel", "fiveHourReset", "fiveHourNumber", "fiveHourProgress", "fiveHourUsed",
-  "weeklyPanel", "weeklyReset", "weeklyNumber", "weeklyProgress", "weeklyUsed",
+  "weeklyPanel", "weeklyReset", "weeklyNumber", "weeklyProgress", "weeklyUsed", "weeklyProjectionNote", "weeklyProjectionMarker",
   "reservePanel", "reserveReset", "reserveNumber", "reserveProgress", "reserveUsed",
   "resetCreditButton", "resetCreditIcon", "resetStatusCount", "resetCreditStatus",
   "resetCreditDetail", "resetCreditModal", "resetCreditClose", "resetCreditDone",
@@ -1180,119 +1210,238 @@ function getResetCreditTitle(credit) {
   return t("codexReset");
 }
 
-function renderReceivedResetHistory(history = []) {
-  receivedResetHistory = Array.isArray(history)
-    ? history
-        .filter(item => Number.isFinite(item?.detectedAt))
-        .slice()
-        .sort((a, b) => b.detectedAt - a.detectedAt)
-    : [];
-  elements.receivedResetHistoryList.replaceChildren();
+function renderWeeklyProjection(projection) {
+  const valid = connectionState === "online" && projection?.available &&
+    Number.isFinite(projection.remainingPercent) && projection.remainingPercent >= 0 &&
+    projection.remainingPercent <= 100 && projection.fiveResetAt > Date.now() / 1000;
+  const note = elements.weeklyProjectionNote;
+  elements.weeklyProjectionMarker.hidden = !valid;
+  note.classList.toggle("is-estimated", Boolean(valid));
+  note.textContent = valid ? t("weeklyForecast", { value: projection.remainingPercent })
+    : t(projection?.reason === "weekly-renews" ? "weeklyForecastRenews"
+      : projection?.reason === "collecting" ? "weeklyForecastCollecting" : "weeklyForecastUnavailable");
+  note.title = valid ? [t("weeklyForecastHint", { value: projection.remainingPercent,
+    five: projection.fiveHourDelta, week: projection.weeklyDelta }),
+    projection.weeklyLimitFirst ? t("weeklyForecastLimit") : ""].filter(Boolean).join("\n") : note.textContent;
+  note.setAttribute("aria-label", note.title);
+  if (valid) elements.weeklyProjectionMarker.style.left = `${projection.remainingPercent}%`;
+}
 
-  if (!receivedResetHistory.length) {
-    const empty = document.createElement("div");
-    empty.className = "received-reset-empty";
-    empty.textContent = t("receivedResetHistoryEmpty");
-    elements.receivedResetHistoryList.append(empty);
-    return;
-  }
-
-  const count = document.createElement("div");
-  count.className = "history-count";
-  count.textContent = t("receivedResetHistoryCount", {
-    count: formatTokenCount(receivedResetHistory.length)
-  });
-  elements.receivedResetHistoryList.append(count);
-
-  receivedResetHistory.forEach(event => {
-    const row = document.createElement("article");
-    row.className = "received-reset-item";
-
-    const marker = document.createElement("span");
-    marker.className = "received-reset-marker";
-    marker.textContent = `+${Math.max(1, Number(event.count) || 1)}`;
-
-    const copy = document.createElement("div");
-    const title = document.createElement("strong");
-    const hasDetails = Array.isArray(event.items) && event.items.length > 0;
-    title.textContent = hasDetails
-      ? t("receivedResetEntry", { count: Math.max(1, Number(event.count) || event.items.length) })
-      : t("receivedResetLegacy");
-
-    const detail = document.createElement("span");
-    const types = hasDetails
-      ? [...new Set(event.items.map(getResetCreditTitle).filter(Boolean))]
-      : [];
-    detail.textContent = [
-      t("receivedResetAt", { time: formatDate(event.detectedAt, true) }),
-      types.join("; ")
-    ].filter(Boolean).join("; ");
-
-    copy.append(title, detail);
-    row.append(marker, copy);
-    elements.receivedResetHistoryList.append(row);
+const resetCalendarStates = new WeakMap();
+function positionResetCalendars(root = document) {
+  root.querySelectorAll(".reset-calendar-scroll").forEach(scroll => {
+    if (!scroll.dataset.positioned && scroll.clientWidth > 0) {
+      scroll.scrollLeft = scroll.scrollWidth;
+      scroll.dataset.positioned = "true";
+    }
   });
 }
 
-function renderConsumedResetHistory(history = []) {
-  consumedResetHistory = Array.isArray(history)
-    ? history
-        .filter(item => Number.isFinite(item?.detectedAt))
-        .slice()
-        .sort((a, b) => b.detectedAt - a.detectedAt)
-    : [];
-  elements.consumedResetHistoryList.replaceChildren();
+function calendarDate(key) {
+  return new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-US", {
+    year: "numeric", month: "short", day: "numeric"
+  }).format(new Date(`${key}T12:00:00`));
+}
 
-  if (!consumedResetHistory.length) {
-    const empty = document.createElement("div");
-    empty.className = "consumed-reset-empty";
-    empty.textContent = t("consumedResetHistoryEmpty");
-    elements.consumedResetHistoryList.append(empty);
+function renderResetCalendar(container, events, createRow, source = null) {
+  const today = window.ResetCalendar.dayKey(window.ResetCalendar.localDay(Date.now() / 1000));
+  const signature = JSON.stringify([language, today, events, source?.url]);
+  const state = resetCalendarStates.get(container) || { year: null, selected: null };
+  if (state.signature === signature) {
+    const freshness = container.querySelector(".calendar-freshness");
+    if (freshness && source) freshness.textContent = source.freshness;
     return;
   }
-
-  const count = document.createElement("div");
-  count.className = "history-count";
-  count.textContent = t("consumedResetHistoryCount", {
-    count: formatTokenCount(consumedResetHistory.length)
-  });
-  elements.consumedResetHistoryList.append(count);
-
-  consumedResetHistory.forEach(event => {
-    const row = document.createElement("article");
-    row.className = "received-reset-item consumed-reset-item";
-
-    const marker = document.createElement("span");
-    marker.className = "received-reset-marker is-consumed";
-    marker.textContent = `−${Math.max(1, Number(event.count) || 1)}`;
-
-    const copy = document.createElement("div");
-    const title = document.createElement("strong");
-    title.textContent = t("consumedResetEntry", {
-      count: Math.max(1, Number(event.count) || 1)
+  state.signature = signature;
+  resetCalendarStates.set(container, state);
+  const draw = () => {
+    const calendar = window.ResetCalendar.buildCalendar(events, state.year);
+    container.replaceChildren();
+    if (source) {
+      const link = document.createElement("button");
+      link.type = "button"; link.className = "checkpoint-source";
+      link.textContent = `${source.name}; ${t("checkpointSourceLink")}`;
+      link.addEventListener("click", () => window.codexMonitor.openResetSource?.(source.url));
+      const freshness = document.createElement("p");
+      freshness.className = "calendar-freshness"; freshness.textContent = source.freshness;
+      container.append(link, freshness);
+    }
+    const header = document.createElement("div"); header.className = "reset-calendar-header";
+    const total = document.createElement("span"); total.className = "history-count";
+    total.textContent = t("calendarTotal", { count: calendar.days.filter(day => !day.outside && !day.future)
+      .reduce((sum, day) => sum + day.count, 0) });
+    const year = document.createElement("select"); year.className = "reset-calendar-year";
+    year.setAttribute("aria-label", t("calendarYear"));
+    for (const value of [null, ...calendar.years]) {
+      const option = document.createElement("option"); option.value = value ?? "";
+      option.textContent = value === null ? t("calendarPastYear") : String(value);
+      option.selected = value === state.year; year.append(option);
+    }
+    year.addEventListener("change", () => { state.year = year.value ? Number(year.value) : null;
+      state.selected = null; draw(); });
+    header.append(total, year);
+    const scroll = document.createElement("div"); scroll.className = "reset-calendar-scroll";
+    const chart = document.createElement("div"); chart.className = "reset-calendar-chart";
+    chart.style.setProperty("--calendar-columns", calendar.columns);
+    const months = document.createElement("div"); months.className = "reset-calendar-months";
+    let previousMonth = "", previousColumn = -2;
+    calendar.days.forEach((day, index) => {
+      if (day.outside || day.future) return;
+      const month = day.key.slice(0, 7), column = Math.floor(index / 7);
+      if (month !== previousMonth) {
+        previousMonth = month;
+        // A short partial first month cannot fit a label beside the next month.
+        if (column === 0 && Number(day.key.slice(-2)) > 10) return;
+        if (column - previousColumn >= 2 && column < calendar.columns - 2) {
+          const label = document.createElement("span");
+          label.style.gridColumn = `${column + 1} / span ${Math.min(4, calendar.columns - column)}`;
+          label.textContent = new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-US", { month: "short" })
+            .format(new Date(`${day.key}T12:00:00`));
+          months.append(label); previousColumn = column;
+        }
+      }
     });
+    const grid = document.createElement("div"); grid.className = "reset-calendar-grid";
+    const details = document.createElement("div"); details.className = "reset-calendar-details";
+    const validDays = calendar.days.filter(day => !day.outside && !day.future);
+    if (!validDays.some(day => day.key === state.selected)) {
+      state.selected = validDays.filter(day => day.count).at(-1)?.key || validDays.at(-1)?.key;
+    }
+    const buttons = [];
+    const select = day => {
+      state.selected = day.key;
+      buttons.forEach(button => { const chosen = button.dataset.day === day.key;
+        button.setAttribute("aria-pressed", String(chosen)); button.tabIndex = chosen ? 0 : -1; });
+      details.replaceChildren();
+      const date = document.createElement("strong"); date.className = "reset-calendar-date";
+      date.textContent = t("calendarDay", { date: calendarDate(day.key), count: day.count });
+      details.append(date);
+      if (!day.events.length) {
+        const empty = document.createElement("p"); empty.className = "history-empty";
+        empty.textContent = t("calendarNoRecords"); details.append(empty);
+      }
+      const records = day.events.slice().sort((a, b) => b.at - a.at);
+      let offset = 0;
+      const more = document.createElement("button"); more.type = "button";
+      more.className = "checkpoint-source"; more.textContent = t("calendarLoadMore");
+      const show = () => {
+        records.slice(offset, offset + 30).forEach(event => details.insertBefore(createRow(event.record), more));
+        offset += 30; more.hidden = offset >= records.length;
+      };
+      more.addEventListener("click", show); details.append(more); show();
+    };
+    calendar.days.forEach((day, index) => {
+      const button = document.createElement("button"); button.type = "button";
+      button.className = "reset-calendar-cell"; button.dataset.level = day.level;
+      button.dataset.day = day.key; button.disabled = day.outside || day.future;
+      button.classList.toggle("is-padding", day.outside); button.classList.toggle("is-future", day.future);
+      button.title = t("calendarDay", { date: calendarDate(day.key), count: day.count });
+      button.setAttribute("aria-label", button.title); button.tabIndex = -1;
+      button.addEventListener("click", () => select(day));
+      button.addEventListener("keydown", event => {
+        const delta = { ArrowLeft: -7, ArrowRight: 7, ArrowUp: -1, ArrowDown: 1 }[event.key];
+        let target = delta === undefined ? null : index + delta;
+        if (event.key === "Home") target = calendar.days.findIndex(item => !item.outside && !item.future);
+        if (event.key === "End") target = calendar.days.findLastIndex(item => !item.outside && !item.future);
+        if (target !== null) { event.preventDefault();
+          if (buttons[target] && !buttons[target].disabled) { select(calendar.days[target]); buttons[target].focus(); } }
+      });
+      buttons.push(button); grid.append(button);
+    });
+    chart.append(months, grid); scroll.append(chart);
+    const legend = document.createElement("div"); legend.className = "reset-calendar-legend";
+    const hint = document.createElement("span"); hint.textContent = t("calendarHint"); legend.append(hint);
+    const less = document.createElement("span"); less.textContent = t("calendarLess"); legend.append(less);
+    for (let level = 0; level <= 4; level++) {
+      const square = document.createElement("span"); square.className = "reset-calendar-cell";
+      square.dataset.level = level; square.setAttribute("aria-hidden", "true"); legend.append(square);
+    }
+    const more = document.createElement("span"); more.textContent = t("calendarMore"); legend.append(more);
+    container.append(header, scroll, legend, details);
+    const selected = calendar.days.find(day => day.key === state.selected);
+    if (selected) select(selected);
+    requestAnimationFrame(() => positionResetCalendars(container));
+  };
+  draw();
+}
 
-    const detail = document.createElement("span");
-    const types = Array.isArray(event.items)
-      ? [...new Set(event.items.map(getResetCreditTitle).filter(Boolean))]
-      : [];
-    const balance = Number.isFinite(event.previousAvailableCount) &&
-      Number.isFinite(event.availableCount)
-      ? t("consumedResetBalance", {
-          before: event.previousAvailableCount,
-          after: event.availableCount
-        })
-      : "";
-    detail.textContent = [
-      t("consumedResetAt", { time: formatDate(event.detectedAt, true) }),
-      balance,
-      types.join("; ")
-    ].filter(Boolean).join("; ");
+function createReceivedResetRow(event) {
+  const row = document.createElement("article");
+  row.className = "received-reset-item";
 
-    copy.append(title, detail);
-    row.append(marker, copy);
-    elements.consumedResetHistoryList.append(row);
+  const marker = document.createElement("span");
+  marker.className = "received-reset-marker";
+  marker.textContent = `+${Math.max(1, Number(event.count) || 1)}`;
+
+  const copy = document.createElement("div");
+  const title = document.createElement("strong");
+  const hasDetails = Array.isArray(event.items) && event.items.length > 0;
+  title.textContent = hasDetails
+    ? t("receivedResetEntry", { count: Math.max(1, Number(event.count) || event.items.length) })
+    : t("receivedResetLegacy");
+
+  const detail = document.createElement("span");
+  const types = hasDetails
+    ? [...new Set(event.items.map(getResetCreditTitle).filter(Boolean))]
+    : [];
+  detail.textContent = [
+    t("receivedResetAt", { time: formatDate(event.detectedAt, true) }),
+    types.join("; ")
+  ].filter(Boolean).join("; ");
+
+  copy.append(title, detail);
+  row.append(marker, copy);
+  return row;
+}
+
+function createConsumedResetRow(event) {
+  const row = document.createElement("article");
+  row.className = "received-reset-item consumed-reset-item";
+
+  const marker = document.createElement("span");
+  marker.className = "received-reset-marker is-consumed";
+  marker.textContent = `−${Math.max(1, Number(event.count) || 1)}`;
+
+  const copy = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = t("consumedResetEntry", {
+    count: Math.max(1, Number(event.count) || 1)
   });
+
+  const detail = document.createElement("span");
+  const types = Array.isArray(event.items)
+    ? [...new Set(event.items.map(getResetCreditTitle).filter(Boolean))]
+    : [];
+  const balance = Number.isFinite(event.previousAvailableCount) &&
+    Number.isFinite(event.availableCount)
+    ? t("consumedResetBalance", {
+        before: event.previousAvailableCount,
+        after: event.availableCount
+      })
+    : "";
+  detail.textContent = [
+    t("consumedResetAt", { time: formatDate(event.detectedAt, true) }),
+    balance,
+    types.join("; ")
+  ].filter(Boolean).join("; ");
+
+  copy.append(title, detail);
+  row.append(marker, copy);
+  return row;
+}
+
+function renderReceivedResetHistory(history = []) {
+  receivedResetHistory = Array.isArray(history) ? history.filter(item => Number.isFinite(item?.detectedAt)) : [];
+  renderResetCalendar(elements.receivedResetHistoryList, receivedResetHistory.map(record => ({
+    at: record.detectedAt, count: record.count, record
+  })), createReceivedResetRow);
+}
+
+function renderConsumedResetHistory(history = []) {
+  consumedResetHistory = Array.isArray(history) ? history.filter(item => Number.isFinite(item?.detectedAt)) : [];
+  renderResetCalendar(elements.consumedResetHistoryList, consumedResetHistory.map(record => ({
+    at: record.detectedAt, count: record.count, record
+  })), createConsumedResetRow);
 }
 
 function renderResetCredits(resets = {}, newResetEvent = {}, manualResetEvent = {}) {
@@ -1416,18 +1565,23 @@ function renderCheckpoints(checkpoint = {}) {
     fetched: checkpoint.fetchedAt ? formatDate(checkpoint.fetchedAt / 1000, true) : "—"
   }), checkpoint.stale ? t("checkpointWarning") : null, t("checkpointAccountHint")].filter(Boolean).join("\n");
   elements.checkpointHistory.replaceChildren();
-  elements.officialResetHistoryList.replaceChildren();
   elements.officialResetCheck.classList.toggle("is-positive", Boolean(checkpoint.available));
   elements.officialResetStatus.textContent = checkpoint.latestAt
     ? t("checkpointLatest", { time: formatDate(checkpoint.latestAt) }) : t("checkpointUnavailable");
   if (checkpoint.available) {
     appendCheckpointRows(elements.checkpointHistory, checkpoint);
-    appendCheckpointRows(elements.officialResetHistoryList, checkpoint);
-  } else {
-    const empty = document.createElement("p");
-    empty.className = "history-empty"; empty.textContent = t("checkpointUnavailable");
-    elements.officialResetHistoryList.append(empty);
   }
+  renderResetCalendar(elements.officialResetHistoryList, (checkpoint.events || []).map(record => ({
+    at: record.at, count: 1, record
+  })), event => {
+    const row = document.createElement("button");
+    row.type = "button"; row.className = "checkpoint-event";
+    row.textContent = `${formatDate(event.at, true)}; ${t("checkpointSourceLink")}`;
+    row.addEventListener("click", () => window.codexMonitor.openResetSource?.(event.sourceUrl));
+    return row;
+  }, checkpoint.sourceUrl ? { url: checkpoint.sourceUrl,
+    name: checkpoint.sourceUrl === "https://codex-reset.com/" ? "Codex Reset" : "Codex Reset Tracker",
+    freshness: elements.checkpointFreshness.textContent } : null);
 }
 
 function renderClientUpdateHistory(clientUpdate = latestClientUpdate) {
@@ -2714,6 +2868,7 @@ async function handlePendingTaskAction(event) {
 
 function openResetCredits() {
   openSecondaryModal(elements.resetCreditModal, elements.resetCreditClose);
+  requestAnimationFrame(() => positionResetCalendars(elements.resetCreditModal));
 }
 
 function closeResetCredits() {
@@ -2738,6 +2893,7 @@ function closeTokenUsage() {
 
 function openOfficialResetHistory() {
   openSecondaryModal(elements.officialResetHistoryModal, elements.officialResetHistoryClose);
+  requestAnimationFrame(() => positionResetCalendars(elements.officialResetHistoryModal));
 }
 
 function closeOfficialResetHistory() {
@@ -2883,6 +3039,7 @@ function renderOnline(snapshot) {
     !data.reserve
   );
 
+  renderWeeklyProjection(data.weeklyProjection);
   renderResetCredits(data.resets, data.events.newReset, data.events.manualReset);
   renderClientUpdate(snapshot.clientUpdate);
   if (!elements.subscriptionModal.hidden) renderSubscriptionDetails();
@@ -2890,6 +3047,7 @@ function renderOnline(snapshot) {
 
 function renderOffline(snapshot) {
   connectionState = "offline";
+  renderWeeklyProjection(null);
   elements.connectionStrip.className = "connection-strip is-offline";
   elements.connectionStatusButton.disabled = false;
   elements.connectionStatusButton.title = t("openConnectionStatus");
@@ -2912,6 +3070,8 @@ function renderOffline(snapshot) {
 }
 
 function updateLastChecked() {
+  if (connectionState === "online" && !elements.weeklyProjectionMarker.hidden &&
+      latestSnapshot?.data?.weeklyProjection?.fiveResetAt <= Date.now() / 1000) renderWeeklyProjection(null);
   if (!latestSnapshot?.checkedAt) {
     elements.lastChecked.textContent = t("waiting");
     return;
