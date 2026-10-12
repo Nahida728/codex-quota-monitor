@@ -1,4 +1,6 @@
 // Percent deltas must come from the same quota windows, never lifetime usage.
+// The server can round an unchanged recovery timestamp one second either way.
+const RESET_TIMESTAMP_TOLERANCE_SECONDS = 5;
 function point(windows, observedAt) {
   const five = windows?.fiveHour;
   const week = windows?.weekly;
@@ -21,8 +23,10 @@ function projectWeeklyQuota(windows, state = {}, nowSeconds = Date.now() / 1000)
   const valid = baseline && [baseline.fiveUsed, baseline.weeklyUsed, baseline.observedAt,
     baseline.lastFiveUsed ?? baseline.fiveUsed, baseline.lastWeeklyUsed ?? baseline.weeklyUsed].every(Number.isFinite) &&
     baseline.fiveUsed >= 0 && baseline.fiveUsed <= 100 && baseline.weeklyUsed >= 0 && baseline.weeklyUsed <= 100 &&
-    baseline.fiveResetAt === current.fiveResetAt && baseline.weeklyResetAt === current.weeklyResetAt &&
-    baseline.observedAt >= start && baseline.observedAt <= nowSeconds &&
+    Math.abs(baseline.fiveResetAt - current.fiveResetAt) <= RESET_TIMESTAMP_TOLERANCE_SECONDS &&
+    Math.abs(baseline.weeklyResetAt - current.weeklyResetAt) <= RESET_TIMESTAMP_TOLERANCE_SECONDS &&
+    nowSeconds < baseline.fiveResetAt && nowSeconds < baseline.weeklyResetAt &&
+    baseline.observedAt >= start - RESET_TIMESTAMP_TOLERANCE_SECONDS && baseline.observedAt <= nowSeconds &&
     current.fiveUsed >= (baseline.lastFiveUsed ?? baseline.fiveUsed) &&
     current.weeklyUsed >= (baseline.lastWeeklyUsed ?? baseline.weeklyUsed);
   if (!valid) baseline = current;
@@ -30,7 +34,8 @@ function projectWeeklyQuota(windows, state = {}, nowSeconds = Date.now() / 1000)
   const weeklyDelta = current.weeklyUsed - baseline.weeklyUsed;
   const persistence = { ...baseline, lastFiveUsed: current.fiveUsed, lastWeeklyUsed: current.weeklyUsed };
   if (fiveDelta < 1 || weeklyDelta <= 0) {
-    return { projection: { available: false, reason: "collecting" }, baseline: persistence };
+    return { projection: { available: false, reason: fiveDelta >= 1 ? "waiting-weekly" : "collecting",
+      fiveHourDelta: fiveDelta, weeklyDelta }, baseline: persistence };
   }
   const addedWeeklyPercent = (100 - current.fiveUsed) * weeklyDelta / fiveDelta;
   const projectedUsedPercent = Math.min(100, current.weeklyUsed + addedWeeklyPercent);

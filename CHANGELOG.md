@@ -1,5 +1,27 @@
 # Changelog / 更新日志
 
+## 1.3.41 补丁 / Patch — 2026-10-13
+
+### 中文
+
+**错误来源**：1.3.4 按完全相等的恢复时间戳判断额度窗口。实际同一窗口的时间戳会前后变化 1 秒，采样基线因此反复被清空，预测经常停留在“采样中”。重置日历为了让全年格子同时显示，把点击区域压到了 6 像素。
+
+**修复情况**
+
+- 对原始采样窗口使用有界的 5 秒时间戳容差，保留微小波动下的样本。真正换窗口、额度回升或原始窗口到期时仍重新采样；不允许连续漂移扩大容差。
+- 周额度读数尚未变化时显示“等待周额度变化”，提示中列出两种额度的已观察增量。百分比读数可能暂时无法显示小额消耗，不把它算作零消耗。
+- 格子放大到 12 像素，间距增至 3 像素，全年记录在内部横向滚动。年份和键盘选择会定位到所选格子；详情、原始记录和来源保留。
+
+### English
+
+**Cause**: 1.3.4 required identical recovery timestamps to recognize the same quota window. One-second variations in actual responses repeatedly cleared the sampling anchor, leaving the estimate collecting samples. Fitting a full calendar year into one view also reduced day targets to six pixels.
+
+**Fixes**
+
+- Preserve samples through timestamp jitter with a bounded five-second tolerance against the original anchor. Real window changes, counter decreases and an expired anchor still restart sampling; successive shifts cannot extend the tolerance.
+- Show “Awaiting weekly data” while the weekly percentage remains unchanged, with observed consumption deltas in the tooltip. Rounded percentages may hide small changes temporarily; no zero-consumption ratio is invented.
+- Increase day cells to 12 pixels with three-pixel gaps and internal horizontal scrolling. Year and keyboard selection keep the selected cell visible. Details, original records and sources remain available.
+
 ## 1.3.4 — 2026-10-13
 
 ### 中文
