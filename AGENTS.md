@@ -1045,6 +1045,36 @@ Verify:
 - Public sources currently use bounded checks, not push delivery; automatic checks
   take up to roughly one minute plus source/network delay. Do not claim streaming.
 
+## Reset forecast dashboard and client timeline
+
+- Validated Tibo promise/dated-commitment signals take priority over historical
+  24/48-hour odds. Display the checkpoint's separate commitment percentage, never
+  label it an official probability or insert a promise into confirmed reset history.
+  Hide priority after one hour without a forecast check, 48 hours after the post,
+  or evidence of a subsequent confirmed reset. Keep historical odds independent.
+- Count down only to a validated announced window/target. The current checkpoint
+  sometimes puts explicit deadline overrides in OBSERVATION_DEADLINES rather
+  than its API. Extract only that inert JSON object from its pinned HTTPS
+  /assets/<hex>/home-countdown.js route discovered through the pinned homepage;
+  never evaluate code, follow redirects, guess EOD timezones, or use historical
+  common hours. Cache the mapping by asset version. Missing timing stays explicit;
+  reaching a target means awaiting confirmation, never automatic completion.
+- The probability dialog is a forecast dashboard with commitment state, countdown,
+  historical intervals/ranges, method and source freshness. Confirmed announcement
+  history remains in reset management. Only changed clock text updates each second;
+  pause presentation while hidden, collapsed or dock-retracted.
+- Client version baselines may already be ahead of the permanent timeline after
+  archive reconciliation. A fresh installed-version observation must repair an
+  evidenced gap from the last recorded version even if it equals the baseline.
+  First observations and downgrades still produce no invented upgrade. Record
+  recovery/observation time explicitly, not an assumed installation timestamp.
+- Prefer OpenAI.Codex over legacy OpenAI.ChatGPT when both packages exist. Refresh
+  installed versions at most once per minute; manual refresh may bypass the cache
+  with a five-second force guard and shared in-flight read. Cache parsed updater
+  events by file size/mtime rather than re-reading unchanged historical logs.
+  Group client history by month/date, retain all records and user expansion state
+  across unchanged snapshots, and keep the close action outside the scroll area.
+
 ## Ledger recovery and replayed task durations (1.3.3)
 
 - State reads and writes share a 64 MiB bound. The old 4 MiB reader rejected
@@ -1091,3 +1121,12 @@ Verify:
   compress a whole year into six-pixel targets to avoid horizontal scrolling.
   Keep month labels aligned and scroll the selected cell into view on keyboard
   navigation/year selection, within the existing fixed dialog.
+- Integer percentage readings can cross a rounding boundary after very little
+  actual consumption. Never extrapolate a one-point weekly change from a
+  two-point 5-hour change into a definite exhausted weekly quota. Require at
+  least 10 and 2 percentage points of observed 5-hour/weekly change, retain the
+  baseline while waiting, and calculate conservative percentage-resolution
+  bounds. Hide estimates spanning more than 10 points or estimating zero while
+  the bounds still allow remaining quota. Explain both the observed deltas and
+  the bounds in Chinese and English; these are not statistical confidence limits
+  and do not remove the constant-consumption-ratio assumption.

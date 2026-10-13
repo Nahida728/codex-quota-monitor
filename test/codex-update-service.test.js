@@ -27,6 +27,38 @@ test("normalizes Appx versions and rejects unrelated command output", () => {
   );
 });
 
+test("repairs an evidenced timeline gap even when the installed baseline already advanced", () => {
+  const state = { codexClientVersion: "26.1007.2314.0", codexClientUpdateHistory: [
+    { fromVersion: "26.928.3736.0", toVersion: "26.930.3930.0", detectedAt: 1000 }
+  ] };
+  const result = evaluateClientUpdate(state.codexClientVersion, state, 5000);
+  assert.equal(result.history.length, 2);
+  assert.equal(result.history[0].fromVersion, "26.930.3930.0");
+  assert.equal(result.history[0].toVersion, state.codexClientVersion);
+  assert.equal(result.history[0].detectedAt, 5000);
+  const repeated = evaluateClientUpdate(state.codexClientVersion, { ...state, ...result.persistence }, 6000);
+  assert.equal(repeated.history.length, 2);
+  assert.equal(evaluateClientUpdate(null, state, 6000).history.length, 1);
+  assert.equal(evaluateClientUpdate("26.928.3736.0", state, 6000).history.length, 1);
+});
+
+test("manual version refresh bypasses the cache, coalesces work and bounds repeated force reads", async () => {
+  const { CodexDesktopVersionDetector } = require("../src/codex-update-service");
+  const detector = new CodexDesktopVersionDetector();
+  let calls = 0;
+  detector.readInstalledState = async () => ({ installedVersion: `26.1007.${++calls}.0` });
+  await detector.read(1000);
+  await detector.read(2000);
+  assert.equal(calls, 1);
+  const results = await Promise.all([detector.read(10000, { force: true }), detector.read(10000, { force: true })]);
+  assert.equal(calls, 2);
+  assert.deepEqual(results[0], results[1]);
+  await detector.read(11000, { force: true });
+  assert.equal(calls, 2);
+  await detector.read(71000);
+  assert.equal(calls, 3);
+});
+
 test("compares dotted versions numerically", () => {
   assert.equal(compareVersions("26.715.2305.0", "26.715.999.0"), 1);
   assert.equal(compareVersions("26.715.2305.0", "26.715.2305"), 0);

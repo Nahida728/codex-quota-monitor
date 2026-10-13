@@ -196,7 +196,8 @@
         </article>
         <button class="status-card probability-card no-drag" id="resetProbabilityButton" type="button">
           <span class="section-label" data-i18n="resetProbabilityTitle">重置概率</span>
-          <span class="probability-values"><span><small>24h</small><strong id="resetProbability24">—</strong></span><span><small>48h</small><strong id="resetProbability48">—</strong></span></span>
+          <span class="probability-values" id="resetProbabilityBaseline"><span><small>24h</small><strong id="resetProbability24">—</strong></span><span><small>48h</small><strong id="resetProbability48">—</strong></span></span>
+          <span class="probability-promise" id="resetProbabilityPromise" hidden><span><strong id="resetProbabilitySignal">—</strong><small>Tibo</small></span><strong id="resetProbabilityCountdown">—</strong></span>
           <small id="resetProbabilityStatus" data-i18n="checkpointUnavailable">等待检查站</small>
         </button>
         <article class="status-card status-card-button no-drag" id="clientUpdateCard" role="button" tabindex="0" aria-label="查看客户端版本更新时间线">
@@ -414,10 +415,26 @@
       <section class="history-modal" id="resetProbabilityModal" hidden aria-modal="true" role="dialog" aria-labelledby="resetProbabilityTitle">
         <div class="history-dialog checkpoint-dialog">
           <div class="history-heading"><div><span class="eyebrow">RESET RADAR</span><h2 id="resetProbabilityTitle" data-i18n="resetProbabilityTitle">重置概率</h2></div><button class="popover-close" id="resetProbabilityClose" type="button" aria-label="关闭">×</button></div>
-          <div class="checkpoint-summary" id="checkpointSummary"></div>
-          <p id="checkpointMethod"></p>
-          <p id="checkpointFreshness"></p>
-          <div class="checkpoint-history" id="checkpointHistory"></div>
+          <div class="checkpoint-dashboard no-drag">
+            <article class="checkpoint-commitment" id="checkpointCommitment">
+              <span class="checkpoint-badge checkpoint-summary" id="checkpointSummary"></span>
+              <div class="checkpoint-lead"><strong id="checkpointSignalProbability">—</strong><span data-i18n="checkpointSignalLabel">承诺信号概率</span></div>
+              <strong class="checkpoint-clock" id="checkpointCountdown">—</strong>
+              <p id="checkpointTarget"></p>
+              <p id="checkpointSignalHint"></p>
+              <button class="checkpoint-source" id="checkpointSignalSource" type="button" hidden data-i18n="checkpointPromiseSource">查看承诺原文 ↗</button>
+            </article>
+            <h3 data-i18n="checkpointBaselineTitle">历史模型</h3>
+            <div class="checkpoint-odds-grid">
+              <article><span data-i18n="checkpoint24Label">未来 24 小时</span><strong id="checkpointOdds24">—</strong><small id="checkpointRange24"></small></article>
+              <article><span data-i18n="checkpoint48Label">未来 48 小时</span><strong id="checkpointOdds48">—</strong><small id="checkpointRange48"></small></article>
+            </div>
+            <dl class="checkpoint-stat-grid" id="checkpointStatistics"></dl>
+            <p id="checkpointMethod"></p>
+            <h3 data-i18n="checkpointDataTitle">数据来源与时效</h3>
+            <p id="checkpointFreshness"></p>
+            <button class="checkpoint-source" id="checkpointDashboardSource" type="button" data-i18n="checkpointSourceLink">查看来源 ↗</button>
+          </div>
           <button class="glass-button primary history-done" id="resetProbabilityDone" type="button" data-i18n="close">关闭</button>
         </div>
       </section>
@@ -446,7 +463,7 @@
             </div>
             <button class="popover-close" id="clientUpdateHistoryClose" type="button" aria-label="关闭">×</button>
           </div>
-          <p data-i18n="clientUpdateHistoryHint">记录检测器观察到的 Codex 客户端版本升级，时间为本机首次检测到新版本的时间。</p>
+          <p data-i18n="clientUpdateHistoryHint">记录本机观察到的 Codex 客户端升级，包含历史缺口补记。时间为检测或补记时刻，不是安装时间。</p>
           <div class="client-update-summary">
             <article>
               <span data-i18n="clientUpdateCurrentLabel">当前版本</span>

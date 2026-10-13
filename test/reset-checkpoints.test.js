@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { parseCheckpointPage, parseRadarTimeline, checkpointSummary, ResetCheckpointReader } = require("../src/reset-checkpoints");
+const { parseCheckpointPage, parseRadarTimeline, checkpointSummary, ResetCheckpointReader, parseForecast, parseObservationDeadlines } = require("../src/reset-checkpoints");
 const { reconcileQuotaStates } = require("../src/store");
 
 const now = Date.parse("2026-10-10T05:00:00Z");
@@ -99,4 +99,54 @@ test("manual refresh revalidates cached sources with bounded coalescing and reta
   assert.equal(offline.observedAt, now + 20000);
   const recovered = reconcileQuotaStates({}, [{ resetCheckpointSnapshot: first }]);
   assert.equal(recovered.resetCheckpointSnapshot.events.length, 5);
+});
+
+test("commitments have independent priority, validated timing and freshness without becoming reset history", async () => {
+  const at = now - 60000, end = now + 3600000;
+  const signal = { signal_type: "dated_commitment", at: new Date(at).toISOString(),
+    url: "https://x.com/thsottiaux/status/2109812360596865224", window: {
+      start_at: new Date(at).toISOString(), end_at: new Date(end).toISOString(),
+      target_at: new Date(end).toISOString(), target_kind: "deadline" } };
+  const raw = { updated_at: new Date(now).toISOString(), official_signal: signal,
+    probabilities: { rounded_24h: 19, rounded_48h: 34, commitment_floor_percent: 83,
+      range_24h: { lower: .099, upper: .325 } }, model: { window_intervals: 8 } };
+  const forecast = parseForecast(raw, now);
+  const snapshot = { ...parseCheckpointPage(page(), now), forecast };
+  const fresh = checkpointSummary(snapshot, now);
+  assert.equal(fresh.commitment.probability, 83);
+  assert.equal(fresh.commitment.window.targetAt, end);
+  assert.equal(fresh.probability24, 19);
+  assert.deepEqual(fresh.forecast.range24, { lower: 10, upper: 33 });
+  assert.equal(checkpointSummary(snapshot, now + 3600001).commitment, null);
+  const confirmed = { ...snapshot, events: [...snapshot.events, { at: now / 1000, sourceUrl: signal.url }] };
+  assert.equal(checkpointSummary(confirmed, now).commitment, null);
+  assert.equal(parseForecast({ ...raw, official_signal: { ...signal, signal_type: "tease" } }, now).commitment, null);
+  assert.equal(parseForecast({ ...raw, official_signal: { ...signal, reset_kind: "banked" } }, now).commitment, null);
+  assert.equal(parseForecast({ ...raw, official_signal: { ...signal, url: "https://evil.invalid/" } }, now).commitment, null);
+  const invalidWindow = parseForecast({ ...raw, official_signal: { ...signal, window: { ...signal.window, target_at: "bad" } } }, now);
+  assert.equal(invalidWindow.commitment.window, null);
+  // A live forecast is usable even if both announcement-history readers fail.
+  const reader = new ResetCheckpointReader({ fetchImpl: async url => {
+    if (!url.endsWith("forecast")) throw new Error("history offline");
+    return new Response(JSON.stringify(raw));
+  } });
+  const result = await reader.read(now);
+  assert.equal(result.commitment.probability, 83);
+  assert.deepEqual(result.events, []);
+});
+
+test("promise deadline overrides parse inert data from pinned versioned assets, never arbitrary code", async () => {
+  const id = "2109812360596865224", target = new Date(now + 3600000).toISOString();
+  const asset = `export const OBSERVATION_DEADLINES = Object.freeze({"${id}":"${target}"});`;
+  assert.equal(parseObservationDeadlines(asset)[id], target);
+  assert.deepEqual(parseObservationDeadlines('OBSERVATION_DEADLINES = Object.freeze({"x":process.exit()});'), {});
+  const reader = new ResetCheckpointReader({ fetchImpl: async url => new Response(
+    url.endsWith("forecast") ? JSON.stringify({ updated_at: new Date(now).toISOString(),
+      official_signal: { signal_type: "promise", at: new Date(now - 60000).toISOString(), url: `https://x.com/thsottiaux/status/${id}` },
+      probabilities: { commitment_floor_percent: 83 }, model: {} })
+    : url.endsWith("home-countdown.js") ? asset : url === "https://codex-reset.com/" ? '<script src="/assets/22e0f21947/app.js"></script>' : page()) });
+  const result = await reader.read(now);
+  assert.equal(result.commitment.window.targetAt, Date.parse(target));
+  assert.equal(result.probabilityMode, "median-history");
+  assert.equal(result.events.length, 5);
 });

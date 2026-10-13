@@ -76,24 +76,83 @@ function checkpointSummary(snapshot, now = Date.now(), cached = false) {
   const probability = hours => gaps.length >= 3 && !stale
     ? Math.round(100 * (1 - Math.exp(-Math.LN2 * hours * 3600 / medianSeconds))) : null;
   const forecast = normalizeForecast(snapshot?.forecast, now);
-  const useForecast = forecast && !stale && now - forecast.checkedAt <= 24 * 3600000;
-  return { available: events.length > 0, observedAt: now, sourceUrl: snapshot?.sourceUrl === RADAR_URL ? RADAR_URL : SOURCE_URL, events,
+  const useForecast = forecast && !stale && Number.isFinite(forecast.probability24) && now - forecast.checkedAt <= 24 * 3600000;
+  const commitment = forecast?.commitment && now - forecast.checkedAt <= 3600000 &&
+    !events.some(event => event.at * 1000 >= forecast.commitment.at) &&
+    !(forecast.lastResetAt >= forecast.commitment.at) ? forecast.commitment : null;
+  return { available: events.length > 0 || Boolean(useForecast || commitment), observedAt: now, sourceUrl: snapshot?.sourceUrl === RADAR_URL ? RADAR_URL : SOURCE_URL, events,
     latestAt: events.at(-1)?.at || null, sourceCheckedAt,
     fetchedAt: Number.isFinite(snapshot?.fetchedAt) && snapshot.fetchedAt <= now + 300000 ? snapshot.fetchedAt : null, cached, stale,
     sampleCount: gaps.length, medianSeconds, windowDays: 183,
     forecast: forecast || null,
+    commitment,
     probability24: useForecast ? forecast.probability24 : probability(24),
     probability48: useForecast ? forecast.probability48 : probability(48),
     probabilityMode: useForecast ? "source-experimental" : "median-history" };
 }
 
 function normalizeForecast(value, now) {
-  if (!value || !Number.isFinite(value.checkedAt) || value.checkedAt <= 0 || value.checkedAt > now + 300000 ||
-      !Number.isFinite(value.probability24) || !Number.isFinite(value.probability48) ||
-      value.probability24 < 0 || value.probability48 > 100 || value.probability48 < value.probability24 ||
-      !Number.isInteger(value.sampleCount) || value.sampleCount < 3 || value.sampleCount > 1000) return null;
-  return { checkedAt: value.checkedAt, probability24: value.probability24,
-    probability48: value.probability48, sampleCount: value.sampleCount };
+  if (!value || !Number.isFinite(value.checkedAt) || value.checkedAt <= 0 || value.checkedAt > now + 300000) return null;
+  const historical = Number.isFinite(value.probability24) && Number.isFinite(value.probability48) &&
+    value.probability24 >= 0 && value.probability48 <= 100 && value.probability48 >= value.probability24 &&
+    Number.isInteger(value.sampleCount) && value.sampleCount >= 3 && value.sampleCount <= 1000;
+  const positive = n => Number.isFinite(n) && n >= 0 && n <= 1000 ? n : null;
+  const range = v => Number.isFinite(v?.lower) && Number.isFinite(v?.upper) &&
+    v.lower >= 0 && v.upper <= 100 && v.upper >= v.lower
+    ? { lower: Math.round(v.lower), upper: Math.round(v.upper) } : null;
+  return { checkedAt: value.checkedAt, probability24: historical ? value.probability24 : null,
+    probability48: historical ? value.probability48 : null, sampleCount: historical ? value.sampleCount : null,
+    range24: range(value.range24), range48: range(value.range48),
+    medianDays: positive(value.medianDays), meanDays: positive(value.meanDays), longestDays: positive(value.longestDays),
+    lastResetAt: Number.isFinite(value.lastResetAt) && value.lastResetAt <= now ? value.lastResetAt : null,
+    commitment: normalizeCommitment(value.commitment, now) };
+}
+
+function normalizeCommitment(value, now) {
+  if (!value || !/^https:\/\/x\.com\/thsottiaux\/status\/\d{10,25}$/.test(value.sourceUrl || "") ||
+      !["promise", "dated_commitment"].includes(value.type) || !Number.isFinite(value.probability) ||
+      value.probability < 0 || value.probability > 100 || !Number.isFinite(value.at) || value.at <= 0 ||
+      value.at > now || now - value.at > 48 * 3600000) return null;
+  const window = value.window;
+  const validWindow = window && [window.startAt, window.endAt, window.targetAt].every(Number.isFinite) &&
+    window.startAt >= value.at - 300000 && window.endAt > window.startAt &&
+    window.endAt - value.at <= 72 * 3600000 && ["deadline", "center"].includes(window.targetKind) &&
+    window.targetAt >= window.startAt && window.targetAt <= window.endAt &&
+    (window.targetKind !== "deadline" || window.targetAt === window.endAt);
+  return { type: value.type, sourceUrl: value.sourceUrl, at: value.at, probability: value.probability,
+    window: validWindow ? { startAt: window.startAt, endAt: window.endAt,
+      targetAt: window.targetAt, targetKind: window.targetKind } : null };
+}
+
+function parseForecast(raw, now) {
+  const candidate = raw?.official_signal;
+  const signal = candidate && !["banked", "credits", "banked_grant"].includes(candidate.kind) &&
+    candidate.banked_grant !== true && candidate.reset_kind !== "banked" &&
+    (!candidate.scope || candidate.scope === "global") && raw?.latest_alert?.kind !== "banked" ? candidate : null;
+  const window = signal?.window;
+  const range = value => value ? { lower: value.lower * 100, upper: value.upper * 100 } : null;
+  return normalizeForecast({ checkedAt: Date.parse(raw?.updated_at),
+    probability24: raw?.probabilities?.rounded_24h, probability48: raw?.probabilities?.rounded_48h,
+    sampleCount: raw?.model?.window_intervals, range24: range(raw?.probabilities?.range_24h), range48: range(raw?.probabilities?.range_48h),
+    medianDays: raw?.wait_comparison?.median_days, meanDays: raw?.wait_comparison?.mean_days,
+    longestDays: raw?.wait_comparison?.longest_days, lastResetAt: Date.parse(raw?.last_reset_at),
+    commitment: { type: signal?.signal_type, sourceUrl: signal?.url, at: Date.parse(signal?.at),
+      probability: raw?.probabilities?.commitment_floor_percent,
+      window: window ? { startAt: Date.parse(window.start_at), endAt: Date.parse(window.end_at),
+        targetAt: Date.parse(window.target_at), targetKind: window.target_kind } : null }
+  }, now);
+}
+
+// The site's current deadline override is an inert JSON object in a versioned
+// asset, absent from /api/forecast. Extract just that object; never execute JS.
+function parseObservationDeadlines(text) {
+  const literal = text.match(/OBSERVATION_DEADLINES\s*=\s*Object\.freeze\((\{[^;]{1,16000}\})\)/)?.[1];
+  if (!literal) return {};
+  try {
+    const value = JSON.parse(literal);
+    return Object.fromEntries(Object.entries(value).slice(0, 100).filter(([id, stamp]) =>
+      /^\d{10,25}$/.test(id) && typeof stamp === "string" && Number.isFinite(Date.parse(stamp))));
+  } catch { return {}; }
 }
 
 function parseRadarTimeline(raw, now = Date.now()) {
@@ -125,19 +184,34 @@ class ResetCheckpointReader {
           getText(`${RADAR_URL}api/timeline`).then(text => parseRadarTimeline(JSON.parse(text), now)),
           getText(SOURCE_URL).then(text => ({ ...parseCheckpointPage(text, now), sourceUrl: SOURCE_URL })),
           getText(`${RADAR_URL}api/forecast`).then(text => {
-            const raw = JSON.parse(text);
-            return normalizeForecast({ checkedAt: Date.parse(raw.updated_at),
-              probability24: raw.probabilities?.rounded_24h, probability48: raw.probabilities?.rounded_48h,
-              sampleCount: raw.model?.window_intervals }, now);
+            return parseForecast(JSON.parse(text), now);
           })
         ]);
         const snapshots = results.slice(0, 2).filter(result => result.status === "fulfilled").map(result => result.value);
-        if (!snapshots.length) throw new Error("SOURCE_UNAVAILABLE");
-        const incoming = snapshots.sort((a, b) => b.sourceCheckedAt - a.sourceCheckedAt)[0];
-        const forecast = results[2].status === "fulfilled" ? results[2].value : null;
+        const forecast = results[2].status === "fulfilled" ? results[2].value
+          : normalizeForecast(this.snapshot?.forecast || previous?.forecast, now);
+        if (!snapshots.length && !forecast) throw new Error("SOURCE_UNAVAILABLE");
+        const incoming = snapshots.sort((a, b) => b.sourceCheckedAt - a.sourceCheckedAt)[0] || {
+          sourceUrl: RADAR_URL, sourceCheckedAt: forecast.checkedAt, fetchedAt: now, events: []
+        };
+        if (forecast?.commitment && !forecast.commitment.window) {
+          try {
+            const html = await getText(RADAR_URL);
+            const asset = html.match(/src="(\/assets\/[a-f0-9]{8,64}\/app\.js)"/)?.[1];
+            if (asset) {
+              if (this.deadlineAsset !== asset) {
+                this.deadlines = parseObservationDeadlines(await getText(`${RADAR_URL.slice(0, -1)}${asset.replace("app.js", "home-countdown.js")}`));
+                this.deadlineAsset = asset;
+              }
+              const targetAt = Date.parse(this.deadlines?.[forecast.commitment.sourceUrl.split("/").at(-1)]);
+              forecast.commitment = normalizeCommitment({ ...forecast.commitment,
+                window: { startAt: forecast.commitment.at, endAt: targetAt, targetAt, targetKind: "deadline" } }, now);
+            }
+          } catch { /* Keep the promise probability; timing remains unavailable. */ }
+        }
         this.snapshot = { ...incoming, events: normalizeCheckpointEvents([
           ...(previous?.events || []), ...(this.snapshot?.events || []), ...snapshots.flatMap(snapshot => snapshot.events)
-        ], now), forecast: incoming.sourceUrl === RADAR_URL ? forecast : null };
+        ], now), forecast };
         this.nextReadAt = now + CACHE_MS;
         return checkpointSummary(this.snapshot, now);
       } catch {
@@ -150,4 +224,4 @@ class ResetCheckpointReader {
 }
 
 module.exports = { ResetCheckpointReader, parseCheckpointPage, checkpointSummary,
-  normalizeCheckpointEvents, readBoundedText, parseRadarTimeline, SOURCE_URL, RADAR_URL };
+  normalizeCheckpointEvents, readBoundedText, parseRadarTimeline, parseForecast, parseObservationDeadlines, SOURCE_URL, RADAR_URL };

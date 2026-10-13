@@ -34,12 +34,31 @@ test("projects only same-window deltas and preserves a mid-window anchor across 
     state = { quotaProjectionBaseline: JSON.parse(JSON.stringify(result.baseline)) };
     assert.equal(state.quotaProjectionBaseline.fiveUsed, 44);
     if (five === 45) assert.equal(result.projection.reason, "waiting-weekly");
-    if (five === 46) assert.equal(result.projection.remainingPercent, 11);
+    if (five === 46) assert.equal(result.projection.reason, "low-sample");
   }
   // Compare against the original reset timestamp, preventing slow drift from
   // turning into an unlimited tolerance. A genuinely expired anchor is invalid.
   assert.equal(projectWeeklyQuota(windows(47, 63, now + 10006), state, now + 100).projection.available, false);
   assert.equal(projectWeeklyQuota(windows(47, 63, now + 10001), state, now + 10000).projection.available, false);
+});
+
+test("small rounded changes cannot assert weekly exhaustion; ambiguous zero estimates are hidden", () => {
+  const initial = projectWeeklyQuota(windows(0, 67), {}, now);
+  const screenshot = projectWeeklyQuota(windows(2, 68), { quotaProjectionBaseline: initial.baseline }, now + 60);
+  assert.equal(screenshot.projection.available, false);
+  assert.equal(screenshot.projection.reason, "low-sample");
+  assert.equal(screenshot.projection.remainingPercent, undefined);
+  assert.equal(screenshot.baseline.fiveUsed, 0);
+  const nearLimit = projectWeeklyQuota(windows(40, 88), {}, now);
+  const ambiguous = projectWeeklyQuota(windows(60, 93), { quotaProjectionBaseline: nearLimit.baseline }, now + 60);
+  assert.equal(ambiguous.projection.available, false);
+  assert.equal(ambiguous.projection.reason, "uncertain");
+  assert.ok(ambiguous.projection.remainingUpperPercent > 0);
+  const stable = projectWeeklyQuota(windows(40, 73), { quotaProjectionBaseline: screenshot.baseline }, now + 120);
+  assert.equal(stable.projection.available, true);
+  assert.equal(stable.projection.remainingPercent, 18);
+  assert.ok(stable.projection.remainingLowerPercent < 18);
+  assert.ok(stable.projection.remainingUpperPercent > 18);
 });
 
 test("discard reset/rollback samples, missing windows and renewal crossings; cap weekly exhaustion", () => {
@@ -53,6 +72,8 @@ test("discard reset/rollback samples, missing windows and renewal crossings; cap
   const high = projectWeeklyQuota(windows(40, 90), { quotaProjectionBaseline: old }, now + 60);
   assert.equal(high.projection.remainingPercent, 0);
   assert.equal(high.projection.weeklyLimitFirst, true);
+  assert.equal(high.projection.remainingLowerPercent, 0);
+  assert.equal(high.projection.remainingUpperPercent, 0);
 });
 
 test("calendar aggregates local-day credits, retains older years and excludes future/invalid records", () => {

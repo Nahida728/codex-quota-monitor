@@ -3453,6 +3453,49 @@ footer {
 .checkpoint-source { display: block; margin: 5px 0 10px; padding: 0; border: 0; background: transparent; color: var(--mint); font: inherit; font-size: 12px; cursor: pointer; }
 .checkpoint-event { display: block; width: 100%; padding: 9px; margin: 5px 0; border: 1px solid var(--line); border-radius: 9px; background: rgba(255,255,255,.025); color: var(--text); text-align: left; font: inherit; font-size: 12px; cursor: pointer; }
 .checkpoint-event:hover { background: rgba(var(--mint-rgb),.07); }
+.probability-promise { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.probability-promise[hidden], .probability-values[hidden] { display: none; }
+.probability-promise > span { display: flex; align-items: baseline; gap: 5px; }
+.probability-promise > span strong { color: #ffe1a5; font-size: 23px; line-height: 1.05; }
+.probability-promise small { font-size: 10px; color: var(--muted); }
+.probability-promise > strong { color: #ffe1a5; font-size: 13px; line-height: 1.25; font-variant-numeric: tabular-nums; overflow-wrap: normal; }
+.probability-card.has-commitment { border-color: rgba(255,209,125,.5); background: linear-gradient(135deg,rgba(157,100,31,.32),rgba(45,37,32,.58)); }
+.probability-card.has-commitment > small { color: #ffe1a5; font-weight: 650; }
+.probability-card.is-imminent { box-shadow: inset 0 0 18px rgba(255,202,100,.1); }
+.checkpoint-dashboard { min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-right: 3px; margin: 12px 0; }
+.checkpoint-dashboard h3 { font-size: 12px; color: var(--muted); margin: 15px 0 8px; }
+.checkpoint-commitment { padding: 14px; border: 1px solid var(--line); border-radius: 17px; background: rgba(255,255,255,.025); }
+.checkpoint-commitment.has-commitment { border-color: rgba(255,209,125,.4); background: linear-gradient(130deg,rgba(161,111,44,.16),rgba(255,255,255,.025)); }
+.checkpoint-summary { display: block; margin: 0; font-size: 12px; color: var(--muted); }
+.has-commitment .checkpoint-summary { color: #ffe1a5; font-weight: 650; }
+.checkpoint-lead { display: flex; align-items: baseline; gap: 10px; margin-top: 8px; }
+.checkpoint-lead strong { font-size: 34px; line-height: 1.1; color: #ffe1a5; font-variant-numeric: tabular-nums; }
+.checkpoint-lead span { font-size: 12px; color: var(--muted); }
+.checkpoint-clock { display: block; margin-top: 9px; font-size: 16px; font-weight: 600; line-height: 1.3; }
+.checkpoint-clock.is-counting { font-size: 29px; letter-spacing: 1px; color: #ffe1a5; font-variant-numeric: tabular-nums; }
+.checkpoint-dashboard p { overflow-wrap: anywhere; }
+.checkpoint-odds-grid, .checkpoint-stat-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.checkpoint-odds-grid article { min-width: 0; border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: rgba(255,255,255,.025); }
+.checkpoint-odds-grid span, .checkpoint-odds-grid small { display: block; color: var(--muted); font-size: 11px; line-height: 1.4; }
+.checkpoint-odds-grid strong { display: block; color: var(--violet); font-size: 27px; font-variant-numeric: tabular-nums; }
+.checkpoint-stat-grid { margin: 12px 0; gap: 0; }
+.checkpoint-stat-grid > div { padding: 7px 6px; min-width: 0; border-bottom: 1px solid var(--line); }
+.checkpoint-stat-grid dt { font-size: 11px; color: var(--muted); }
+.checkpoint-stat-grid dd { margin: 3px 0 0; font-size: 14px; font-weight: 650; }
+.checkpoint-dialog .history-done { flex: none; margin-top: auto; }
+.client-update-month { border-bottom: 1px solid var(--line); margin: 0 0 7px; }
+.client-update-month > summary { padding: 10px 8px; cursor: pointer; font-size: 12px; border-radius: 8px; color: var(--text); }
+.client-update-month > summary span { float: right; color: var(--muted); font-size: 11px; }
+.client-update-month > summary:hover { background: rgba(var(--mint-rgb),.08); }
+.client-update-month > summary:active { background: rgba(var(--mint-rgb),.15); }
+.client-update-month > summary:focus-visible { outline: 2px solid var(--mint); outline-offset: -2px; }
+.client-update-day { margin: 10px 8px 2px; color: var(--muted); font-size: 11px; font-weight: 500; }
+.client-update-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-left: 10px; padding: 8px 9px; border-left: 1px solid rgba(var(--mint-rgb),.32); }
+.client-update-row > div { min-width: 0; }
+.client-update-row strong, .client-update-row span { display: block; overflow-wrap: anywhere; line-height: 1.4; }
+.client-update-row strong { font-size: 13px; font-weight: 650; }
+.client-update-row span, .client-update-row time { color: var(--muted); font-size: 11px; }
+.client-update-row time { flex: none; font-variant-numeric: tabular-nums; }
 .reset-official-link { margin-top: 8px; }
 @media (prefers-reduced-motion: reduce) { .progress-glow { transition: none; } }
 

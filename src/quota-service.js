@@ -504,7 +504,7 @@ class QuotaService {
       const hasReserve = Boolean(identifyWindows(reserve).weekly);
       return !hasReserve && this.reserveReader ? this.reserveReader.read() : null;
     }).catch(() => null);
-    const versionPromise = this.versionDetector.read(checkedAt).catch(() => null);
+    const versionPromise = this.versionDetector.read(checkedAt, { force: forceCheckpoints }).catch(() => null);
     const tokenUsagePromise = typeof this.client.readTokenUsage === "function"
       ? Promise.resolve().then(() => this.client.readTokenUsage()).catch(() => null)
       : Promise.resolve(null);
