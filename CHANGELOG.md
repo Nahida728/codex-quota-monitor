@@ -1,6 +1,6 @@
 # Changelog / 更新日志
 
-## 尚未发布 / Unreleased
+## 1.3.50 正式版 / Stable — 2026-10-13
 
 ### 中文
 
