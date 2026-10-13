@@ -22,7 +22,7 @@
 | 重置 | 可用重置次数、每次到期时间、收到和使用记录、社区公开重置公告 |
 | 本轮预测 | 周额度条标记用尽本轮 5 小时额度后的预计余额，附采样依据 |
 | 重置日历 | 公告、收到和消耗记录按天显示，支持历史年份与格子详情 |
-| 重置概率 | 检查站提供的 24 / 48 小时估计，附来源、更新时间和统计范围 |
+| 重置概率 | 优先展示 Tibo 承诺信号与目标倒计时，附历史 24 / 48 小时估计、区间和来源 |
 | 用量与消费 | 官方累计 Token、工作天数、日 / 周 / 月趋势、本地模型明细与 API 等价消费 |
 | 最近任务 | 首字响应、实时总 Tokens、峰值 / 最低 / 平均输出速率、缓存命中率 |
 | 并行任务 | 大目标、子智能体、多模型参与、耗时与本轮消费，支持筛选和排序 |
@@ -38,6 +38,8 @@
 Windows x64；需要能够连接 OpenAI 服务的网络。API Key 登录通常不提供订阅额度。官方未返回 Reserve 独立桶时，界面会显示“未返回”。
 
 ## 版本更新
+
+1.3.50 重构重置概率看板，优先显示检查站的 Tibo 承诺概率与明确目标倒计时；修复周额度小样本预测误报 0% 和客户端更新历史漏记。客户端记录按月份、日期整理，并缓存不变的日志和界面。
 
 1.3.41 修复周额度预测因恢复时间戳微小波动反复重采样的问题，并放大重置日历的格子与间距，支持在日历内部横向滚动。
 
@@ -112,7 +114,7 @@ Codex Quota Monitor is a compact Windows desktop companion for Codex. A floating
 | Resets | Available credits, individual expiry dates, received/consumed history and public announcements |
 | Quota projection | Weekly balance estimated after exhausting this 5-hour quota, with observed inputs |
 | Reset calendar | Daily announcement and received/consumed credit grids, with year selection and day details |
-| Reset estimates | Community 24 / 48-hour probabilities with source, freshness and sample information |
+| Reset estimates | Priority Tibo commitment signals and target countdowns, with historical 24 / 48-hour odds, ranges and sources |
 | Usage and cost | Official lifetime tokens, recorded work days, daily/weekly/monthly trends and local model costs |
 | Latest task | First-token latency, live total tokens, peak/minimum/average output rates and cache hit rate |
 | Concurrent tasks | Goals, subagents, multiple models, elapsed time and current-turn costs, with filtering and sorting |
@@ -128,6 +130,8 @@ Codex Quota Monitor is a compact Windows desktop companion for Codex. A floating
 Requires Windows x64 and network access to OpenAI. API-key mode usually does not supply subscription quota. GPT Reserve stays unavailable when its independent bucket is absent.
 
 ### Recent updates
+
+1.3.50 rebuilds the reset forecast dashboard, prioritizing the checkpoint's Tibo commitment odds and explicit target countdowns. It fixes small samples falsely predicting 0% weekly quota and missing client update records, groups upgrades by month/date, and caches unchanged logs and UI.
 
 1.3.41 fixes quota projection repeatedly restarting on small recovery-timestamp changes and enlarges reset-calendar cells and spacing, with internal horizontal scrolling.
 

@@ -303,7 +303,7 @@ window.codexMonitor = {
   focusCodex: async () => true,
   openResetSource: async () => true,
   readSettings: async () => ({
-    monitorVersion: "1.3.41",
+    monitorVersion: "1.3.50",
     language: params.get("lang") === "en" ? "en" : "zh",
     alwaysOnTop: true,
     positionLocked: false,
