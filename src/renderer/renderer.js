@@ -47,7 +47,31 @@ const i18n = {
     checkpointWarning: "源检查超过 24 小时或不可用，隐藏概率；可能有新重置未收录。",
     checkpointAccountHint: "公告可在恢复联网后补看；只有本机额度证据才能确认账户实际重置。",
     checkpointSourceLink: "查看来源 ↗",
-    checkpointSourceMethod: "Codex Reset 检查站的实验性历史概率模型，最近 {count} 个完整重置间隔，未证明优于所有基准。排除重置卡发放、预告与未确认记录；全局趋势不保证本账户重置。详情中的公告汇总来自两个检查站。",
+    checkpointSourceMethod: "实验性历史模型使用最近 {count} 个完整重置间隔，未证明优于所有基准。排除重置卡发放、预告与未确认记录；全局趋势不保证本账户重置。",
+    checkpointPromise: "Tibo 已承诺重置",
+    checkpointSoon: "即将重置",
+    checkpointAwaiting: "等待重置确认",
+    checkpointWaitingShort: "等待确认",
+    checkpointNoPromise: "暂无有效承诺",
+    checkpointNoTime: "时间未定",
+    checkpointSignalLabel: "承诺信号概率",
+    checkpointSignalHint: "概率由检查站根据 Tibo 的承诺给出，优先于历史模型。倒计时对应公告目标时间，不保证准时，也不代表已重置。",
+    checkpointIdleHint: "等待明确的重置承诺。历史模型的 24/48 小时概率显示在下方；常见重置时段不会用作倒计时。",
+    checkpointTarget: "公告目标：{time}",
+    checkpointWindow: "公告窗口：{start} 至 {end}",
+    checkpointPromiseSource: "查看承诺原文 ↗",
+    checkpointBaselineTitle: "历史模型",
+    checkpoint24Label: "未来 24 小时",
+    checkpoint48Label: "未来 48 小时",
+    checkpointRange: "来源区间 {lower}–{upper}%",
+    checkpointDataTitle: "数据来源与时效",
+    checkpointSampleLabel: "完整间隔",
+    checkpointMedianLabel: "典型间隔",
+    checkpointMeanLabel: "平均间隔",
+    checkpointLongestLabel: "最长间隔",
+    checkpointDays: "{value} 天",
+    checkpointSignalChecked: "预测源检查：{time}",
+    checkpointForecastSource: "预测来源：{source}",
     checkpointOdds: "24 小时 {p24}；48 小时 {p48}",
     reserveUnavailable: "未返回",
     reserveUnavailableDetail: "独立 Reserve 额度暂未返回",
@@ -107,6 +131,10 @@ const i18n = {
     weeklyForecast: "预计剩余 {value}%",
     weeklyForecastCollecting: "预测采样中",
     weeklyForecastWaitingWeekly: "等待周额度变化",
+    weeklyForecastLowSample: "预测样本不足",
+    weeklyForecastUncertain: "预测误差较大",
+    weeklyForecastPrecisionHint: "整数读数的边界跳动会放大小样本误差。目前观察到 5 小时额度变化 {five} 个百分点、周额度变化 {week} 个百分点。至少需要 10 和 2 个百分点的变化，并且剩余比例误差范围不超过 10 个百分点，才显示预测刻线；样本会继续保留。",
+    weeklyForecastRangeHint: "考虑百分比读数误差，剩余范围约 {lower}% 至 {upper}%。这不是统计置信区间，仍假设后续消耗比例不变；范围内允许剩余额度时，不显示确定的 0%。",
     weeklyForecastSamplingHint: "保留同一窗口内的采样，等待两种额度都有可见消耗增量。目前 5 小时额度变化 {five} 个百分点，周额度变化 {week} 个百分点；整数百分比读数可能延迟显示较小的消耗。",
     weeklyForecastUnavailable: "预测暂不可用",
     weeklyForecastRenews: "周额度先恢复",
@@ -189,7 +217,7 @@ const i18n = {
     clientUpdateTarget: "可更新至 v{version}",
     openClientUpdateHistory: "查看客户端版本更新时间线",
     clientUpdateHistoryTitle: "版本更新时间线",
-    clientUpdateHistoryHint: "记录检测器观察到的 Codex 客户端版本升级，时间为本机首次检测到新版本的时间。",
+    clientUpdateHistoryHint: "记录本机观察到的 Codex 客户端升级，包含历史缺口补记。时间为检测或补记时刻，不是安装时间。",
     clientUpdateHistoryEmpty: "尚未检测到客户端版本升级",
     clientUpdateHistoryCount: "共 {count} 次版本升级",
     clientUpdateCurrentLabel: "当前版本",
@@ -197,6 +225,8 @@ const i18n = {
     clientUpdateNoPending: "暂无",
     clientUpdateHistoryChange: "v{from} → v{to}",
     clientUpdateHistoryDetectedAt: "检测于 {time}",
+    clientUpdateFromVersion: "从 v{version}",
+    clientUpdateMonthCount: "{count} 次更新",
     tokenUsageRegion: "Token 使用概览",
     tokenUsageTitle: "Token 使用量",
     tokenUsageCachedTitle: "Token 缓存",
@@ -377,7 +407,31 @@ const i18n = {
     checkpointWarning: "Source check is older than 24 hours or unavailable. Odds are hidden; newer resets may be missing.",
     checkpointAccountHint: "Announcements can be recovered after reconnecting. Account resets require local quota evidence.",
     checkpointSourceLink: "View source ↗",
-    checkpointSourceMethod: "Experimental historical probability model from Codex Reset, using the latest {count} completed reset intervals. It has not beaten every baseline. Excludes credit grants, teasers and unconfirmed resets; global trends do not guarantee an account reset. Announcements below combine two checkpoints.",
+    checkpointSourceMethod: "Experimental historical model using the latest {count} completed reset intervals. It has not beaten every baseline. Excludes grants, teasers and unconfirmed resets; global trends do not guarantee an account reset.",
+    checkpointPromise: "Tibo reset commitment",
+    checkpointSoon: "Reset soon",
+    checkpointAwaiting: "Awaiting reset confirmation",
+    checkpointWaitingShort: "Awaiting reset",
+    checkpointNoPromise: "No active commitment",
+    checkpointNoTime: "Timing unspecified",
+    checkpointSignalLabel: "Commitment probability",
+    checkpointSignalHint: "The checkpoint assigns this probability to Tibo's commitment, ahead of historical odds. The countdown follows the announced target; timing and completion still require confirmation.",
+    checkpointIdleHint: "Waiting for an explicit reset commitment. Historical 24/48-hour odds appear below; common reset hours never supply a countdown.",
+    checkpointTarget: "Announced target: {time}",
+    checkpointWindow: "Announced window: {start} to {end}",
+    checkpointPromiseSource: "Read the commitment ↗",
+    checkpointBaselineTitle: "Historical model",
+    checkpoint24Label: "Next 24 hours",
+    checkpoint48Label: "By 48 hours",
+    checkpointRange: "Source range {lower}–{upper}%",
+    checkpointDataTitle: "Sources and freshness",
+    checkpointSampleLabel: "Completed intervals",
+    checkpointMedianLabel: "Typical interval",
+    checkpointMeanLabel: "Mean interval",
+    checkpointLongestLabel: "Longest interval",
+    checkpointDays: "{value} days",
+    checkpointSignalChecked: "Forecast checked: {time}",
+    checkpointForecastSource: "Forecast source: {source}",
     checkpointOdds: "24 hours {p24}; 48 hours {p48}",
     reserveUnavailable: "Not returned",
     reserveUnavailableDetail: "Independent Reserve quota not returned",
@@ -437,6 +491,10 @@ const i18n = {
     weeklyForecast: "Est. left {value}%",
     weeklyForecastCollecting: "Collecting samples",
     weeklyForecastWaitingWeekly: "Awaiting weekly data",
+    weeklyForecastLowSample: "Too few samples",
+    weeklyForecastUncertain: "Wide estimate range",
+    weeklyForecastPrecisionHint: "Rounded percentage boundaries magnify small-sample errors. Observed changes: {five} percentage points of 5-hour quota and {week} of weekly quota. The marker needs at least 10 and 2 points respectively, and a remaining-quota range no wider than 10 points. Samples are retained.",
+    weeklyForecastRangeHint: "Allowing for percentage resolution, remaining quota is roughly {lower}% to {upper}%. These are resolution bounds, not statistical confidence limits, and assume the consumption ratio continues. A definite 0% is hidden when the bounds still allow remaining quota.",
     weeklyForecastSamplingHint: "Samples are retained within the same window until both quotas show consumption changes. Observed changes: {five} percentage points of 5-hour quota and {week} of weekly quota. Rounded percentages can delay visibility of small changes.",
     weeklyForecastUnavailable: "Estimate unavailable",
     weeklyForecastRenews: "Weekly renews first",
@@ -519,7 +577,7 @@ const i18n = {
     clientUpdateTarget: "Update to v{version}",
     openClientUpdateHistory: "View Codex client update timeline",
     clientUpdateHistoryTitle: "Version update timeline",
-    clientUpdateHistoryHint: "Records Codex client upgrades observed by the monitor. Each time is when the new version was first detected on this device.",
+    clientUpdateHistoryHint: "Observed Codex client upgrades, including repaired history gaps. Times mark detection or recovery, not installation.",
     clientUpdateHistoryEmpty: "No client version upgrade has been detected",
     clientUpdateHistoryCount: "{count} version upgrades",
     clientUpdateCurrentLabel: "Current version",
@@ -527,6 +585,8 @@ const i18n = {
     clientUpdateNoPending: "None",
     clientUpdateHistoryChange: "v{from} → v{to}",
     clientUpdateHistoryDetectedAt: "Detected {time}",
+    clientUpdateFromVersion: "From v{version}",
+    clientUpdateMonthCount: "{count} upgrades",
     tokenUsageRegion: "Token usage overview",
     tokenUsageTitle: "Token usage",
     tokenUsageCachedTitle: "Cached usage",
@@ -668,7 +728,11 @@ const elements = Object.fromEntries([
   "quotaSection", "statusSection",
   "resetProbabilityButton", "resetProbability24", "resetProbability48", "resetProbabilityStatus",
   "resetProbabilityModal", "resetProbabilityClose", "resetProbabilityDone", "checkpointSummary",
-  "checkpointMethod", "checkpointFreshness", "checkpointHistory", "resetOfficialLink",
+  "checkpointMethod", "checkpointFreshness", "resetOfficialLink",
+  "resetProbabilityBaseline", "resetProbabilityPromise", "resetProbabilitySignal", "resetProbabilityCountdown",
+  "checkpointCommitment", "checkpointSignalProbability", "checkpointCountdown", "checkpointTarget", "checkpointSignalHint",
+  "checkpointSignalSource", "checkpointDashboardSource", "checkpointOdds24", "checkpointOdds48",
+  "checkpointRange24", "checkpointRange48", "checkpointStatistics",
   "taskFilter", "taskSort", "confirmAllTasks",
   "appVersion", "taskPerformance", "latestTaskIdentity", "latestTaskFirstToken", "latestTaskTokens",
   "latestTaskPeak", "latestTaskMin", "latestTaskAverage", "latestTaskCacheHit", "taskPerformanceScope", "taskConcurrency",
@@ -1222,12 +1286,20 @@ function renderWeeklyProjection(projection) {
   elements.weeklyProjectionMarker.hidden = !valid;
   note.classList.toggle("is-estimated", Boolean(valid));
   note.textContent = valid ? t("weeklyForecast", { value: projection.remainingPercent })
-    : t(projection?.reason === "waiting-weekly" ? "weeklyForecastWaitingWeekly"
+    : t(projection?.reason === "low-sample" ? "weeklyForecastLowSample"
+      : projection?.reason === "uncertain" ? "weeklyForecastUncertain"
+      : projection?.reason === "waiting-weekly" ? "weeklyForecastWaitingWeekly"
       : projection?.reason === "weekly-renews" ? "weeklyForecastRenews"
       : projection?.reason === "collecting" ? "weeklyForecastCollecting" : "weeklyForecastUnavailable");
   note.title = valid ? [t("weeklyForecastHint", { value: projection.remainingPercent,
     five: projection.fiveHourDelta, week: projection.weeklyDelta }),
+    Number.isFinite(projection.remainingLowerPercent) ? t("weeklyForecastRangeHint", {
+      lower: projection.remainingLowerPercent, upper: projection.remainingUpperPercent }) : "",
     projection.weeklyLimitFirst ? t("weeklyForecastLimit") : ""].filter(Boolean).join("\n")
+    : ["low-sample", "uncertain"].includes(projection?.reason)
+      ? [t("weeklyForecastPrecisionHint", { five: projection.fiveHourDelta, week: projection.weeklyDelta }),
+        Number.isFinite(projection.remainingLowerPercent) ? t("weeklyForecastRangeHint", {
+          lower: projection.remainingLowerPercent, upper: projection.remainingUpperPercent }) : ""].filter(Boolean).join("\n")
     : ["collecting", "waiting-weekly"].includes(projection?.reason)
       ? t("weeklyForecastSamplingHint", { five: projection.fiveHourDelta ?? 0, week: projection.weeklyDelta ?? 0 }) : note.textContent;
   note.setAttribute("aria-label", note.title);
@@ -1544,23 +1616,46 @@ function renderResetCredits(resets = {}, newResetEvent = {}, manualResetEvent = 
   }
 }
 
-function appendCheckpointRows(container, checkpoint) {
-  const heading = document.createElement("h3");
-  heading.className = "active-task-list-section";
-  heading.textContent = t("checkpointTitle");
-  container.append(heading);
-  const source = document.createElement("button");
-  source.type = "button"; source.className = "checkpoint-source";
-  source.textContent = `${checkpoint.sourceUrl === "https://codex-reset.com/" ? "Codex Reset" : "Codex Reset Tracker"}; ${t("checkpointSourceLink")}`;
-  source.addEventListener("click", () => window.codexMonitor.openResetSource?.(checkpoint.sourceUrl));
-  container.append(source);
-  for (const event of (checkpoint.events || []).slice().sort((a, b) => b.at - a.at)) {
-    const row = document.createElement("button");
-    row.type = "button"; row.className = "checkpoint-event";
-    row.textContent = `${formatDate(event.at, true)}; ${t("checkpointSourceLink")}`;
-    row.addEventListener("click", () => window.codexMonitor.openResetSource?.(event.sourceUrl));
-    container.append(row);
-  }
+function currentCheckpointCommitment(now = Date.now()) {
+  const commitment = latestCheckpoints?.commitment;
+  return commitment && Number.isFinite(latestCheckpoints?.forecast?.checkedAt) &&
+    now - latestCheckpoints.forecast.checkedAt <= 3600000 && now - commitment.at <= 48 * 3600000
+    ? commitment : null;
+}
+
+let checkpointClockSignature = "";
+function renderCheckpointClock(now = Date.now()) {
+  const commitment = currentCheckpointCommitment(now);
+  const window = commitment?.window;
+  const counting = window && now < window.targetAt;
+  const clock = counting ? (() => {
+    const total = Math.ceil((window.targetAt - now) / 1000);
+    return [Math.floor(total / 3600), Math.floor(total % 3600 / 60), total % 60]
+      .map(value => String(value).padStart(2, "0")).join(":");
+  })() : t(commitment ? window ? "checkpointAwaiting" : "checkpointNoTime" : "checkpointNoPromise");
+  const compactClock = counting ? clock : window ? "—" : t("checkpointNoTime");
+  if (elements.resetProbabilityCountdown.textContent !== compactClock) elements.resetProbabilityCountdown.textContent = compactClock;
+  if (elements.checkpointCountdown.textContent !== clock) elements.checkpointCountdown.textContent = clock;
+  const signature = JSON.stringify([language, commitment, Boolean(counting), latestCheckpoints?.available, latestCheckpoints?.stale]);
+  if (signature === checkpointClockSignature) return;
+  checkpointClockSignature = signature;
+  elements.resetProbabilityBaseline.hidden = Boolean(commitment);
+  elements.resetProbabilityPromise.hidden = !commitment;
+  elements.resetProbabilityButton.classList.toggle("has-commitment", Boolean(commitment));
+  elements.resetProbabilityButton.classList.toggle("is-imminent", Boolean(counting));
+  elements.resetProbabilitySignal.textContent = commitment ? `${commitment.probability}%` : "—";
+  elements.resetProbabilityStatus.textContent = t(commitment ? counting ? "checkpointSoon" : window ? "checkpointWaitingShort" : "checkpointPromise"
+    : !latestCheckpoints?.available ? "checkpointUnavailable" : latestCheckpoints.stale ? "checkpointStale" : "checkpointTrend");
+  elements.checkpointCommitment.classList.toggle("has-commitment", Boolean(commitment));
+  elements.checkpointSignalProbability.textContent = commitment ? `${commitment.probability}%` : "—";
+  elements.checkpointSummary.textContent = t(commitment ? "checkpointPromise" : "checkpointNoPromise");
+  elements.checkpointCountdown.classList.toggle("is-counting", Boolean(counting));
+  elements.checkpointTarget.textContent = window ? [t("checkpointTarget", { time: formatDate(window.targetAt / 1000, true) }),
+    t("checkpointWindow", { start: formatDate(window.startAt / 1000, true), end: formatDate(window.endAt / 1000, true) })].join("\n") : "";
+  elements.checkpointSignalHint.textContent = t(commitment ? "checkpointSignalHint" : "checkpointIdleHint");
+  elements.checkpointSignalSource.hidden = !commitment;
+  elements.resetProbabilityButton.title = commitment ? `${t("checkpointPromise")} ${commitment.probability}%\n${window ? t("checkpointTarget", { time: formatDate(window.targetAt / 1000, true) }) : t("checkpointNoTime")}\n${t("checkpointSignalHint")}`
+    : t("resetProbabilityTitle");
 }
 
 function renderCheckpoints(checkpoint = {}) {
@@ -1570,24 +1665,37 @@ function renderCheckpoints(checkpoint = {}) {
   const percent = value => Number.isFinite(value) ? `${value}%` : "—";
   elements.resetProbability24.textContent = percent(checkpoint.probability24);
   elements.resetProbability48.textContent = percent(checkpoint.probability48);
-  elements.resetProbabilityStatus.textContent = t(!checkpoint.available ? "checkpointUnavailable" : checkpoint.stale ? "checkpointStale" : "checkpointTrend");
-  elements.checkpointSummary.textContent = t("checkpointOdds", { p24: percent(checkpoint.probability24), p48: percent(checkpoint.probability48) });
-  elements.checkpointMethod.textContent = checkpoint.probabilityMode === "source-experimental" ? t("checkpointSourceMethod", { count: checkpoint.forecast.sampleCount }) : checkpoint.available ? t("checkpointMethod", {
+  elements.checkpointOdds24.textContent = percent(checkpoint.probability24);
+  elements.checkpointOdds48.textContent = percent(checkpoint.probability48);
+  for (const hours of [24, 48]) {
+    const range = checkpoint.probabilityMode === "source-experimental" ? checkpoint.forecast?.[`range${hours}`] : null;
+    elements[`checkpointRange${hours}`].textContent = range ? t("checkpointRange", range) : "";
+  }
+  elements.checkpointStatistics.replaceChildren();
+  for (const [label, value] of [["checkpointSampleLabel", checkpoint.probabilityMode === "source-experimental" ? checkpoint.forecast?.sampleCount : checkpoint.sampleCount],
+    ["checkpointMedianLabel", checkpoint.forecast?.medianDays ?? (Number.isFinite(checkpoint.medianSeconds) ? checkpoint.medianSeconds / 86400 : null)],
+    ["checkpointMeanLabel", checkpoint.forecast?.meanDays], ["checkpointLongestLabel", checkpoint.forecast?.longestDays]]) {
+    const metric = document.createElement("div"), term = document.createElement("dt"), result = document.createElement("dd");
+    term.textContent = t(label);
+    result.textContent = !Number.isFinite(value) ? "—" : label === "checkpointSampleLabel" ? String(value) : t("checkpointDays", { value: value.toFixed(1) });
+    metric.append(term, result); elements.checkpointStatistics.append(metric);
+  }
+  elements.checkpointMethod.textContent = checkpoint.probabilityMode === "source-experimental" ? t("checkpointSourceMethod", { count: checkpoint.forecast.sampleCount }) : Number.isFinite(checkpoint.probability24) ? t("checkpointMethod", {
     days: checkpoint.windowDays || 183, count: checkpoint.sampleCount || 0,
     median: Number.isFinite(checkpoint.medianSeconds) ? (checkpoint.medianSeconds / 86400).toFixed(1) : "—"
   }) : t("checkpointUnavailable");
-  elements.checkpointFreshness.textContent = [t("checkpointFreshness", {
+  elements.checkpointFreshness.textContent = [t("checkpointForecastSource", { source: checkpoint.forecast ? "Codex Reset"
+    : checkpoint.sourceUrl === "https://codex-reset.com/" ? "Codex Reset" : "Codex Reset Tracker" }), t("checkpointFreshness", {
     source: checkpoint.sourceUrl === "https://codex-reset.com/" ? "Codex Reset" : "Codex Reset Tracker",
     time: checkpoint.sourceCheckedAt ? formatDate(checkpoint.sourceCheckedAt / 1000, true) : "—",
     fetched: checkpoint.fetchedAt ? formatDate(checkpoint.fetchedAt / 1000, true) : "—"
-  }), checkpoint.stale ? t("checkpointWarning") : null, t("checkpointAccountHint")].filter(Boolean).join("\n");
-  elements.checkpointHistory.replaceChildren();
+  }), checkpoint.forecast?.checkedAt ? t("checkpointSignalChecked", { time: formatDate(checkpoint.forecast.checkedAt / 1000, true) }) : null,
+    checkpoint.stale ? t("checkpointWarning") : null, t("checkpointAccountHint")].filter(Boolean).join("\n");
+  renderCheckpointClock();
+  startPresentationClock();
   elements.officialResetCheck.classList.toggle("is-positive", Boolean(checkpoint.available));
   elements.officialResetStatus.textContent = checkpoint.latestAt
     ? t("checkpointLatest", { time: formatDate(checkpoint.latestAt) }) : t("checkpointUnavailable");
-  if (checkpoint.available) {
-    appendCheckpointRows(elements.checkpointHistory, checkpoint);
-  }
   renderResetCalendar(elements.officialResetHistoryList, (checkpoint.events || []).map(record => ({
     at: record.at, count: 1, record
   })), event => {
@@ -1601,6 +1709,7 @@ function renderCheckpoints(checkpoint = {}) {
     freshness: elements.checkpointFreshness.textContent } : null);
 }
 
+let clientHistorySignature = "";
 function renderClientUpdateHistory(clientUpdate = latestClientUpdate) {
   latestClientUpdate = clientUpdate || {};
   const history = Array.isArray(latestClientUpdate.history)
@@ -1617,6 +1726,9 @@ function renderClientUpdateHistory(clientUpdate = latestClientUpdate) {
   elements.clientUpdateHistoryPending.textContent = latestClientUpdate.pendingVersion
     ? `v${latestClientUpdate.pendingVersion}`
     : t("clientUpdateNoPending");
+  const signature = JSON.stringify([language, history]);
+  if (signature === clientHistorySignature) return;
+  clientHistorySignature = signature;
   elements.clientUpdateHistoryList.replaceChildren();
 
   if (!history.length) {
@@ -1634,27 +1746,40 @@ function renderClientUpdateHistory(clientUpdate = latestClientUpdate) {
   });
   elements.clientUpdateHistoryList.append(count);
 
-  history.forEach((record, index) => {
-    const item = document.createElement("article");
-    item.className = "history-item client-update-history-item";
-    const marker = document.createElement("span");
-    marker.className = "history-marker client-update-history-marker";
-    marker.textContent = String(history.length - index).padStart(2, "0");
-
-    const copy = document.createElement("div");
-    const title = document.createElement("strong");
-    title.textContent = t("clientUpdateHistoryChange", {
-      from: record.fromVersion,
-      to: record.toVersion
-    });
-    const time = document.createElement("span");
-    time.textContent = t("clientUpdateHistoryDetectedAt", {
-      time: formatDate(record.detectedAt / 1_000, true)
-    });
-    copy.append(title, time);
-    item.append(marker, copy);
-    elements.clientUpdateHistoryList.append(item);
-  });
+  const groups = new Map();
+  for (const record of history.slice().sort((a, b) => b.detectedAt - a.detectedAt)) {
+    const date = new Date(record.detectedAt), key = `${date.getFullYear()}-${date.getMonth()}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(record);
+  }
+  for (const records of groups.values()) {
+    const group = document.createElement("details"), heading = document.createElement("summary");
+    group.className = "client-update-month";
+    group.open = groups.values().next().value === records;
+    const month = document.createElement("strong"), badge = document.createElement("span");
+    month.textContent = new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-US", { year: "numeric", month: "long" }).format(records[0].detectedAt);
+    badge.textContent = t("clientUpdateMonthCount", { count: records.length });
+    heading.append(month, badge); group.append(heading);
+    let previousDay = "";
+    for (const record of records) {
+      const date = new Date(record.detectedAt), day = date.toDateString();
+      if (day !== previousDay) {
+        const label = document.createElement("h4"); label.className = "client-update-day";
+        label.textContent = new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-US", { month: "short", day: "numeric", weekday: "short" }).format(date);
+        group.append(label); previousDay = day;
+      }
+      const item = document.createElement("article"), copy = document.createElement("div");
+      item.className = "client-update-row";
+      const version = document.createElement("strong"), from = document.createElement("span"), time = document.createElement("time");
+      version.textContent = `v${record.toVersion}`;
+      from.textContent = t("clientUpdateFromVersion", { version: record.fromVersion });
+      time.dateTime = date.toISOString();
+      time.textContent = new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-US", { hour: "2-digit", minute: "2-digit" }).format(date);
+      time.title = t("clientUpdateHistoryDetectedAt", { time: formatDate(record.detectedAt / 1000, true) });
+      copy.append(version, from); item.append(copy, time); group.append(item);
+    }
+    elements.clientUpdateHistoryList.append(group);
+  }
 }
 
 function renderClientUpdate(clientUpdate = {}) {
@@ -3117,7 +3242,7 @@ function applySnapshot(snapshot) {
 
 function startPresentationClock() {
   const needed = !document.hidden && !windowCollapsed && !topDockRetracted &&
-    (activeTasks.length > 0 || !elements.subscriptionModal.hidden);
+    (activeTasks.length > 0 || !elements.subscriptionModal.hidden || Boolean(currentCheckpointCommitment()));
   if (!needed) {
     if (presentationFrame !== null) cancelAnimationFrame(presentationFrame);
     presentationFrame = null; return;
@@ -3129,6 +3254,7 @@ function startPresentationClock() {
     if (second !== lastPresentationSecond) {
       lastPresentationSecond = second;
       renderActiveTaskClock();
+      if (latestCheckpoints?.commitment) renderCheckpointClock();
       if (!elements.subscriptionModal.hidden) renderSubscriptionCountdown();
       updateLastChecked();
     }
@@ -3471,6 +3597,12 @@ async function initialize() {
   elements.taskSort.addEventListener("change", () => {
     renderActiveTaskDetails();
   });
+  elements.checkpointSignalSource.addEventListener("click", () => {
+    const commitment = currentCheckpointCommitment();
+    if (commitment) window.codexMonitor.openResetSource?.(commitment.sourceUrl);
+  });
+  elements.checkpointDashboardSource.addEventListener("click", () => window.codexMonitor.openResetSource?.(
+    latestCheckpoints?.probabilityMode === "source-experimental" ? "https://codex-reset.com/" : latestCheckpoints?.sourceUrl));
   elements.resetProbabilityButton.addEventListener("click", () => openSecondaryModal(elements.resetProbabilityModal, elements.resetProbabilityClose));
   const closeProbability = () => closeSecondaryModal(elements.resetProbabilityModal, elements.resetProbabilityButton);
   elements.resetProbabilityClose.addEventListener("click", closeProbability);

@@ -5,7 +5,7 @@ const path = require("node:path");
 const { promisify } = require("node:util");
 
 const execFileAsync = promisify(execFile);
-const VERSION_CACHE_MS = 15 * 60 * 1000;
+const VERSION_CACHE_MS = 60 * 1000;
 const UPDATE_NOTICE_MS = 7 * 24 * 60 * 60 * 1000;
 const UPDATE_LOG_LOOKBACK_MS = 45 * 24 * 60 * 60 * 1000;
 const MAX_LOG_FILES = 128;
@@ -148,7 +148,7 @@ async function collectUpdateLogFiles(root, now = Date.now()) {
   return files.sort((left, right) => right.mtimeMs - left.mtimeMs);
 }
 
-async function readLatestWindowsStoreUpdate(logRoot, installedVersion, now = Date.now()) {
+async function readLatestWindowsStoreUpdate(logRoot, installedVersion, now = Date.now(), cache = null) {
   if (!logRoot || !normalizeVersion(installedVersion)) return null;
   const files = await collectUpdateLogFiles(logRoot, now);
   let latest = null;
@@ -161,11 +161,19 @@ async function readLatestWindowsStoreUpdate(logRoot, installedVersion, now = Dat
     filesRead += 1;
     bytesRead += file.size;
     try {
-      const contents = await fs.promises.readFile(file.path, "utf8");
-      for (const event of parseWindowsStoreUpdateEvents(contents)) {
+      const saved = cache?.get(file.path);
+      const signature = `${file.mtimeMs}:${file.size}`;
+      const events = saved?.signature === signature ? saved.events
+        : parseWindowsStoreUpdateEvents(await fs.promises.readFile(file.path, "utf8"));
+      cache?.set(file.path, { signature, events });
+      for (const event of events) {
         if (!latest || event.detectedAt > latest.detectedAt) latest = event;
       }
     } catch {}
+  }
+  if (cache) {
+    const retained = new Set(files.slice(0, MAX_LOG_FILES).map(file => file.path));
+    for (const key of cache.keys()) if (!retained.has(key)) cache.delete(key);
   }
 
   if (!latest) return null;
@@ -236,6 +244,22 @@ function evaluateClientUpdate(observation, state = {}, now = Date.now()) {
     }
     currentVersion = detectedVersion;
     persistence.codexClientVersion = detectedVersion;
+  }
+
+  // Archive reconciliation can advance the version baseline independently of
+  // its timeline. A matching baseline must not hide that evidenced history gap.
+  // First observations still create no update, and detection time is never
+  // presented as the actual installation time.
+  const lastRecorded = updateHistory.at(-1);
+  if (detectedVersion && detectedVersion === storedVersion && lastRecorded &&
+      updateHistory.every(record => compareVersions(detectedVersion, record.toVersion) > 0)) {
+    previousVersion = lastRecorded.toVersion;
+    updatedVersion = detectedVersion;
+    detectedAt = now;
+    updateHistory.push({ fromVersion: previousVersion, toVersion: updatedVersion, detectedAt });
+    Object.assign(persistence, { codexClientPreviousVersion: previousVersion,
+      codexClientUpdatedVersion: updatedVersion, codexClientUpdateAt: detectedAt,
+      codexClientUpdateHistory: updateHistory });
   }
 
   const observedTargetVersion = normalizeVersion(observed.targetVersion);
@@ -310,13 +334,17 @@ class CodexDesktopVersionDetector {
     this.cachedAt = 0;
     this.cachedState = null;
     this.inFlight = null;
+    this.updateLogCache = new Map();
+    this.lastForcedAt = -Infinity;
   }
 
-  async read(now = Date.now()) {
-    if (this.cachedAt && now - this.cachedAt < this.cacheMs) {
+  async read(now = Date.now(), { force = false } = {}) {
+    if (this.inFlight) return this.inFlight;
+    const bypass = force && now - this.lastForcedAt >= 5000;
+    if (this.cachedAt && now - this.cachedAt < this.cacheMs && !bypass) {
       return this.cachedState;
     }
-    if (this.inFlight) return this.inFlight;
+    if (bypass) this.lastForcedAt = now;
     this.inFlight = this.readInstalledState()
       .then(state => {
         this.cachedAt = now;
@@ -338,7 +366,7 @@ class CodexDesktopVersionDetector {
     const command = [
       "$packages = @()",
       "$packages += Get-AppxPackage -Name OpenAI.Codex -ErrorAction SilentlyContinue",
-      "$packages += Get-AppxPackage -Name OpenAI.ChatGPT -ErrorAction SilentlyContinue",
+      "if ($packages.Count -eq 0) { $packages += Get-AppxPackage -Name OpenAI.ChatGPT -ErrorAction SilentlyContinue }",
       "$package = $packages | Sort-Object Version -Descending | Select-Object -First 1",
       "if ($null -ne $package) { Write-Output (\"{0}|{1}\" -f $package.Version.ToString(), $package.PackageFamilyName) }"
     ].join("; ");
@@ -374,7 +402,7 @@ class CodexDesktopVersionDetector {
           "Logs"
         )
       : null;
-    const update = await readLatestWindowsStoreUpdate(logRoot, packageInfo.version);
+    const update = await readLatestWindowsStoreUpdate(logRoot, packageInfo.version, Date.now(), this.updateLogCache);
     return {
       installedVersion: packageInfo.version,
       updateReady: update?.updateReady ?? null,

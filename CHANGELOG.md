@@ -1,5 +1,23 @@
 # Changelog / 更新日志
 
+## 尚未发布 / Unreleased
+
+### 中文
+
+- 重置概率卡片优先显示检查站的 Tibo 承诺概率，明确目标时间时展示倒计时和金色“即将重置”提示。时间未定、等待确认、源数据过期及已确认重置分别处理，不将承诺写入已完成公告历史。
+- 概率详情重构为独立看板：承诺状态、目标窗口、历史 24/48 小时概率及区间、样本与间隔统计、来源和检查时间。移除与重置管理重复的公告列表；倒计时仅更新变化文字，隐藏窗口时停止绘制。
+- 客户端升级历史按月份折叠、按日期分组，突出版本与时间并保留展开状态。修复版本基线已更新但历史仍落后的漏记情况，补记采用发现时间。版本检查缓存缩短至一分钟，手动刷新可重新读取；缓存不变的更新日志，优先识别 Codex 包。
+- 修复小样本导致周额度预测错误显示 0% 的问题。原计算把五小时额度变化 2 个百分点、周额度变化 1 个百分点直接外推，放大了整数读数跨越边界的误差。
+- 预测现在要求同一窗口内五小时、周额度至少分别变化 10、2 个百分点，并计算读数误差下的剩余范围。范围超过 10 个百分点，或范围仍允许剩余额度却估算为 0% 时，隐藏刻线并说明原因。等待期间保留样本，提示展示已观察增量及可用的误差范围。
+
+### English
+
+- Prioritize the checkpoint's Tibo commitment probability on the reset card, with a countdown and gold “Reset soon” state when an explicit target exists. Distinguish unspecified timing, awaiting confirmation, stale sources and confirmed resets; promises never enter completed-reset history.
+- Rebuild odds details as a forecast dashboard: commitment state, announced window, historical 24/48-hour probabilities and ranges, interval statistics, sources and check times. Remove the duplicated announcement list. Update only changed clock text and stop painting hidden windows.
+- Group client upgrades by month/date with preserved expansion state. Repair timelines left behind an already advanced version baseline, using recovery time. Shorten version caching to one minute, allow manual revalidation, cache unchanged updater logs and prefer the Codex package.
+- Fixed small samples incorrectly predicting 0% weekly quota remaining. Extrapolating a two-point 5-hour change and a one-point weekly change magnified the error of rounded percentages crossing a boundary.
+- Estimates now require at least 10 and 2 percentage points of observed 5-hour and weekly change within the same window, with bounds for percentage resolution. Hide the marker when the range exceeds 10 points or still permits remaining quota despite a zero estimate. Retain samples while waiting and explain observed deltas and available bounds in the tooltip.
+
 ## 1.3.41 补丁 / Patch — 2026-10-13
 
 ### 中文

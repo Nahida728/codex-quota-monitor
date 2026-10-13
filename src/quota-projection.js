@@ -1,6 +1,10 @@
 // Percent deltas must come from the same quota windows, never lifetime usage.
 // The server can round an unchanged recovery timestamp one second either way.
 const RESET_TIMESTAMP_TOLERANCE_SECONDS = 5;
+// Product precision gates: small rounded deltas cannot support a useful ratio.
+const MIN_FIVE_HOUR_DELTA = 10;
+const MIN_WEEKLY_DELTA = 2;
+const MAX_REMAINING_RANGE = 10;
 function point(windows, observedAt) {
   const five = windows?.fiveHour;
   const week = windows?.weekly;
@@ -37,10 +41,30 @@ function projectWeeklyQuota(windows, state = {}, nowSeconds = Date.now() / 1000)
     return { projection: { available: false, reason: fiveDelta >= 1 ? "waiting-weekly" : "collecting",
       fiveHourDelta: fiveDelta, weeklyDelta }, baseline: persistence };
   }
+  if (fiveDelta < MIN_FIVE_HOUR_DELTA || weeklyDelta < MIN_WEEKLY_DELTA) {
+    return { projection: { available: false, reason: "low-sample", fiveHourDelta: fiveDelta,
+      weeklyDelta }, baseline: persistence };
+  }
+  // Both endpoints are rounded percentages. Their delta can be off by one
+  // percentage point even without a change in the underlying consumption ratio.
+  // These are conservative resolution bounds, not statistical confidence limits.
+  const clampRemaining = used => Math.max(0, Math.min(100, 100 - used));
+  const remainingLower = clampRemaining(current.weeklyUsed + 1 +
+    Math.min(100, 101 - current.fiveUsed) * (weeklyDelta + 1) / (fiveDelta - 1));
+  const remainingUpper = clampRemaining(current.weeklyUsed - 1 +
+    Math.max(0, 99 - current.fiveUsed) * Math.max(0, weeklyDelta - 1) / (fiveDelta + 1));
+  const remainingRange = { remainingLowerPercent: Math.floor(remainingLower * 10) / 10,
+    remainingUpperPercent: Math.ceil(remainingUpper * 10) / 10 };
   const addedWeeklyPercent = (100 - current.fiveUsed) * weeklyDelta / fiveDelta;
   const projectedUsedPercent = Math.min(100, current.weeklyUsed + addedWeeklyPercent);
+  const remainingPercent = Math.round((100 - projectedUsedPercent) * 10) / 10;
+  if (remainingRange.remainingUpperPercent - remainingRange.remainingLowerPercent > MAX_REMAINING_RANGE ||
+      (remainingPercent === 0 && remainingUpper > 0)) {
+    return { projection: { available: false, reason: "uncertain", fiveHourDelta: fiveDelta,
+      weeklyDelta, ...remainingRange }, baseline: persistence };
+  }
   return { baseline: persistence, projection: { available: true,
-    remainingPercent: Math.round((100 - projectedUsedPercent) * 10) / 10,
+    remainingPercent, ...remainingRange,
     usedPercent: Math.round(projectedUsedPercent * 10) / 10,
     fiveHourDelta: fiveDelta, weeklyDelta, addedWeeklyPercent: Math.round(addedWeeklyPercent * 10) / 10,
     weeklyLimitFirst: current.weeklyUsed + addedWeeklyPercent > 100,
